@@ -122,16 +122,36 @@ function nextSaturday() {
   if (add === 0) { add = 7; }
   return todayKeyAdd(add);
 }
-function fmtGs(v) { var n = Math.round((+v || 0) * 10) / 10; return (n % 1 === 0) ? String(n) : n.toFixed(1); }
-/* 공수 계산 : 07:00 출근 기준, 점심 2시간 포함
-   ~17:00 퇴근 1공수 · ~19:00 퇴근 1.5공수 · ~21:00 퇴근 2공수 · 휴무/미출근 0 */
+function fmtGs(v) {
+  var n = Math.round((+v || 0) * 1000) / 1000;
+  if (n % 1 === 0) { return String(n); }
+  return n.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+}
+/* 공수 계산 · 공용 규칙 (2026-11-26 통일)
+   - 출근: 분이 있으면 다음 정각으로 올림 (07:01 → 08:00)
+   - 퇴근: 분이 있으면 그 시각의 정각으로 내림 (17:40 → 17:00)
+   - 점심 11:00~13:00(2시간)은 근무시간에서 제외
+   - 실근무 H: H <= 8 → H * 0.125 / H > 8 → 1.0 + (H - 8) * 0.25
+     예) 07:00~17:00 = 8h → 1.0 · 07:01~17:00 = 7h → 0.875 · 13:00~19:00 = 6h → 0.75
+         07:00~19:00 = 10h → 1.5 · 07:00~21:00 = 12h → 2.0 · 휴무/미출근 0        */
+function calcGongsu(inHM, outHM) {
+  if (!inHM || !outHM) { return 0; }
+  var a = minFromHM(inHM), b = minFromHM(outHM);
+  if (isNaN(a) || isNaN(b)) { return 0; }
+  var s = (a % 60 === 0) ? a : Math.ceil(a / 60) * 60;      /* 출근 올림 */
+  var e = (b % 60 === 0) ? b : Math.floor(b / 60) * 60;     /* 퇴근 정각(내림) */
+  if (e <= s) { return 0; }
+  var span = (e - s) / 60;
+  var lunch = Math.max(0, Math.min(e, 13 * 60) - Math.max(s, 11 * 60)) / 60;   /* 11:00~13:00 겹침 제외 */
+  var H = span - lunch;
+  if (H <= 0) { return 0; }
+  var g = (H <= 8) ? H * 0.125 : 1 + (H - 8) * 0.25;
+  return Math.round(g * 1000) / 1000;
+}
 function gongsuOf(a) {
   if (!a || !a.in) { return 0; }
-  if (!a.out) { return 1; }
-  var m = minFromHM(a.out);
-  if (m >= 21 * 60) { return 2; }
-  if (m >= 19 * 60) { return 1.5; }
-  return 1;
+  if (!a.out) { return 1; }        /* 출근만 찍힌 날은 기존과 같이 1공수 */
+  return calcGongsu(a.in, a.out);
 }
 function gongsuOn(p, k) {
   if (leaveOn(p, k)) { return 0; }
@@ -142,7 +162,7 @@ function gongsuMonth(p, mk) {
   Object.keys(p.attendance || {}).forEach(function (k) {
     if (k.slice(0, 7) === mk) { t += gongsuOn(p, k); }
   });
-  return Math.round(t * 10) / 10;
+  return Math.round(t * 1000) / 1000;
 }
 function monthDayKeys(mk) {
   var sp = String(mk).split('-');
@@ -266,7 +286,8 @@ function buildState(d) {
     p.leaves.push({
       id: l.id, date: l.leave_date, reason: l.reason || '',
       at: kstHM(l.created_at), teamName: l.team_name || '',
-      reportTo: l.report_to || '', status: l.status || 'pending'
+      reportTo: l.report_to || '', status: l.status || 'pending',
+      ackAt: l.ack_at || '', ackBy: l.ack_by || ''
     });
   });
   state.reports = (d.reports || []).map(function (r) {
@@ -710,6 +731,51 @@ function patchLeave(l) {
 }
 function deleteLeave(id) {
   return apiWrite({ m: 'DELETE', path: '/rest/v1/leaves?id=' + sbEq(id), label: '휴무 취소' });
+}
+
+/* ---------- 휴무 보고 알람 (관리자) ----------
+   leaves.ack_at 이 비어 있는 행 = 관리자가 아직 확인하지 않은 휴무 보고
+   - dismissed : 이번 세션에서 닫아 둔 행 (새 행이 올라오면 다시 뜨다)
+   - notified  : OS 알림을 이미 보낸 행                                             */
+var leaveAlarm = { dismissed: {}, notified: {} };
+var leaveAlarmOpenIds = null;
+
+function unackedLeaves() {
+  var out = [];
+  state.people.forEach(function (p) {
+    (p.leaves || []).forEach(function (l) {
+      if (l.ackAt) { return; }
+      out.push({
+        id: l.id, name: p.name, workerId: p.id, date: l.date,
+        teamName: l.teamName || (p.teamId ? teamLabel(p.teamId) : '미배정'),
+        reason: l.reason || '', reportTo: l.reportTo || '', at: l.at || ''
+      });
+    });
+  });
+  out.sort(function (a, b) {
+    if (a.date !== b.date) { return a.date < b.date ? -1 : 1; }
+    return a.name.localeCompare(b.name, 'ko');
+  });
+  return out;
+}
+
+/* 관리자 확인 완료 — leaves.ack_at / ack_by 저장 + 화면 상태도 갱신 */
+function ackLeaves(ids, byId) {
+  if (!ids || !ids.length) { return null; }
+  var at = new Date().toISOString();
+  ids.forEach(function (id) {
+    state.people.forEach(function (p) {
+      (p.leaves || []).forEach(function (l) {
+        if (l.id === id) { l.ackAt = at; l.ackBy = byId || ''; }
+      });
+    });
+    leaveAlarm.dismissed[id] = 1;
+  });
+  return apiWrite({
+    m: 'PATCH', path: '/rest/v1/leaves?id=in.(' + ids.join(',') + ')',
+    prefer: 'return=minimal', label: '휴무 확인',
+    body: { ack_at: at, ack_by: byId || null }
+  });
 }
 function insertReport(rep) {
   return apiWrite({

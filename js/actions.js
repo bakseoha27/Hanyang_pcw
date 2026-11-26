@@ -16,6 +16,11 @@ function closeSheet() {
   $('#sheetWrap').classList.remove('open');
   document.body.style.overflow = '';
   if (state.ui) { state.ui.schedSheet = false; state.ui.schedBackToCal = false; }
+  /* 휴무 알람을 × · 배경으로 닫으면 이번 세션에서는 잠시 숨긴다 (새 보고가 또 올라오면 다시 뜨다) */
+  if (leaveAlarmOpenIds) {
+    leaveAlarmOpenIds.forEach(function (id) { leaveAlarm.dismissed[id] = 1; });
+    leaveAlarmOpenIds = null;
+  }
 }
 
 /* 로그인 화면 관리자 암호 입력칸 */
@@ -120,6 +125,70 @@ function openNewTeam() {
     '<button class="btn btn-primary" data-act="createTeam">만들기</button>');
 }
 
+/* ---------------- 이전 날짜 공수 추가 (기술인 · 미래 불가) ---------------- */
+function pastAttHTML(d) {
+  d = d || todayKeyAdd(-1);
+  return '<div class="hint" style="margin:0 0 8px">오늘 이전 날짜의 출퇴근 시각을 직접 넣어 공수를 추가합니다. <b>미래 날짜는 넣을 수 없습니다.</b><br>공수 = 점심(11:00~13:00) 제외 근무시간 기준 · 8시간 이하 시간×0.125 · 8시간 초과 1.0+(초과×0.25)</div>' +
+    '<label class="field"><span>날짜</span><input type="date" id="patt_date" max="' + todayKey() + '" value="' + d + '"></label>' +
+    '<div class="grid2">' +
+    '<label class="field"><span>출근 시각</span><input type="time" id="patt_in" value="07:00"></label>' +
+    '<label class="field"><span>퇴근 시각</span><input type="time" id="patt_out" value="17:00"></label>' +
+    '</div>' +
+    '<div class="att-prev" id="pattPrev"></div>';
+}
+
+function pattPreview() {
+  var box = document.getElementById('pattPrev');
+  if (!box) { return; }
+  var p = me();
+  var d = $('#patt_date') ? $('#patt_date').value : '';
+  var iv = $('#patt_in') ? $('#patt_in').value : '';
+  var ov = $('#patt_out') ? $('#patt_out').value : '';
+  var parts = [];
+  if (d && iv && ov) {
+    parts.push('이 날 계산 공수 <b>' + fmtGs(calcGongsu(iv, ov)) + '공수</b>' +
+      (iv !== '07:00' || ov !== '17:00' ? ' <span class="muted">(' + iv + ' ~ ' + ov + ')</span>' : ''));
+  }
+  if (p && d) {
+    var a = (p.attendance || {})[d];
+    if (a && a.in) {
+      parts.push('이 날짜에 이미 기록이 있습니다 (' + a.in + (a.out ? ' ~ ' + a.out : '') + ') · 저장하면 덮어씁니다');
+    }
+    if (leaveOn(p, d)) { parts.push('이 날짜는 휴무 신청이 있어 공수가 0으로 계산됩니다'); }
+  }
+  if (d && d > todayKey()) { parts.push('미래 날짜는 저장할 수 없습니다'); }
+  box.innerHTML = parts.join('<br>');
+}
+
+function openPastAtt() {
+  openSheet('이전 날짜 공수 추가', pastAttHTML(todayKeyAdd(-1)),
+    '<button class="btn btn-ghost" data-act="closeSheet">취소</button>' +
+    '<button class="btn btn-primary" data-act="pastAttSave">공수 저장</button>');
+  setTimeout(pattPreview, 30);
+}
+
+function pastAttSave() {
+  var p = me();
+  if (!p) { return; }
+  var d = $('#patt_date') ? $('#patt_date').value : '';
+  var iv = $('#patt_in') ? $('#patt_in').value : '';
+  var ov = $('#patt_out') ? $('#patt_out').value : '';
+  if (!d) { toast('날짜를 선택해 주세요.'); return; }
+  if (d > todayKey()) { toast('미래 날짜는 공수를 넣을 수 없습니다.<br>오늘까지만 입력할 수 있어요.'); return; }
+  if (!iv) { toast('출근 시각을 입력해 주세요.'); return; }
+  if (ov && ov <= iv) { toast('퇴근 시각이 출근 시각보다 빠릅니다.<br>시간을 다시 확인해 주세요.'); return; }
+  var existed = !!(p.attendance[d] && p.attendance[d].in);
+  p.attendance[d] = { in: iv, out: ov || '', inEdited: true, outEdited: !!ov, };
+  saveAttendance(p, d, existed ? '이전 공수 수정' : '이전 공수 추가');
+  var g = gongsuOf(p.attendance[d]);
+  var lv = leaveOn(p, d);
+  closeSheet();
+  render();
+  toast('<b>' + longDate(d) + '</b> ' + iv + ' ~ ' + (ov || '미등록') + ' · <b>' + fmtGs(g) + '공수</b> ' +
+    (existed ? '저장했습니다(기존 기록 수정)' : '추가했습니다') +
+    (lv ? '<br>이 날짜는 휴무 신청이 있어 공수는 0으로 계산됩니다' : ''));
+}
+
 /* ---------------- 명단 일괄 등록 ---------------- */
 function openBulk() {
   var body = '<div class="hint" style="margin:0 0 8px">엑셀에서 복사해 붙여넣으세요. 한 줄에 <b>이름 · 직종 · 생년월일 · 단가 · 조 · 전화번호(선택)</b> 순서입니다. (탭 · 쉼표 · 공백 모두 인식)</div>' +
@@ -132,6 +201,87 @@ function openBulk() {
 }
 
 function normTeam(s) { return String(s || '').replace(/\s+/g, ''); }
+
+/* ---------------- 인원 직접 등록 (관리자) ---------------- */
+function openPersonAdd() {
+  if (!canAdmin()) { toast('관리자만 인원을 등록할 수 있습니다.'); return; }
+  var jobOpts = ['관리자'].concat(JOB_LIST).map(function (j) {
+    return '<option value="' + j + '"' + (j === '관리자' ? ' selected' : '') + '>' + j + '</option>';
+  }).join('');
+  var body =
+    '<div class="hint" style="margin:0 0 8px">이름·생년월일·전화번호가 같으면 그대로 로그인됩니다. 생년월일은 <b>851029</b> 처럼 6자리 또는 <b>1985-10-29</b> 처럼 8자리로 적어 주세요.</div>' +
+    '<label class="field"><span>이름 <b class="must">*</b></span><input id="pa_name" placeholder="예) 김근하" autocomplete="name"></label>' +
+    '<label class="field"><span>생년월일 <b class="must">*</b></span><input id="pa_birth" inputmode="numeric" placeholder="예) 851029 또는 1985-10-29" autocomplete="bday"></label>' +
+    '<label class="field"><span>전화번호 <b class="must">*</b></span><input id="pa_phone" type="tel" inputmode="numeric" placeholder="010-0000-0000" autocomplete="tel"></label>' +
+    '<label class="field"><span>직종</span><select id="pa_job">' + jobOpts + '</select></label>' +
+    '<label class="field"><span>소속 팀/조</span><select id="pa_team">' + teamOptionsHTML(null) + '</select></label>' +
+    '<label class="chk" style="margin-top:12px"><input type="checkbox" id="pa_admin" checked> <b>관리자 권한 부여</b> (is_admin)</label>' +
+    '<div class="banner">체크하면 이 분이 로그인 화면에서 <b>[관리자]</b>를 고르고 관리자 암호까지 넣어 바로 관리자 화면으로 들어올 수 있습니다. 체크를 풀면 일반 기술인이 됩니다.</div>';
+  openSheet('인원 직접 등록', body,
+    '<button class="btn btn-ghost" data-act="closeSheet">취소</button>' +
+    '<button class="btn btn-primary" data-act="personAddSubmit">등록</button>');
+}
+
+function personAddSubmit() {
+  if (!canAdmin()) { toast('관리자만 인원을 등록할 수 있습니다.'); return; }
+  var name = ($('#pa_name') ? $('#pa_name').value : '').trim();
+  var birthRaw = ($('#pa_birth') ? $('#pa_birth').value : '').trim();
+  var phoneRaw = ($('#pa_phone') ? $('#pa_phone').value : '').trim();
+  var job = $('#pa_job') ? $('#pa_job').value : '관리자';
+  var tid = $('#pa_team') ? ($('#pa_team').value || null) : null;
+  var isAdmin = !!(($('#pa_admin') && $('#pa_admin').checked));
+  if (!name) { toast('이름을 입력해 주세요.'); return; }
+  var birth = birthFromDigits(birthRaw);
+  if (!birth) { toast('생년월일을 정확히 입력해 주세요.<br>예) 851029 또는 1985-10-29'); return; }
+  var pd = phoneDigits(phoneRaw);
+  if (pd.length < 9 || pd.length > 11) { toast('전화번호를 정확히 입력해 주세요.<br>예) 010-2126-5524'); return; }
+
+  var exact = state.people.filter(function (p) {
+    return p.name === name && p.birth === birth && phoneDigits(p.phone) === pd;
+  })[0];
+  if (exact) {
+    if (exact.status === 'resigned') {
+      toast('퇴사 처리된 인원입니다.<br>인원 상세에서 복직 처리한 뒤 이용해 주세요.');
+      return;
+    }
+    var changed = [];
+    if (isAdmin && !exact.admin) {
+      exact.admin = true;
+      patchWorker(exact.id, { is_admin: true }, '관리자 권한 부여');
+      changed.push('관리자 권한 부여');
+    }
+    if (tid && exact.teamId !== tid) {
+      exact.teamId = tid;
+      patchWorker(exact.id, { team_id: tid }, '조 배정');
+      changed.push(teamLabel(tid) + ' 배정');
+    }
+    closeSheet();
+    render();
+    toast('이미 등록된 인원입니다 · <b>' + esc(exact.name) + '</b>' +
+      (changed.length ? '<br>' + esc(changed.join(' · ')) + ' 처리했습니다(중복 등록 안 함)' : '<br>중복 등록하지 않았습니다.'));
+    return;
+  }
+
+  var byPhone = state.people.filter(function (p) { return phoneDigits(p.phone) === pd; })[0];
+  if (byPhone) {
+    toast('이 전화번호로 이미 등록된 인원이 있습니다: <b>' + esc(byPhone.name) + '</b><br>이름·생년월일을 확인해 주세요(중복 등록 안 함).');
+    return;
+  }
+
+  var np = {
+    id: uuid(), name: name, job: job || '관리자', birth: birth, phone: phonePretty(phoneRaw),
+    price: 0, teamId: tid, role: 'worker', admin: isAdmin, status: 'active', resign: null,
+    attendance: {}, leaves: [], certs: defaultCerts(),
+    injury: { has: false, date: '', note: '' }, memo: '',
+    privacyAgreedAt: '', privacyVersion: '', sensitiveAgreedAt: ''
+  };
+  state.people.push(np);
+  insertWorker(np, '인원 직접 등록');
+  closeSheet();
+  render();
+  toast('<b>' + esc(np.name) + '</b> 님을 등록했습니다' + (isAdmin ? ' · 관리자 권한' : '') +
+    '<br>' + esc(teamLabel(np.teamId)) + ' · 로그인은 이름·생년월일·전화번호로 바로 됩니다');
+}
 
 function parseRoster(text) {
   var lines = String(text).split(/\r?\n/).map(function (l) { return l.trim(); }).filter(function (l) { return l.length; });
@@ -399,6 +549,26 @@ var ACTIONS = {
   },
   openPrivacy: function (el) {
     openPrivacySheet(el ? el.getAttribute('data-from') : '');
+  },
+  leaveAlarmAck: function () {
+    var p = me();
+    if (!p || !p.admin) { toast('관리자만 확인할 수 있습니다.'); return; }
+    var list = unackedLeaves();
+    if (!list.length) { leaveAlarmOpenIds = null; closeSheet(); render(); return; }
+    var ids = list.map(function (l) { return l.id; });
+    ackLeaves(ids, p.id);
+    leaveAlarmOpenIds = null;
+    closeSheet();
+    render();
+    toast('<b>' + ids.length + '건</b> 휴무 보고를 <b>확인 완료</b>로 표시했습니다');
+  },
+  leaveAlarmList: function () {
+    closeSheet();
+    state.role = 'admin';
+    state.ui.adminTab = 'dash';
+    state.ui.adminDashView = 'today';
+    render();
+    toast('전체 현황의 <b>오늘 휴무</b> 카드에서 확인할 수 있어요');
   },
   openSensitive: function (el) {
     openSensitiveSheet(el ? el.getAttribute('data-from') : '');
@@ -842,6 +1012,10 @@ var ACTIONS = {
     toast('<b>' + esc(p.name) + '</b> 님을 ' + esc(t.name) + ' 반장으로 지정했어요');
   },
   bulkOpen: function () { openBulk(); },
+  pastAttOpen: function () { openPastAtt(); },
+  pastAttSave: function () { pastAttSave(); },
+  personAdd: function () { openPersonAdd(); },
+  personAddSubmit: function () { personAddSubmit(); },
   bulkClear: function () {
     var ta = $('#bulkText');
     if (ta) { ta.value = ''; }
@@ -1215,6 +1389,9 @@ function onChange(e) {
   }
   if (el.id === 'li_job') {
     toggleLoginPass(el.value === LOGIN_ADMIN_LABEL);
+  }
+  if (el.id === 'patt_date' || el.id === 'patt_in' || el.id === 'patt_out') {
+    pattPreview();
   }
   if (el.id === 'resignReason') {
     var wrap = $('#resignEtcWrap');

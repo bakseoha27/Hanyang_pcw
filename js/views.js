@@ -33,6 +33,8 @@ function render() {
   renderTabs();
   renderSync();
   resetScrollOnce(state.role + ':' + state.ui[key]);
+  /* 관리자 : 아직 확인하지 않은 휴무 보고가 있으면 알람 시트를 띄운다 (진입 · 20초 자동 새로고침 공통) */
+  if (state.role === 'admin' && canAdmin()) { setTimeout(maybeShowLeaveAlarm, 120); }
 }
 
 var lastViewKey = null;
@@ -106,7 +108,10 @@ function renderTabs() {
    로그인
    ========================================================= */
 function jobOptionsHTML(sel) {
-  return JOB_LIST.map(function (j) {
+  var list = JOB_LIST.slice();
+  /* 목록에 없는 직종(예: '관리자')이 이미 저장돼 있으면 그 값을 맨 위에 그대로 보여 준다 */
+  if (sel && list.indexOf(sel) < 0) { list = [sel].concat(list); }
+  return list.map(function (j) {
     return '<option value="' + j + '"' + (sel === j ? ' selected' : '') + '>' + j + '</option>';
   }).join('');
 }
@@ -248,6 +253,70 @@ function openSensitiveSheet(from) {
     ? '<button class="btn btn-line" data-act="openSettings">내 정보로</button>' : '') +
     '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>';
   openSheet('민감정보 수집·이용 동의서', sensitiveDocHTML(), footer);
+}
+
+/* =========================================================
+   🔔 관리자 휴무 보고 알람
+   ========================================================= */
+function mdLabel(k) {
+  var p = String(k || '').split('-');
+  if (p.length < 3) { return String(k || ''); }
+  return parseInt(p[1], 10) + '월 ' + parseInt(p[2], 10) + '일';
+}
+
+function leaveAlarmHTML(list) {
+  var rows = list.map(function (l) {
+    return '<div class="la-row">' +
+      '<span class="la-av">' + esc(String(l.name || '?').slice(0, 1)) + '</span>' +
+      '<span class="la-main">' +
+      '<span class="la-name">' + esc(l.name) + '</span>' +
+      '<span class="la-sub">' + esc(mdLabel(l.date)) + ' · ' + esc(l.teamName || '미배정') + '</span>' +
+      '</span>' +
+      '<span class="la-right">' +
+      '<span class="la-reason">' + esc(l.reason || '사유 없음') + '</span>' +
+      '<span class="la-to">보고 ' + esc(l.reportTo || '-') + '</span>' +
+      '</span></div>';
+  }).join('');
+  return '<div class="la-note">확인하면 이 알람은 다시 뜨지 않습니다.</div>' +
+    rows;
+}
+
+function openLeaveAlarmSheet(list) {
+  list = list || unackedLeaves();
+  if (!list.length) { return; }
+  leaveAlarmOpenIds = list.map(function (l) { return l.id; });
+  openSheet('🔔 새 휴무 보고가 올라왔어요 (' + list.length + '건)', leaveAlarmHTML(list),
+    '<button class="btn btn-line" data-act="leaveAlarmList">휴무 목록으로</button>' +
+    '<button class="btn btn-primary" data-act="leaveAlarmAck">확인 완료</button>');
+}
+
+function osNotifyLeave(n, first) {
+  try {
+    if (!window.Notification || Notification.permission !== 'granted') { return; }
+    var title = '🔔 새 휴무 보고 ' + n + '건';
+    var body = first ? (first.name + ' · ' + mdLabel(first.date) + ' · ' + (first.reason || '사유 없음')) : '관리자 화면에서 확인해 주세요.';
+    var opt = { body: body, tag: 'pcw-leave-' + (first ? first.id : n), renotify: false };
+    try { new Notification(title, opt); } catch (e) { /* 아이콘 없는 환경 */ }
+  } catch (e) { /* 알림 미지원 */ }
+}
+
+/* 관리자 화면에 그려질 때마다 호출 — 새 행이 있으면 시트 · OS 알림 */
+function maybeShowLeaveAlarm() {
+  try {
+    if (!state.ready || !state.auth || state.role !== 'admin' || !canAdmin()) { return; }
+    var wrap = document.getElementById('sheetWrap');
+    if (wrap && wrap.classList.contains('open')) { return; }   /* 다른 시트를 보는 중이면 양보 */
+    var list = unackedLeaves();
+    if (!list.length) { return; }
+    var fresh = list.filter(function (l) { return !leaveAlarm.dismissed[l.id]; });
+    if (!fresh.length) { return; }
+    openLeaveAlarmSheet(list);
+    var newOnes = list.filter(function (l) { return !leaveAlarm.notified[l.id]; });
+    if (newOnes.length) {
+      newOnes.forEach(function (l) { leaveAlarm.notified[l.id] = 1; });
+      osNotifyLeave(newOnes.length, newOnes[0]);
+    }
+  } catch (e) { /* 알람 실패가 화면을 막지 않게 */ }
 }
 
 function readLoginForm() {
@@ -512,6 +581,7 @@ function workerHome(p) {
       '<button class="btn btn-out" data-act="clockOut"' + (a && a.in && !a.out ? '' : ' disabled') + '>퇴근하기</button>' +
       '</div>' +
       (a && a.in ? '<button class="btn btn-line sm block time-edit-btn" data-act="timeEditOpen">🕘 시간 수정' + (a.out ? ' · 출근 / 퇴근' : ' · 출근만 기록됨') + '</button>' : '') +
+      '<button class="btn btn-line sm block" style="margin-top:8px" data-act="pastAttOpen">＋ 이전 날짜 공수 추가</button>' +
       (a && a.in && a.out ? '<div class="done-line">오늘 근무 완료 · ' + a.in + ' ~ ' + a.out + ' · ' + fmtGs(gongsuOf(a)) + '공수</div>' : '') +
       (a && a.in && !a.out ? '<div class="small-note">퇴근할 때 <b>퇴근하기</b>를 눌러 주세요. 누른 시각이 관리자 화면에 바로 표시됩니다.</div>' : '');
   }
@@ -963,7 +1033,7 @@ function adminGongsu() {
   var totals = {};
   var grand = 0;
   mem.forEach(function (m) { totals[m.id] = gongsuMonth(m, mk); grand += totals[m.id]; });
-  grand = Math.round(grand * 10) / 10;
+  grand = Math.round(grand * 1000) / 1000;
 
   var unassigned = activePeople().filter(function (p) { return !p.teamId || !teamById(p.teamId); });
   var filters = [['all', '전체']].concat(state.teams.map(function (t) { return [t.id, t.name]; }));
@@ -984,24 +1054,24 @@ function adminGongsu() {
       var m = teamMembers(t.id);
       var sum = 0;
       m.forEach(function (q) { sum += gongsuMonth(q, mk); });
-      sum = Math.round(sum * 10) / 10;
+      sum = Math.round(sum * 1000) / 1000;
       return { name: t.name, n: m.length, gs: sum };
     });
     if (unassigned.length) {
       var nsum = 0;
       unassigned.forEach(function (q) { nsum += gongsuMonth(q, mk); });
-      rows.push({ name: '미배정', n: unassigned.length, gs: Math.round(nsum * 10) / 10 });
+      rows.push({ name: '미배정', n: unassigned.length, gs: Math.round(nsum * 1000) / 1000 });
     }
     teamSummary = '<div class="gs-team">' +
       '<div class="gs-team-row head"><span>조</span><span class="tc">인원</span><span class="tg">월 공수</span><span class="ta">1인 평균</span></div>' +
       rows.map(function (r) {
         return '<div class="gs-team-row"><span>' + esc(r.name) + '</span><span class="tc">' + r.n + '명</span>' +
           '<span class="tg">' + fmtGs(r.gs) + '</span>' +
-          '<span class="ta">' + (r.n ? fmtGs(Math.round((r.gs / r.n) * 10) / 10) : '-') + '</span></div>';
+          '<span class="ta">' + (r.n ? fmtGs(Math.round((r.gs / r.n) * 1000) / 1000) : '-') + '</span></div>';
       }).join('') +
       '<div class="gs-team-row total"><span>전체</span><span class="tc">' + mem.length + '명</span>' +
       '<span class="tg">' + fmtGs(grand) + '공수</span>' +
-      '<span class="ta">' + (mem.length ? fmtGs(Math.round((grand / mem.length) * 10) / 10) : '-') + '</span></div>' +
+      '<span class="ta">' + (mem.length ? fmtGs(Math.round((grand / mem.length) * 1000) / 1000) : '-') + '</span></div>' +
       '</div>';
   }
 
@@ -1017,7 +1087,7 @@ function adminGongsu() {
       return '<td class="gs-c' + (v ? ' on v' + String(v).replace('.', '') : '') + '" data-v="' + v + '">' + (v ? fmtGs(v) : '·') + '</td>';
     }).join('');
     return '<tr><td class="gs-name">' + shortDate(k) + '<em>' + wd(k) + '</em></td>' + tds +
-      '<td class="gs-day">' + (dsum ? fmtGs(Math.round(dsum * 10) / 10) : '·') + '</td></tr>';
+      '<td class="gs-day">' + (dsum ? fmtGs(Math.round(dsum * 1000) / 1000) : '·') + '</td></tr>';
   }).join('');
 
   var totalRow = '<tr class="gs-sum"><td class="gs-name">월 합계</td>' +
@@ -1049,7 +1119,7 @@ function adminGongsu() {
     '<div class="muted">' + monthLabel(mk) + ' · ' + mem.length + '명</div></div>' +
     '<span class="badge b-work">총 ' + fmtGs(grand) + '공수</span></div>' +
     nav + filterHtml + teamSummary + table +
-    '<div class="hint">공수 기준 · 07:00 출근 / 점심 2시간 포함 · <b>~17:00 = 1공수</b> · <b>~19:00 = 1.5공수</b> · <b>~21:00 = 2공수</b> · 휴무·미출근 0<br>이름을 누르면 그 사람의 월 근태·공수 상세가 열립니다.</div>' +
+    '<div class="hint">공수 기준 · 점심 11:00~13:00 제외 · 출근은 분이 있으면 다음 정각부터 · <b>8시간 이하 = 시간 × 0.125</b> · <b>8시간 초과 = 1.0 + (초과 × 0.25)</b> · 휴무·미출근 0<br>이름을 누르면 그 사람의 월 근태·공수 상세가 열립니다.</div>' +
     '</div>' + sumCard +
     '<div class="foot-note">날짜별 공수는 출퇴근 시각으로 자동 계산됩니다 · 시간을 수정하면 바로 다시 계산됩니다</div>';
 }
@@ -1084,6 +1154,54 @@ function tbmAlertHTML() {
     }).join('') +
     '</div>' +
     '<div class="hint">이름을 누르면 인원 상세에서 <b>TBM 리더 자격 만료일</b>을 바로 고칠 수 있어요.</div>' +
+    '</div>';
+}
+
+/* ---------- 📋 오늘 인원 현황 요약 카드 ---------- */
+function adminHeadcountCard() {
+  var tk = todayKey();
+  var ps = activePeople();
+  var res = resignedPeople().slice().sort(function (a, b) {
+    var da = (a.resign && a.resign.date) || '';
+    var db = (b.resign && b.resign.date) || '';
+    return da === db ? a.name.localeCompare(b.name, 'ko') : (da < db ? 1 : -1);
+  });
+  var offs = [];
+  ps.forEach(function (p) {
+    (p.leaves || []).forEach(function (l) {
+      if (l.date === tk) { offs.push({ name: p.name, reason: l.reason || '' }); }
+    });
+  });
+  offs.sort(function (a, b) { return a.name.localeCompare(b.name, 'ko'); });
+
+  var offList = offs.length
+    ? offs.map(function (o) {
+      return '<div class="hc-row"><span class="hc-name">' + esc(o.name) + '</span>' +
+        '<span class="hc-sub">' + (o.reason ? '(' + esc(o.reason) + ')' : '(사유 미입력)') + '</span></div>';
+    }).join('')
+    : '<div class="hc-none">없음</div>';
+
+  var resList = res.length
+    ? res.map(function (p) {
+      var r = p.resign || {};
+      return '<div class="hc-row"><span class="hc-name">' + esc(p.name) + '</span>' +
+        '<span class="hc-sub">(' + (r.date ? String(r.date).replace(/-/g, '.') + ' 퇴사' : '퇴사') +
+        (r.reason ? ' · ' + esc(r.reason) : '') + ')</span></div>';
+    }).join('')
+    : '<div class="hc-none">없음</div>';
+
+  return '<div class="card hc-card">' +
+    '<div class="card-head"><div class="sec-t">📋 ' + mdLabel(tk) + ' 인원 현황</div>' +
+    '<span class="muted">퇴사자 제외 총원</span></div>' +
+    '<div class="hc-grid">' +
+    '<div class="hc-item"><div class="hc-num">' + ps.length + '</div><div class="hc-lab">총원</div></div>' +
+    '<div class="hc-item"><div class="hc-num c-off">' + offs.length + '</div><div class="hc-lab">휴무 인원</div></div>' +
+    '<div class="hc-item"><div class="hc-num c-res">' + res.length + '</div><div class="hc-lab">퇴사자</div></div>' +
+    '</div>' +
+    '<div class="hc-sect"><div class="hc-t">휴무 <b>' + offs.length + '명</b>' + (offs.length ? '' : ' <span class="hc-none-inline">(없음)</span>') + '</div>' +
+    '<div class="hc-list">' + offList + '</div></div>' +
+    '<div class="hc-sect"><div class="hc-t">퇴사자 <b>' + res.length + '명</b>' + (res.length ? '' : ' <span class="hc-none-inline">(없음)</span>') + '</div>' +
+    '<div class="hc-list">' + resList + '</div></div>' +
     '</div>';
 }
 
@@ -1179,6 +1297,7 @@ function adminTodayBody() {
   var peopleCard = '<div class="card">' +
     '<div class="card-head"><div class="sec-t">인원별 출퇴근</div><span class="muted">이름 누르면 상세</span></div>' +
     filterHtml +
+    '<div class="btn-row"><button class="btn btn-dark sm" data-act="personAdd">+ 인원 직접 등록</button></div>' +
     (rows || '<div class="empty">해당 인원이 없습니다.<br>팀·조 탭에서 <b>명단 일괄 등록</b>으로 인원을 넣어 주세요.</div>') +
     '<button class="btn btn-line sm block" style="margin-top:12px" data-act="toggleArchive">퇴사자 보관함 ' + (state.ui.showArchive ? '닫기' : '보기') + ' (' + rp.length + '명)</button>' +
     (state.ui.showArchive ?
@@ -1212,7 +1331,7 @@ function adminTodayBody() {
     '<div class="hint">당일 휴무 취소는 기술인이 직접 할 수 없어 관리자에게 연락해야 합니다.</div>' +
     '</div>' : '';
 
-  return tbmAlertHTML() + statCard + leaveCard + avgCard + pollCard + peopleCard +
+  return adminHeadcountCard() + tbmAlertHTML() + statCard + leaveCard + avgCard + pollCard + peopleCard +
     '<div class="foot-note">Supabase 실시간 저장 · 20초마다 자동 새로고침</div>';
 }
 
@@ -1243,8 +1362,9 @@ function adminTeams() {
     '<span class="badge ' + (un.length ? 'b-warn' : 'b-ok') + '">' + (un.length ? '미배정 있음' : '전원 배정') + '</span></div>' +
     '<div class="btn-row">' +
     '<button class="btn btn-dark sm" data-act="newTeam">+ 새 팀/조 만들기</button>' +
-    '<button class="btn btn-line sm" data-act="bulkOpen">명단/엑셀 일괄 등록</button>' +
+    '<button class="btn btn-dark sm" data-act="personAdd">+ 인원 직접 등록</button>' +
     '</div>' +
+    '<button class="btn btn-line sm block" style="margin-top:8px" data-act="bulkOpen">명단/엑셀 일괄 등록</button>' +
     '<div class="hint">엑셀 명단을 붙여넣으면 조와 인원이 한 번에 만들어지고 평균단가도 다시 계산됩니다.</div>' +
     '</div>';
 
