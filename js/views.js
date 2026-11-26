@@ -141,6 +141,8 @@ function loginView() {
     '<label class="field"><span>생년월일</span><input id="li_birth" type="text" inputmode="numeric" placeholder="예) 961228 또는 19961228" autocomplete="bday"></label>' +
     '<label class="field"><span>전화번호</span><input id="li_phone" type="tel" inputmode="numeric" placeholder="010-0000-0000" autocomplete="tel"></label>' +
     '<label class="field"><span>직종</span><select id="li_job">' + loginJobOptionsHTML('배관공') + '</select></label>' +
+    '<label class="field hide" id="li_pass_wrap"><span>🔐 관리자 암호</span>' +
+    '<input id="li_pass" type="password" autocomplete="current-password" placeholder="관리자 암호를 입력하세요"></label>' +
     '<div class="privacy-box">' +
     '<label class="privacy-agree"><input type="checkbox" id="li_privacy"' + (agreed ? ' checked' : '') + '>' +
     '<span class="privacy-txt"><b>[필수]</b> 개인정보 수집·이용에 동의합니다</span></label>' +
@@ -248,6 +250,21 @@ function myLeaveRowsHTML(p) {
 
 function openSettings(p) {
   if (!p) { return; }
+  var passSect = '';
+  if (p.admin) {
+    passSect =
+      '<div class="sect">' +
+      '<div class="sect-t">🔐 관리자 암호 변경</div>' +
+      '<div class="muted">관리자 화면과 관리자 계정 로그인에 쓰는 암호입니다.</div>' +
+      '<label class="field"><span>현재 암호</span><input id="pw_old" type="password" autocomplete="current-password" placeholder="지금 쓰는 암호"></label>' +
+      '<div class="grid2">' +
+      '<label class="field"><span>새 암호</span><input id="pw_new" type="password" autocomplete="new-password" placeholder="6자 이상"></label>' +
+      '<label class="field"><span>새 암호 확인</span><input id="pw_new2" type="password" autocomplete="new-password" placeholder="한 번 더"></label>' +
+      '</div>' +
+      '<button class="btn btn-line sm block" style="margin-top:9px" data-act="changeAdminPass">암호 변경</button>' +
+      '<div class="hint">현재 암호가 맞아야 새 암호로 바뀝니다. 잊어버리면 앱에서 바꿀 수 없으니 꼭 기억해 두세요.</div>' +
+      '</div>';
+  }
   var body =
     '<div class="sheet-head">' +
     '<span class="av lg">' + esc(p.name.slice(0, 1)) + '</span>' +
@@ -288,6 +305,8 @@ function openSettings(p) {
     '<button class="btn btn-line blue sm block" style="margin-top:9px" data-act="openPrivacy" data-from="settings">개인정보 수집·이용 동의서 보기</button>' +
     '<div class="hint">로그인할 때 동의 일시가 자동으로 기록됩니다.</div>' +
     '</div>' +
+
+    passSect +
 
     '<div class="sect">' +
     '<div class="sect-t">계정</div>' +

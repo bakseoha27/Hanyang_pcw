@@ -107,6 +107,21 @@ async function apiWrite(spec) {
 
 async function apiGet(path) { return rawFetch({ m: 'GET', path: path }); }
 
+/* ---------- 관리자 암호 (DB 함수로만 검증 · 앱에는 평문을 두지 않음) ---------- */
+async function verifyAdminPasscode(code) {
+  var r = await rawFetch({ m: 'POST', path: '/rest/v1/rpc/verify_admin_passcode', body: { input_code: String(code || '') } });
+  if (!r.ok) { return { ok: false, error: r.error }; }
+  return { ok: true, pass: r.data === true };
+}
+async function updateAdminPasscode(oldCode, newCode) {
+  var r = await rawFetch({
+    m: 'POST', path: '/rest/v1/rpc/update_admin_passcode',
+    body: { old_code: String(oldCode || ''), new_code: String(newCode || '') }
+  });
+  if (!r.ok) { return { ok: false, error: r.error }; }
+  return { ok: true, pass: r.data === true };
+}
+
 /* ---------- Storage ---------- */
 function storagePublicUrl(path) {
   return DB.url + '/storage/v1/object/public/' + DB.bucket + '/' + path.split('/').map(encodeURIComponent).join('/');

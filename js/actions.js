@@ -18,6 +18,23 @@ function closeSheet() {
   if (state.ui) { state.ui.schedSheet = false; state.ui.schedBackToCal = false; }
 }
 
+/* 로그인 화면 관리자 암호 입력칸 */
+function loginPassValue() {
+  var el = $('#li_pass');
+  return el && !$('#li_pass_wrap').classList.contains('hide') ? el.value.trim() : '';
+}
+function toggleLoginPass(show) {
+  var wrap = $('#li_pass_wrap');
+  if (!wrap) { return; }
+  if (show) { wrap.classList.remove('hide'); } else { wrap.classList.add('hide'); }
+}
+function showLoginPass(msg) {
+  toggleLoginPass(true);
+  if (msg) { toast(msg); }
+  var el = $('#li_pass');
+  if (el) { try { el.focus(); } catch (e) { /* noop */ } }
+}
+
 function confirmSheet(title, msg, okLabel, action, extra, danger) {
   openSheet(title, '<p class="confirm-msg">' + msg + '</p>',
     '<button class="btn btn-ghost" data-act="closeSheet">취소</button>' +
@@ -312,13 +329,18 @@ var ACTIONS = {
       return p.name === f.name && p.birth === f.birth && phoneDigits(p.phone) === f.pd;
     })[0];
 
-    /* 관리자 선택 : DB에서 is_admin=true 로 등록된 사람만 통과 · 자동등록 없음 */
+    /* 관리자 선택 : DB에서 is_admin=true 로 등록된 사람만 통과 · 자동등록 없음 · 암호 필수 */
     if (f.job === LOGIN_ADMIN_LABEL) {
       if (!found || !found.admin) {
         toast('관리자 권한이 등록된 인원만 선택할 수 있습니다.<br>먼저 관리자에게 권한 등록을 요청해 주세요.');
         return;
       }
       if (found.status === 'resigned') { toast('퇴사 처리된 인원입니다.<br>관리자에게 문의해 주세요.'); return; }
+      var code = loginPassValue();
+      if (!code) { showLoginPass('관리자 암호를 입력해 주세요.'); return; }
+      var v = await verifyAdminPasscode(code);
+      if (!v.ok) { toast('관리자 암호를 확인하지 못했어요 · 인터넷 연결을 확인해 주세요.'); return; }
+      if (!v.pass) { toast('관리자 암호가 올바르지 않습니다.'); return; }
       state.auth = { personId: found.id };
       markPrivacyAgree(found);
       sessionSave(found, 'admin');
@@ -331,6 +353,14 @@ var ACTIONS = {
 
     if (found) {
       if (found.status === 'resigned') { toast('퇴사 처리된 인원입니다.<br>관리자에게 문의해 주세요.'); return; }
+      /* 관리자 권한이 있는 계정은 일반 직종을 골라도 암호를 확인한다 */
+      if (found.admin) {
+        var code2 = loginPassValue();
+        if (!code2) { showLoginPass('관리자 계정은 관리자 암호를 입력해야 로그인할 수 있습니다.'); return; }
+        var v2 = await verifyAdminPasscode(code2);
+        if (!v2.ok) { toast('관리자 암호를 확인하지 못했어요 · 인터넷 연결을 확인해 주세요.'); return; }
+        if (!v2.pass) { toast('관리자 암호가 올바르지 않습니다.'); return; }
+      }
       state.auth = { personId: found.id };
       markPrivacyAgree(found);
       sessionSave(found, 'worker');
@@ -363,6 +393,23 @@ var ACTIONS = {
   },
   openPrivacy: function (el) {
     openPrivacySheet(el ? el.getAttribute('data-from') : '');
+  },
+  changeAdminPass: async function () {
+    var p = me();
+    if (!p || !p.admin) { toast('관리자만 암호를 바꿀 수 있습니다.'); return; }
+    var o = $('#pw_old') ? $('#pw_old').value : '';
+    var n = $('#pw_new') ? $('#pw_new').value : '';
+    var n2 = $('#pw_new2') ? $('#pw_new2').value : '';
+    if (!o) { toast('현재 암호를 입력해 주세요.'); return; }
+    if (!n || n.length < 6) { toast('새 암호는 6자 이상으로 정해 주세요.'); return; }
+    if (n !== n2) { toast('새 암호 확인이 일치하지 않습니다.'); return; }
+    var r = await updateAdminPasscode(o, n);
+    if (!r.ok) { toast('암호를 바꾸지 못했어요 · ' + esc(r.error || '인터넷 연결을 확인해 주세요.')); return; }
+    if (!r.pass) { toast('현재 암호가 올바르지 않습니다.'); return; }
+    if ($('#pw_old')) { $('#pw_old').value = ''; }
+    if ($('#pw_new')) { $('#pw_new').value = ''; }
+    if ($('#pw_new2')) { $('#pw_new2').value = ''; }
+    toast('관리자 암호를 바꿨어요<br>다음 로그인부터 새 암호를 쓰세요');
   },
   openSettings: function (el) {
     var p = (el && el.getAttribute('data-id')) ? personById(el.getAttribute('data-id')) : me();
@@ -1153,6 +1200,9 @@ function onChange(e) {
   var el = e.target;
   if (el.id === 'li_privacy') {
     state.ui.privacyChecked = !!el.checked;
+  }
+  if (el.id === 'li_job') {
+    toggleLoginPass(el.value === LOGIN_ADMIN_LABEL);
   }
   if (el.id === 'resignReason') {
     var wrap = $('#resignEtcWrap');
