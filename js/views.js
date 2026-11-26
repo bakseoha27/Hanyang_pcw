@@ -1175,20 +1175,20 @@ function adminHeadcountCard() {
   offs.sort(function (a, b) { return a.name.localeCompare(b.name, 'ko'); });
 
   var offList = offs.length
-    ? offs.map(function (o) {
+    ? '<div class="hc-list">' + offs.map(function (o) {
       return '<div class="hc-row"><span class="hc-name">' + esc(o.name) + '</span>' +
         '<span class="hc-sub">' + (o.reason ? '(' + esc(o.reason) + ')' : '(사유 미입력)') + '</span></div>';
-    }).join('')
-    : '<div class="hc-none">없음</div>';
+    }).join('') + '</div>'
+    : '';
 
   var resList = res.length
-    ? res.map(function (p) {
+    ? '<div class="hc-list">' + res.map(function (p) {
       var r = p.resign || {};
       return '<div class="hc-row"><span class="hc-name">' + esc(p.name) + '</span>' +
         '<span class="hc-sub">(' + (r.date ? String(r.date).replace(/-/g, '.') + ' 퇴사' : '퇴사') +
         (r.reason ? ' · ' + esc(r.reason) : '') + ')</span></div>';
-    }).join('')
-    : '<div class="hc-none">없음</div>';
+    }).join('') + '</div>'
+    : '';
 
   return '<div class="card hc-card">' +
     '<div class="card-head"><div class="sec-t">📋 ' + mdLabel(tk) + ' 인원 현황</div>' +
@@ -1199,9 +1199,9 @@ function adminHeadcountCard() {
     '<div class="hc-item"><div class="hc-num c-res">' + res.length + '</div><div class="hc-lab">퇴사자</div></div>' +
     '</div>' +
     '<div class="hc-sect"><div class="hc-t">휴무 <b>' + offs.length + '명</b>' + (offs.length ? '' : ' <span class="hc-none-inline">(없음)</span>') + '</div>' +
-    '<div class="hc-list">' + offList + '</div></div>' +
+    offList + '</div>' +
     '<div class="hc-sect"><div class="hc-t">퇴사자 <b>' + res.length + '명</b>' + (res.length ? '' : ' <span class="hc-none-inline">(없음)</span>') + '</div>' +
-    '<div class="hc-list">' + resList + '</div></div>' +
+    resList + '</div>' +
     '</div>';
 }
 
