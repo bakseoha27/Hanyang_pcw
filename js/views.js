@@ -770,9 +770,10 @@ function noticePollHTML(who) {
   if (!poll) { return ''; }
   if (!pollIsOpen(poll)) {
     var line = '[종료] ' + mdLabel(poll.satKey) + ' 토요일 출근조사 여부';
+    var lineHTML = '<span class="pm-t">' + esc(line) + '</span>';
     return mgr
-      ? '<button class="poll-mini tap" data-act="pollAdmin" data-id="' + poll.id + '">' + esc(line) + '<em>결과 ›</em></button>'
-      : '<div class="poll-mini">' + esc(line) + '</div>';
+      ? '<button class="poll-mini tap" data-act="pollAdmin" data-id="' + poll.id + '">' + lineHTML + '<em>결과 ›</em></button>'
+      : '<div class="poll-mini">' + lineHTML + '</div>';
   }
   var c = pollCounts(poll);
   var p0 = me();
@@ -780,8 +781,8 @@ function noticePollHTML(who) {
   /* 이미 투표했으면 큰 투표 박스를 접고 `[투표완료] …` 한 줄 (누르면 다시 열려 수정) */
   if (myVote && state.ui.pollExpand !== poll.id) {
     return '<button class="poll-mini done" data-act="pollExpand" data-id="' + poll.id + '">' +
-      esc('[투표완료] ' + mdLabel(poll.satKey) + ' 토요일 출근조사 여부 · ' + (myVote === 'yes' ? '출근(예)' : '미출근(아니오)')) +
-      '<em>변경 ›</em></button>';
+      '<span class="pm-t">' + esc('[투표완료] ' + mdLabel(poll.satKey) + ' 토요일 출근조사 여부') + '</span>' +
+      '<em>' + (myVote === 'yes' ? '출근' : '미출근') + ' ›</em></button>';
   }
   return '<div class="poll-inline">' +
     '<div class="pi-top"><span class="pi-flag">📅 토요일 출근 조사</span><span class="badge b-warn">응답 중</span></div>' +
