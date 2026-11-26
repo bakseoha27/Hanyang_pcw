@@ -1,0 +1,11 @@
+# GitHub Actions 캐시·빌드 산출물·로컬 설정
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+dist/

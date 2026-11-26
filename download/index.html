@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#14213D">
+<meta name="robots" content="noindex, nofollow">
+<title>한양 pcw팀 설치 · 한양엔지(주) PCW 현장 앱</title>
+<meta name="description" content="한양 pcw팀 안드로이드 앱 설치 안내 — 출퇴근·휴무·작업일보·현장자료">
+<link rel="icon" href="../icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../icon-192.png">
+<style>
+  :root{
+    --navy:#14213D; --navy2:#1E2F55; --blue:#2F6BFF; --blue-dark:#1D4ED8;
+    --green:#12B76A; --gray:#667085; --gray2:#98A2B3; --line:#E6E9F0;
+    --bg:#F4F6FA; --card:#fff;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html{-webkit-text-size-adjust:100%;}
+  body{
+    margin:0; background:var(--bg); color:#101828;
+    font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;
+    font-size:15px; line-height:1.55; letter-spacing:-.2px;
+  }
+  a{color:inherit;}
+  .top{background:var(--navy); color:#fff; padding:14px 0;}
+  .top .wrap{display:flex; align-items:center; gap:8px; font-size:13px;}
+  .top b{font-weight:800; letter-spacing:.2px;}
+  .top .bar{color:#4B5B7E; margin:0 2px;}
+  .top .right{margin-left:auto; color:#9AA8C4; font-size:12px;}
+  .wrap{max-width:600px; margin:0 auto; padding:0 18px;}
+  main{padding:22px 0 40px;}
+  .card{
+    background:var(--card); border-radius:20px; padding:22px 20px; margin-bottom:14px;
+    box-shadow:0 1px 2px rgba(16,24,40,.05), 0 10px 26px -18px rgba(16,24,40,.35);
+  }
+  /* ---------- 앱 카드 ---------- */
+  .app-card{text-align:center; padding-top:26px;}
+  .app-icon{
+    width:82px; height:82px; border-radius:22px; display:block; margin:0 auto 14px;
+    box-shadow:0 8px 20px -10px rgba(20,33,61,.55);
+  }
+  h1{font-size:22px; font-weight:900; margin:0 0 4px; letter-spacing:-.6px;}
+  .sub{color:var(--gray); font-size:13.5px; margin:0 0 16px;}
+  .meta{display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-bottom:18px;}
+  .chip{
+    display:inline-flex; align-items:center; gap:5px;
+    background:#F2F4F7; color:#475467; border-radius:999px;
+    padding:5px 11px; font-size:12px; font-weight:700;
+  }
+  .chip.dot{background:#EAF0FF; color:var(--blue-dark);}
+  .chip.ok{background:#E6F8F0; color:#027A48;}
+  .btn{
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    width:100%; min-height:56px; border-radius:15px; text-decoration:none;
+    font-size:16.5px; font-weight:800; letter-spacing:-.3px;
+    border:0; cursor:pointer; margin-top:10px;
+  }
+  .btn.primary{background:var(--blue); color:#fff; box-shadow:0 10px 22px -12px rgba(47,107,255,.95);}
+  .btn.primary:active{background:var(--blue-dark);}
+  .btn.ghost{background:#fff; color:var(--navy); border:1.5px solid var(--line);}
+  .btn.ghost:active{background:#F7F9FC;}
+  .btn[hidden]{display:none;}
+  .live{
+    margin:14px 0 0; font-size:12.5px; color:var(--blue-dark); font-weight:700;
+    background:#EAF0FF; border-radius:12px; padding:10px 12px;
+  }
+  .note{
+    margin:0 0 4px; font-size:13px; color:#475467;
+    background:#FFF4E4; border-radius:12px; padding:10px 12px;
+  }
+  .note[hidden]{display:none;}
+  .small{font-size:12.5px; color:var(--gray2); margin:12px 0 0;}
+  /* ---------- 안내 카드 ---------- */
+  h2{font-size:15.5px; font-weight:900; margin:0 0 14px; letter-spacing:-.3px; display:flex; align-items:center; gap:8px;}
+  h2 .num{
+    width:24px; height:24px; border-radius:8px; background:var(--navy); color:#fff;
+    font-size:12.5px; display:inline-flex; align-items:center; justify-content:center; font-weight:800;
+  }
+  ol.steps{margin:0; padding:0; list-style:none; counter-reset:step;}
+  ol.steps li{
+    position:relative; padding:0 0 16px 40px; counter-increment:step; font-size:14px; color:#344054;
+  }
+  ol.steps li:last-child{padding-bottom:0;}
+  ol.steps li::before{
+    content:counter(step); position:absolute; left:0; top:1px;
+    width:26px; height:26px; border-radius:50%; background:#EAF0FF; color:var(--blue-dark);
+    font-size:12.5px; font-weight:800; display:flex; align-items:center; justify-content:center;
+  }
+  ol.steps li b{font-weight:800; color:#101828;}
+  ol.steps li .sub2{display:block; color:var(--gray); font-size:12.5px; margin-top:3px;}
+  .kv{display:flex; gap:10px; font-size:12.5px; color:var(--gray); padding:8px 0; border-top:1px solid var(--line);}
+  .kv:first-of-type{border-top:0;}
+  .kv .k{width:96px; flex:0 0 96px; color:var(--gray2); font-weight:700;}
+  .kv .v{word-break:break-all; color:#344054;}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:11.5px; letter-spacing:0;}
+  .qr-row{display:flex; gap:16px; align-items:center;}
+  .qr-row img{width:108px; height:108px; border-radius:12px; border:1px solid var(--line);}
+  .qr-row .t{font-size:13px; color:#475467;}
+  .qr-row .url{
+    display:inline-block; margin-top:8px; font-size:12px; color:var(--blue-dark);
+    background:#EAF0FF; border-radius:8px; padding:6px 9px; word-break:break-all;
+  }
+  .ok-line{display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:800; color:#027A48;}
+  .ok-line svg{flex:0 0 auto;}
+  .foot{text-align:center; color:var(--gray2); font-size:11.5px; padding:0 18px 34px; line-height:1.7;}
+  @media (min-width:640px){ h1{font-size:24px;} .app-icon{width:92px; height:92px;} }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <b>한양엔지(주)</b><span class="bar">|</span><span>PCW 현장 앱 배포</span>
+    <span class="right" id="topRight">설치 안내</span>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- 앱 소개 + 다운로드 -->
+  <section class="card app-card">
+    <img class="app-icon" src="../icon-192.png" alt="한양 pcw팀 앱 아이콘">
+    <h1>한양 pcw팀</h1>
+    <p class="sub">출퇴근 · 공수 · 휴무 · 작업일보 · 현장자료</p>
+
+    <div class="meta">
+      <span class="chip dot" id="chipVer">최신 버전</span>
+      <span class="chip" id="chipSize" hidden></span>
+      <span class="chip" id="chipDate" hidden></span>
+    </div>
+
+    <p class="note" id="kakaoNote" hidden></p>
+    <p class="note" id="appNote" hidden></p>
+
+    <div class="cta">
+      <a class="btn primary" id="apkBtn" href="https://github.com/bakseoha27/Hanyang_pcw/releases/latest/download/hanyang-pcw.apk" rel="noopener">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/></svg>
+        <span>APK 바로 다운로드</span>
+      </a>
+      <a class="btn primary" id="webBtn" href="https://bakseoha27.github.io/Hanyang_pcw/" hidden>
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M19 14v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+        <span>웹앱 바로 열기</span>
+      </a>
+      <a class="btn ghost" id="webBtn2" href="https://bakseoha27.github.io/Hanyang_pcw/" hidden>브라우저에서 웹앱으로 열기</a>
+    </div>
+
+    <p class="live" id="autoNote" hidden></p>
+    <p class="small" id="tinyNote">이미 설치한 분은 앱을 열면 최신 화면으로 자동 업데이트됩니다. APK는 껍데기가 바뀌었을 때만 다시 받으면 됩니다.</p>
+  </section>
+
+  <!-- 안드로이드 설치 안내 -->
+  <section class="card" id="guideAndroid" hidden>
+    <h2><span class="num">A</span> 안드로이드 설치 방법</h2>
+    <ol class="steps">
+      <li><b>내려받은 파일 열기</b><span class="sub2">화면 위쪽 알림을 누르거나, 내 파일 → 다운로드 → <b>hanyang-pcw.apk</b></span></li>
+      <li><b>“출처를 알 수 없는 앱” 허용</b><span class="sub2">설치 화면에서 안내가 뜨면 <b>설정 → 허용</b>을 눌러 주세요. (한 번만 하면 됩니다)</span></li>
+      <li><b>설치 → 열기</b><span class="sub2">홈 화면에 <b>한양 pcw팀</b> 아이콘이 생깁니다.</span></li>
+      <li><b>이름 · 생년월일 · 전화번호로 로그인</b><span class="sub2">관리자는 직종에서 <b>관리자</b>를 고르면 전체 현황 화면이 열립니다.</span></li>
+    </ol>
+  </section>
+
+  <!-- 아이폰 안내 -->
+  <section class="card" id="guideIos" hidden>
+    <h2><span class="num">i</span> 아이폰은 홈 화면에 추가</h2>
+    <ol class="steps">
+      <li><b>위의 <span style="color:var(--blue-dark)">웹앱 바로 열기</span> 누르기</b><span class="sub2">Safari에서 앱이 열립니다. (크롬이 아닌 <b>Safari</b>에서 열어야 합니다)</span></li>
+      <li><b>아래쪽 <span style="font-weight:800">공유</span> 버튼 누르기</b><span class="sub2">네모 위로 화살표가 뜬 모양입니다.</span></li>
+      <li><b><span style="font-weight:800">홈 화면에 추가</span> 선택 → 추가</b><span class="sub2">홈 화면에 <b>한양 pcw팀</b> 아이콘이 생기고, 앱처럼 전체 화면으로 열립니다.</span></li>
+    </ol>
+  </section>
+
+  <!-- PC 안내 -->
+  <section class="card" id="guidePc" hidden>
+    <h2><span class="num">P</span> 휴대폰으로 접속하세요</h2>
+    <div class="qr-row">
+      <img src="qr.png" alt="설치 페이지 QR 코드" width="108" height="108">
+      <div class="t">
+        휴대폰 카메라로 QR을 비추면 이 설치 페이지가 열립니다.
+        <span class="url">bakseoha27.github.io/Hanyang_pcw/download/</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 신뢰 정보 -->
+  <section class="card">
+    <h2><span class="num">✓</span> 설치 파일 정보</h2>
+    <div class="kv"><span class="k">앱 이름</span><span class="v">한양 pcw팀 (com.hanyang.pcw)</span></div>
+    <div class="kv"><span class="k">지원 기기</span><span class="v">안드로이드 7.0 이상 · 아이폰은 웹앱으로 사용</span></div>
+    <div class="kv"><span class="k">파일 이름</span><span class="v">hanyang-pcw.apk</span></div>
+    <div class="kv"><span class="k">서명 지문</span><span class="v mono">SHA-256 50:B7:E3:9B:A1:59:C3:4C:AC:21:97:BF:76:C4:34:09:AB:C7:B5:64:9C:95:F3:FF:48:A2:D6:0E:51:48:84:1A</span></div>
+    <div class="kv"><span class="k">업데이트</span><span class="v">앱은 웹앱을 열어 쓰기 때문에, 내용이 바뀌면 다시 설치하지 않아도 자동 반영됩니다.</span></div>
+    <div class="kv"><span class="k">주의</span><span class="v">현장 인원에게만 주소를 공유해 주세요. 로그인 정보(이름·생년월일·전화번호)가 일치해야 들어갈 수 있습니다.</span></div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  한양엔지(주) PCW 현장 · 한양 pcw팀<br>
+  설치가 안 되면 현장 총무에게 문의해 주세요.
+</footer>
+
+<script>
+(function () {
+  var APK = 'https://github.com/bakseoha27/Hanyang_pcw/releases/latest/download/hanyang-pcw.apk';
+  var WEB = 'https://bakseoha27.github.io/Hanyang_pcw/';
+  var ua = navigator.userAgent || '';
+  var isApp = /HanyangPcwApp/.test(ua);
+  var isAndroid = /Android/i.test(ua);
+  var isIOS = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
+  var inApp = /KAKAOTALK|NAVER\(inapp|Instagram|FBAN|FBAV|Line\/|Twitter/i.test(ua);
+
+  var $ = function (id) { return document.getElementById(id); };
+  var apkBtn = $('apkBtn'), webBtn = $('webBtn'), webBtn2 = $('webBtn2');
+  apkBtn.href = APK;
+  webBtn.href = WEB;
+  webBtn2.href = WEB;
+
+  function show(el, on) { if (el) el.hidden = !on; }
+
+  // 이미 우리 앱(WebView)으로 열린 경우
+  if (isApp) {
+    show(apkBtn, false); show(webBtn, false); show(webBtn2, false);
+    show($('appNote'), true);
+    $('appNote').textContent = '지금 앱으로 접속해 있습니다. 이 화면은 앱을 새로 설치할 때만 필요합니다.';
+    $('topRight').textContent = '앱 접속 중';
+    $('tinyNote').textContent = '앱 안에서는 이 페이지를 닫고 홈 화면의 앱을 사용하시면 됩니다.';
+  } else if (isAndroid) {
+    show(webBtn, false);
+    show(webBtn2, true);
+    show($('guideAndroid'), true);
+    $('topRight').textContent = '안드로이드';
+    startAutoDownload();
+  } else if (isIOS) {
+    show(apkBtn, false);
+    show(webBtn, true);
+    show(webBtn2, false);
+    show($('guideIos'), true);
+    $('topRight').textContent = '아이폰 · 아이패드';
+    $('tinyNote').textContent = '아이폰은 APK 설치 대신 홈 화면에 추가해서 앱처럼 쓸 수 있습니다.';
+  } else {
+    show(webBtn, false);
+    show(webBtn2, true);
+    show($('guidePc'), true);
+    $('topRight').textContent = 'PC';
+    $('tinyNote').textContent = 'PC에서는 설치하지 말고, 휴대폰으로 접속해 설치해 주세요.';
+  }
+
+  // 카카오톡 등 앱 안 브라우저에서는 내려받기가 막힐 수 있음
+  if (inApp && !isApp) {
+    show($('kakaoNote'), true);
+    $('kakaoNote').textContent = '카카오톡·인스타그램 같은 앱 안에서 열면 다운로드가 막힐 수 있습니다. 오른쪽 위 ⋮ 를 눌러 “다른 브라우저로 열기”를 선택해 주세요.';
+  }
+
+  function startAutoDownload() {
+    var seen = false;
+    try { seen = sessionStorage.getItem('pcw_auto_dl') === '1'; sessionStorage.setItem('pcw_auto_dl', '1'); } catch (e) {}
+    var note = $('autoNote');
+    show(note, true);
+    if (seen) {
+      note.textContent = '아래 버튼을 누르면 다시 내려받습니다.';
+      return;
+    }
+    note.textContent = '잠시 후 내려받기가 자동으로 시작됩니다… 시작되지 않으면 아래 버튼을 눌러 주세요.';
+    setTimeout(function () {
+      try { window.location.assign(APK); } catch (e) {}
+    }, 900);
+  }
+
+  // 릴리스에서 실제 파일 크기·날짜 가져오기 (실패하면 숨김)
+  function fmtSize(b) {
+    if (!b || b < 1024) return (b || 0) + ' B';
+    var kb = b / 1024;
+    if (kb < 1024) return (Math.round(kb * 10) / 10) + ' KB';
+    return (Math.round(kb / 1024 * 100) / 100) + ' MB';
+  }
+  try {
+    fetch('https://api.github.com/repos/bakseoha27/Hanyang_pcw/releases/tags/latest', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || !j.assets || !j.assets.length) return;
+        var a = j.assets[0];
+        if (a.size) { $('chipSize').textContent = fmtSize(a.size); show($('chipSize'), true); }
+        if (j.published_at) {
+          var d = new Date(j.published_at);
+          $('chipDate').textContent = d.getFullYear() + '.' + (d.getMonth() + 1) + '.' + d.getDate() + ' 배포';
+          show($('chipDate'), true);
+        }
+      })
+      .catch(function () {});
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>

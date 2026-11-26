@@ -1,0 +1,65 @@
+plugins {
+    id 'com.android.application'
+}
+
+// 빌드 번호: GitHub Actions 실행 번호를 쓰면 매 빌드마다 자동으로 올라가 덮어설치됩니다.
+def buildNo = (System.getenv('PCW_VERSION_CODE') ?: project.findProperty('PCW_VERSION_CODE') ?: '1').toString().toInteger()
+
+// 릴리스 서명 키 (android/keystore/hanyang-pcw.jks) — 같은 키로 계속 서명해야 업데이트 설치가 됩니다.
+def ksPath = project.findProperty('PCW_STORE_FILE') ?: 'keystore/hanyang-pcw.jks'
+def ksFileObj = rootProject.file(ksPath)
+def ksStorePass = project.findProperty('PCW_STORE_PASSWORD') ?: 'hanyangpcw2026'
+def ksAlias = project.findProperty('PCW_KEY_ALIAS') ?: 'hanyang-pcw'
+def ksKeyPass = project.findProperty('PCW_KEY_PASSWORD') ?: 'hanyangpcw2026'
+def hasKeystore = ksFileObj.exists()
+
+android {
+    namespace 'com.hanyang.pcw'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.hanyang.pcw'
+        minSdk 24
+        targetSdk 34
+        versionCode buildNo
+        versionName '1.0.' + buildNo
+    }
+
+    signingConfigs {
+        release {
+            if (hasKeystore) {
+                storeFile ksFileObj
+                storePassword ksStorePass
+                keyAlias ksAlias
+                keyPassword ksKeyPass
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            zipAlignEnabled true
+            if (hasKeystore) {
+                signingConfig signingConfigs.release
+            }
+        }
+        debug {
+            // 디버그 빌드도 같은 키로 서명 → 어느 쪽을 설치해도 위에 덮어설치됩니다.
+            if (hasKeystore) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}

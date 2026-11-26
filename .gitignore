@@ -1,0 +1,16 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 편집기
+.vscode/
+.idea/
+*.iml
+
+# 안드로이드 로컬 산출물 (android/ 안의 .gitignore 와 별개로 루트에서도 막아 둠)
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+dist/

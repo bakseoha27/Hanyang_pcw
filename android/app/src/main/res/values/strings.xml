@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">한양 pcw팀</string>
+    <string name="loading">한양 pcw팀 불러오는 중…</string>
+    <string name="no_app_for_file">파일을 열 수 있는 앱이 없습니다.</string>
+</resources>
