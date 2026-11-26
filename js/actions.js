@@ -1132,6 +1132,8 @@ var ACTIONS = {
     if (!d) { toast('휴무 날짜를 선택해 주세요.'); return; }
     if (daysUntil(d) <= 0) { toast('내일 이후 날짜로만 정정할 수 있어요.'); return; }
     l.date = d; l.reason = r; l.teamName = teamLabel(teamId); l.reportTo = reportTo;
+    /* 반려됐던 신청을 정정해 다시 올리면 → 대기(pending)로 되돌려 다시 승인받게 한다 */
+    if (l.status === 'rejected') { l.status = 'pending'; l.decidedAt = ''; l.decidedBy = ''; l.rejectReason = ''; }
     patchLeave(l);
     render();
     openSettings(p);
@@ -1164,7 +1166,10 @@ var ACTIONS = {
   },
 
   /* ----- 관리자·팀장 : 휴무 관리 (승인 · 반려 · 대리 등록) ----- */
-  leaveManage: function () { openLeaveManageSheet(); },
+  leaveManage: function () {
+    if (!canManage()) { toast('관리자·팀장만 볼 수 있습니다.'); return; }
+    openLeaveManageSheet();
+  },
   leaveApprove: function (el) {
     var who = me();
     if (!who || !canManage()) { toast('관리자·팀장만 승인할 수 있습니다.'); return; }

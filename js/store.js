@@ -869,9 +869,20 @@ function deleteAttendanceBulk(ids, dateKey) {
   });
 }
 function patchLeave(l) {
+  var body = {
+    leave_date: l.date, reason: l.reason || null, team_name: l.teamName || null, report_to: l.reportTo || null,
+    status: l.status || 'pending'
+  };
+  if (l.status === 'pending') {
+    body.decided_at = null; body.decided_by = null; body.reject_reason = null;   /* 정정해 다시 올린 신청은 대기로 */
+  } else {
+    body.decided_at = l.decidedAt || null;
+    body.decided_by = l.decidedBy || null;
+    body.reject_reason = l.status === 'rejected' ? (l.rejectReason || null) : null;
+  }
   return apiWrite({
     m: 'PATCH', path: '/rest/v1/leaves?id=' + sbEq(l.id), prefer: 'return=minimal', label: '휴무 정정',
-    body: { leave_date: l.date, reason: l.reason || null, team_name: l.teamName || null, report_to: l.reportTo || null }
+    body: body
   });
 }
 function deleteLeave(id) {
