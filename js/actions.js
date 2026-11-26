@@ -190,6 +190,52 @@ function pastAttSave() {
     (lv ? '<br>이 날짜는 휴무 신청이 있어 공수는 0으로 계산됩니다' : ''));
 }
 
+/* ---------------- 당일 조퇴 신청 (기술인) ---------------- */
+function earlyLeaveHTML(p) {
+  var a = todayAtt(p);
+  var iv = (a && a.in) ? a.in : '07:00';
+  return '<div class="hint" style="margin:0 0 8px">오늘 실제로 일한 시간만 공수로 인정됩니다. <b>점심(11:00~13:00)은 제외</b>되고, 관리자·팀장이 승인하면 그대로 확정됩니다.</div>' +
+    '<div class="grid2">' +
+    '<label class="field"><span>시작 시간 <span class="req">*</span></span><input type="time" id="el_start" value="' + iv + '"></label>' +
+    '<label class="field"><span>종료(조퇴) 시간 <span class="req">*</span></span><input type="time" id="el_end" value="11:00"></label>' +
+    '</div>' +
+    '<div class="att-prev" id="elPrev"></div>' +
+    '<label class="field"><span>사유 <span class="req">*</span></span><input id="el_reason" placeholder="예) 병원 진료 · 개인 사유"></label>' +
+    '<label class="field"><span>보고한 사람 <span class="req">*</span></span><input id="el_report" placeholder="예) 박서하 관리자 / 현장 반장"></label>' +
+    '<div class="hint">' + (a && a.in
+      ? '오늘 출근 기록 <b>' + esc(a.in) + '</b>을 시작 시간으로 넣었습니다.'
+      : '오늘 출근 기록이 없어 <b>07:00</b>으로 시작합니다.') +
+    ' 신청하면 오늘 근태가 신청한 시간으로 바뀝니다.</div>';
+}
+
+function earlyLeavePreview() {
+  var box = document.getElementById('elPrev');
+  if (!box) { return; }
+  var iv = $('#el_start') ? $('#el_start').value : '';
+  var ov = $('#el_end') ? $('#el_end').value : '';
+  var parts = [];
+  if (iv && ov && ov > iv) {
+    parts.push('예상 근무 <b>' + earlyHoursLabel(iv, ov) + ' · ' + fmtGs(calcGongsu(iv, ov)) + '공수</b> <span class="muted">(' + iv + ' ~ ' + ov + ')</span>');
+  } else if (iv && ov) {
+    parts.push('종료(조퇴) 시간이 시작 시간보다 빨라요');
+  } else {
+    parts.push('<span class="muted">시작·종료 시간을 넣으면 공수를 계산합니다</span>');
+  }
+  var p = me();
+  if (p && leaveOn(p, todayKey())) { parts.push('오늘은 휴무 신청이 있어 조퇴를 신청할 수 없습니다'); }
+  if (p && earlyLeaveOn(p, todayKey())) { parts.push('오늘 조퇴 신청이 이미 있습니다 · 취소 후 다시 신청해 주세요'); }
+  box.innerHTML = parts.join('<br>');
+}
+
+function openEarlyLeave() {
+  var p = me();
+  if (!p) { return; }
+  openSheet('🏃 당일 조퇴 신청', earlyLeaveHTML(p),
+    '<button class="btn btn-ghost" data-act="closeSheet">취소</button>' +
+    '<button class="btn btn-primary" data-act="earlyLeaveSave">조퇴 신청</button>');
+  setTimeout(earlyLeavePreview, 30);
+}
+
 /* ---------------- 명단 일괄 등록 ---------------- */
 function openBulk() {
   var body = '<div class="hint" style="margin:0 0 8px">엑셀에서 복사해 붙여넣으세요. 한 줄에 <b>이름 · 직종 · 생년월일 · 단가 · 조 · 전화번호(선택)</b> 순서입니다. (탭 · 쉼표 · 공백 모두 인식)</div>' +
@@ -703,6 +749,14 @@ function openLeaveEdit(l, p) {
 function leaveById(p, id) {
   return (p.leaves || []).filter(function (l) { return l.id === id; })[0] || null;
 }
+/* id로 조퇴 신청 찾기 */
+function earlyFind(id) {
+  var found = null;
+  state.people.forEach(function (p) {
+    (p.earlyLeaves || []).forEach(function (e) { if (e.id === id) { found = { p: p, e: e }; } });
+  });
+  return found;
+}
 /* id로 휴무 신청 찾기 (관리자·팀장은 여러 인원의 신청을 다룬다) */
 function leaveFind(id) {
   var found = null;
@@ -713,7 +767,7 @@ function leaveFind(id) {
 }
 /* 승인·반려 뒤 : 시트를 다시 그린다 (남은 알람이 있으면 알람, 없으면 휴무 관리 목록) */
 function afterLeaveDecision() {
-  var rest = unackedLeaves();
+  var rest = unackedReports();
   leaveAlarmOpenIds = null;
   closeSheet();
   render();
@@ -769,7 +823,9 @@ var ACTIONS = {
   },
   roleMenu: function () { openRoleMenu(); },
   tab: function (el) {
-    state.ui[state.role + 'Tab'] = el.getAttribute('data-tab');
+    /* 관리자·팀장은 같은 adminTab 을 쓴다 (예전엔 'managerTab' 에 써서 팀장 모드에서 탭이 안 먹었다) */
+    var key = state.role === 'worker' ? 'workerTab' : 'adminTab';
+    state.ui[key] = el.getAttribute('data-tab');
     state.ui.timeEdit = false;
     render();
   },
@@ -893,14 +949,16 @@ var ACTIONS = {
   leaveAlarmAck: function () {
     var p = me();
     if (!p || !canManage()) { toast('관리자·팀장만 확인할 수 있습니다.'); return; }
-    var list = unackedLeaves();
+    var list = unackedReports();
     if (!list.length) { leaveAlarmOpenIds = null; closeSheet(); render(); return; }
-    var ids = list.map(function (l) { return l.id; });
-    ackLeaves(ids, p.id);
+    var lids = list.filter(function (x) { return x.kind !== 'early'; }).map(function (x) { return x.id; });
+    var eids = list.filter(function (x) { return x.kind === 'early'; }).map(function (x) { return x.id; });
+    if (lids.length) { ackLeaves(lids, p.id); }
+    if (eids.length) { ackEarlyLeaves(eids, p.id); }
     leaveAlarmOpenIds = null;
     closeSheet();
     render();
-    toast('<b>' + ids.length + '건</b> 휴무 보고를 <b>확인 완료</b>로 표시했습니다');
+    toast('<b>' + list.length + '건</b> 휴무·조퇴 보고를 <b>확인 완료</b>로 표시했습니다');
   },
   leaveAlarmList: function () {
     /* 알람을 열 수 있는 건 이미 관리자·팀장 화면 → 보던 역할 그대로 유지 (팀장은 팀장 화면에 머문다) */
@@ -1088,9 +1146,10 @@ var ACTIONS = {
     if (!pollIsOpen(poll)) { toast('응답이 마감된 공지예요.'); return; }
     var p = me();
     poll.votes[p.id] = v;
+    state.ui.pollExpand = '';   /* 응답하면 큰 박스는 접히고 [투표완료] 한 줄로 */
     render();
     saveVote(poll.id, p.id, v);
-    toast(v === 'yes' ? '토요일 <b>출근 가능(예)</b>으로 응답했어요' : '토요일 <b>출근 어려움(아니오)</b>으로 응답했어요');
+    toast(v === 'yes' ? '토요일 <b>출근(예)</b>으로 응답했어요' : '토요일 <b>미출근(아니오)</b>으로 응답했어요');
   },
   applyLeave: function () {
     var p = me();
@@ -1241,6 +1300,94 @@ var ACTIONS = {
     render();
     openLeaveManageSheet();
     toast('<b>' + esc(w.name) + '</b> 님 ' + longDate(d) + ' 휴무 <b>대리 등록 · 승인</b>' + (had ? '<br>그 날 근태를 지워 0공수로 바꿨어요' : ''));
+    setTimeout(function () { refresh(true); }, 700);
+  },
+  /* ----- 기술인 : 당일 조퇴 신청 ----- */
+  earlyLeaveOpen: function () { openEarlyLeave(); },
+  earlyLeaveSave: function () {
+    var p = me();
+    if (!p) { return; }
+    var iv = $('#el_start') ? $('#el_start').value : '';
+    var ov = $('#el_end') ? $('#el_end').value : '';
+    var reason = ($('#el_reason') ? $('#el_reason').value : '').trim();
+    var to = ($('#el_report') ? $('#el_report').value : '').trim();
+    if (!iv || !ov) { toast('시작·종료(조퇴) 시간을 넣어 주세요.'); return; }
+    if (ov <= iv) { toast('종료(조퇴) 시간이 시작 시간보다 빠릅니다.<br>시간을 다시 확인해 주세요.'); return; }
+    if (!reason) { toast('사유를 적어 주세요.<br>예) 병원 진료'); return; }
+    if (!to) { toast('보고한 사람을 적어 주세요.<br>예) 박서하 관리자 / 현장 반장'); return; }
+    var k = todayKey();
+    if (leaveOn(p, k)) { toast('오늘은 휴무 신청이 있어 조퇴를 신청할 수 없어요.'); return; }
+    if (earlyLeaveOn(p, k)) { toast('오늘 조퇴 신청이 이미 있어요.<br>내역에서 <b>취소</b>한 뒤 다시 신청해 주세요.'); return; }
+    var e = {
+      id: uuid(), date: k, start: iv, end: ov, gongsu: calcGongsu(iv, ov),
+      reason: reason, reportTo: to, status: 'pending', at: nowHM()
+    };
+    p.earlyLeaves.push(e);
+    applyEarlyLeaveAttendance(p, e);
+    closeSheet();
+    render();
+    insertEarlyLeave(p, e);
+    toast('당일 조퇴 신청 완료 · ' + iv + ' ~ ' + ov + ' · <b>' + fmtGs(e.gongsu) + '공수</b>' +
+      '<br>관리자·팀장에게 보고했고, 오늘 근태에 반영했습니다');
+    setTimeout(function () { refresh(true); }, 700);
+  },
+  askCancelEarly: function (el) {
+    var p = me();
+    var e = earlyLeaveById(p, el.getAttribute('data-id'));
+    if (!e) { return; }
+    if (daysUntil(e.date) < 0) { toast('지난 날짜의 조퇴 신청은 취소할 수 없어요.<br>관리자에게 연락해 주세요.'); return; }
+    var st = e.status || 'pending';
+    confirmSheet('당일 조퇴 신청을 취소할까요?',
+      '<b>' + longDate(e.date) + '</b> · ' + esc(e.start) + ' ~ ' + esc(e.end) + ' · <b>' + fmtGs(e.gongsu) + '공수</b><br>' +
+      (st === 'approved' ? '이미 <b>승인</b>된 조퇴입니다. 취소하면 승인도 풀리고<br>' : '') +
+      '오늘 근태가 신청 전으로 돌아갑니다. 관리자에게도 알려 주세요.',
+      '신청 취소', 'doCancelEarly', 'data-id="' + e.id + '"');
+  },
+  doCancelEarly: function (el) {
+    var p = me();
+    var e = earlyLeaveById(p, el.getAttribute('data-id'));
+    if (!e) { closeSheet(); return; }
+    p.earlyLeaves = p.earlyLeaves.filter(function (x) { return x.id !== e.id; });
+    revertEarlyLeaveAttendance(p, e);
+    deleteEarlyLeave(e.id);
+    closeSheet();
+    render();
+    toast('당일 조퇴 신청을 취소했어요 · ' + longDate(e.date) + '<br>오늘 근태를 신청 전으로 돌렸습니다');
+    setTimeout(function () { refresh(true); }, 700);
+  },
+  /* ----- 관리자·팀장 : 조퇴 승인 / 반려 ----- */
+  earlyApprove: function (el) {
+    var who = me();
+    if (!who || !canManage()) { toast('관리자·팀장만 승인할 수 있습니다.'); return; }
+    var f = earlyFind(el.getAttribute('data-id'));
+    if (!f) { toast('조퇴 신청을 찾지 못했어요 · 새로고침 후 다시 시도해 주세요.'); return; }
+    decideEarlyLeave(f.p, f.e, 'approved', who.id);
+    afterLeaveDecision();
+    toast('<b>' + esc(f.p.name) + '</b> 님 ' + mdLabel(f.e.date) + ' 조퇴 <b>승인</b><br>' +
+      esc(f.e.start) + ' ~ ' + esc(f.e.end) + ' · ' + fmtGs(f.e.gongsu) + '공수로 확정됩니다');
+    setTimeout(function () { refresh(true); }, 700);
+  },
+  earlyRejectOpen: function (el) {
+    var who = me();
+    if (!who || !canManage()) { toast('관리자·팀장만 반려할 수 있습니다.'); return; }
+    var f = earlyFind(el.getAttribute('data-id'));
+    if (!f) { toast('조퇴 신청을 찾지 못했어요 · 새로고침 후 다시 시도해 주세요.'); return; }
+    var body = '<div class="muted" style="margin:-4px 0 6px">' + esc(f.p.name) + ' · ' + longDate(f.e.date) + ' · ' +
+      esc(f.e.start) + ' ~ ' + esc(f.e.end) + ' · ' + esc(f.e.reason || '사유 없음') + '</div>' +
+      '<label class="field"><span>반려 사유 (선택)</span><input id="elr_reason" placeholder="예) 현장 인원 부족"></label>' +
+      '<div class="hint">반려하면 오늘 근태가 <b>신청 전으로 돌아가고</b>, 신청자 화면에 <b>반려</b>로 표시됩니다.</div>';
+    openSheet('조퇴 반려', body, '<button class="btn btn-ghost" data-act="leaveManage">돌아가기</button>' +
+      '<button class="btn btn-danger" data-act="earlyRejectDo" data-id="' + f.e.id + '">반려하기</button>');
+  },
+  earlyRejectDo: function (el) {
+    var who = me();
+    if (!who || !canManage()) { toast('관리자·팀장만 반려할 수 있습니다.'); return; }
+    var f = earlyFind(el.getAttribute('data-id'));
+    if (!f) { toast('조퇴 신청을 찾지 못했어요 · 새로고침 후 다시 시도해 주세요.'); return; }
+    var reason = ($('#elr_reason') ? $('#elr_reason').value : '').trim();
+    decideEarlyLeave(f.p, f.e, 'rejected', who.id, reason);
+    afterLeaveDecision();
+    toast('<b>' + esc(f.p.name) + '</b> 님 ' + mdLabel(f.e.date) + ' 조퇴 <b>반려</b><br>오늘 근태를 신청 전으로 돌렸습니다');
     setTimeout(function () { refresh(true); }, 700);
   },
   toggleResign: function () {
@@ -1865,6 +2012,10 @@ var ACTIONS = {
     toast('수정할 수 있게 열었어요. 고친 뒤 다시 제출해 주세요.');
   },
 
+  pollExpand: function (el) {
+    state.ui.pollExpand = el.getAttribute('data-id') || '';
+    render();
+  },
   /* ----- 관리자 · 토요일 조사 ----- */
   newPoll: function () { if (!isAdminView()) { toast('관리자만 조사를 올릴 수 있습니다.'); return; } openNewPoll(); },
   createPoll: function () {
@@ -1878,6 +2029,7 @@ var ACTIONS = {
       open: true, createdAt: todayKey(), votes: {}
     };
     state.polls.unshift(poll);
+    state.ui.pollExpand = '';
     closeSheet();
     render();
     insertPollDb(poll);
@@ -1887,6 +2039,7 @@ var ACTIONS = {
     var id = el.getAttribute('data-id');
     var poll = state.polls.filter(function (p) { return p.id === id; })[0];
     if (poll) { poll.open = false; }
+    state.ui.pollExpand = '';
     closePollDb(id);
     render();
     toast('응답을 마감했어요');
@@ -2069,6 +2222,7 @@ function onInput(e) {
     return;
   }
   if (el.id === 'pf_tin' || el.id === 'pf_tout') { pfAttPreview(); }
+  if (el.id === 'el_start' || el.id === 'el_end') { earlyLeavePreview(); }
   if (el.id === 'mg_in' || el.id === 'mg_out') { mgPreview(); }
 }
 
@@ -2085,6 +2239,9 @@ function onChange(e) {
   }
   if (el.id === 'patt_date' || el.id === 'patt_in' || el.id === 'patt_out') {
     pattPreview();
+  }
+  if (el.id === 'el_start' || el.id === 'el_end') {
+    earlyLeavePreview();
   }
   if (el.classList && el.classList.contains('bulk-chk')) {
     var bid = el.getAttribute('data-id');

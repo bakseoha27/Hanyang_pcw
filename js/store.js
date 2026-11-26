@@ -252,6 +252,7 @@ function mapWorker(w) {
       : null,
     attendance: {},
     leaves: [],
+    earlyLeaves: [],
     certs: (function () {
       var c = safeJson(w.certs_json, []);
       return Array.isArray(c) ? c : [];
@@ -301,6 +302,18 @@ function buildState(d) {
       ackAt: l.ack_at || '', ackBy: l.ack_by || '',
       decidedAt: l.decided_at || '', decidedBy: l.decided_by || '',
       rejectReason: l.reject_reason || ''
+    });
+  });
+  (d.earlyLeaves || []).forEach(function (e) {
+    var p = personById(e.worker_id);
+    if (!p) { return; }
+    p.earlyLeaves.push({
+      id: e.id, date: e.work_date, start: e.start_time || '', end: e.end_time || '',
+      gongsu: (e.gongsu === null || e.gongsu === undefined) ? 0 : (+e.gongsu || 0),
+      reason: e.reason || '', reportTo: e.reported_to || '',
+      status: e.status || 'pending', at: kstHM(e.created_at),
+      ackAt: e.ack_at || '', ackBy: e.ack_by || '',
+      decidedAt: e.decided_at || '', decidedBy: e.decided_by || '', rejectReason: e.reject_reason || ''
     });
   });
   state.reports = (d.reports || []).map(function (r) {
@@ -377,6 +390,7 @@ function buildState(d) {
     hcMonth: ui.hcMonth || todayKey().slice(0, 7),
     bulkDate: ui.bulkDate || todayKey(),
     timeEdit: false,
+    pollExpand: ui.pollExpand || '',
     resignOpen: !!ui.resignOpen
   };
   state.draft = prev.draft;
@@ -400,11 +414,12 @@ function fetchTables() {
     '/rest/v1/daily_reports?select=*&order=report_date.desc',
     '/rest/v1/notices?select=*&order=created_at.desc',
     '/rest/v1/documents?select=*&order=created_at.desc',
-    '/rest/v1/schedules?select=*&order=sched_date.asc'
+    '/rest/v1/schedules?select=*&order=sched_date.asc',
+    '/rest/v1/early_leaves?select=*&order=work_date.desc,created_at.desc'
   ];
   return Promise.all(q.map(function (path) { return apiGet(path); })).then(function (res) {
     /* schedules 는 없을 수도 있는 추가 테이블이라 실패해도 앱 전체를 멈추지 않는다 */
-    var bad = res.filter(function (r, i) { return !r.ok && i !== 9; })[0];
+    var bad = res.filter(function (r, i) { return !r.ok && i !== 9 && i !== 10; })[0];
     if (bad) {
       var e = new Error(bad.error || 'DB 연결 실패');
       e.status = bad.status;
@@ -420,7 +435,8 @@ function fetchTables() {
       reports: res[6].data || [],
       notices: res[7].data || [],
       documents: res[8].data || [],
-      schedules: (res[9] && res[9].ok && Array.isArray(res[9].data)) ? res[9].data : []
+      schedules: (res[9] && res[9].ok && Array.isArray(res[9].data)) ? res[9].data : [],
+      earlyLeaves: (res[10] && res[10].ok && Array.isArray(res[10].data)) ? res[10].data : []
     };
   });
 }
@@ -439,7 +455,8 @@ function saveCache(raw) {
       reports: (raw.reports || []).slice(0, 200),
       notices: (raw.notices || []).slice(0, 50),
       documents: raw.documents || [],
-      schedules: raw.schedules || []
+      schedules: raw.schedules || [],
+      earlyLeaves: raw.earlyLeaves || []
     };
     localStorage.setItem(CACHE_KEY, JSON.stringify({ at: new Date().toISOString(), d: d }));
   } catch (e) { /* 저장 불가 */ }
@@ -905,6 +922,115 @@ function decideLeave(l, status, byId, reason) {
   });
 }
 
+/* ---------- 당일 조퇴 신청 (early_leaves · 2026-11-26 추가) ----------
+   휴무(0공수)와 섞이지 않도록 별도 테이블. 신청하면 그 날 근태를 start~end 로 바꿔
+   공수를 반영하고, 관리자가 반려하면 신청 전 상태(out 비움)로 되돌린다. */
+function earlyLeaveById(p, id) {
+  return (p.earlyLeaves || []).filter(function (e) { return e.id === id; })[0] || null;
+}
+function earlyLeaveOn(p, k) {
+  return (p.earlyLeaves || []).filter(function (e) { return e.date === k && e.status !== 'rejected'; })[0] || null;
+}
+function earlyHours(inHM, outHM) {
+  if (!inHM || !outHM) { return 0; }
+  var a = minFromHM(inHM), b = minFromHM(outHM);
+  if (isNaN(a) || isNaN(b) || b <= a) { return 0; }
+  var lunch = Math.max(0, Math.min(b, 13 * 60) - Math.max(a, 11 * 60)) / 60;
+  var h = (b - a) / 60 - lunch;
+  return Math.round(h * 100) / 100;
+}
+function earlyHoursLabel(inHM, outHM) {
+  var h = earlyHours(inHM, outHM);
+  var n = Math.round(h * 10) / 10;
+  return (n % 1 === 0 ? String(n) : n.toFixed(1)) + '시간';
+}
+function earlyLeaveWriteBody(p, e) {
+  var st = e.status || 'pending';
+  var body = {
+    id: e.id, worker_id: p.id, work_date: e.date,
+    start_time: e.start, end_time: e.end,
+    gongsu: (e.gongsu === null || e.gongsu === undefined) ? calcGongsu(e.start, e.end) : e.gongsu,
+    reason: e.reason || null, reported_to: e.reportTo || null, status: st
+  };
+  if (st !== 'pending') {
+    body.decided_at = e.decidedAt || new Date().toISOString();
+    body.decided_by = e.decidedBy || null;
+  }
+  if (st === 'rejected') { body.reject_reason = e.rejectReason || null; }
+  if (e.ackAt) { body.ack_at = e.ackAt; }
+  if (e.ackBy) { body.ack_by = e.ackBy; }
+  return body;
+}
+function insertEarlyLeave(p, e, label) {
+  return apiWrite({
+    m: 'POST', path: '/rest/v1/early_leaves', prefer: 'return=minimal', label: label || '당일 조퇴 신청',
+    body: earlyLeaveWriteBody(p, e)
+  });
+}
+function patchEarlyLeave(p, e, label) {
+  return apiWrite({
+    m: 'PATCH', path: '/rest/v1/early_leaves?id=' + sbEq(e.id), prefer: 'return=minimal',
+    label: label || '조퇴 신청 수정', body: earlyLeaveWriteBody(p, e)
+  });
+}
+function deleteEarlyLeave(id) {
+  return apiWrite({ m: 'DELETE', path: '/rest/v1/early_leaves?id=' + sbEq(id), label: '조퇴 신청 취소' });
+}
+/* 조퇴 신청 → 오늘 근태 반영 : 출근은 실제 찍은 시각(없으면 신청 시작), 퇴근은 신청 종료 */
+function applyEarlyLeaveAttendance(p, e) {
+  var k = e.date;
+  var a = (p.attendance || {})[k];
+  var inHM = (a && a.in) ? a.in : e.start;
+  p.attendance[k] = { in: inHM, out: e.end, inEdited: !!(a && a.inEdited), outEdited: !!(a && a.outEdited) };
+  return saveAttendance(p, k, '조퇴 근태 반영');
+}
+/* 반려·취소 → 근태 원복 : 신청이 넣은 퇴근 시각이면 비운다 (그 사이 실제 퇴근했으면 그대로 둔다) */
+function revertEarlyLeaveAttendance(p, e) {
+  var k = e.date;
+  var a = (p.attendance || {})[k];
+  if (!a || !a.in || !a.out) { return null; }
+  if (a.out !== e.end) { return null; }
+  a.out = '';
+  a.outEdited = false;
+  return saveAttendance(p, k, '조퇴 취소로 근태 원복');
+}
+/* 승인 / 반려 — 화면 상태 + DB(early_leaves.status·decided_at·decided_by·reject_reason) */
+function decideEarlyLeave(p, e, status, byId, reason) {
+  var at = new Date().toISOString();
+  e.status = status === 'rejected' ? 'rejected' : 'approved';
+  e.decidedAt = at;
+  e.decidedBy = byId || '';
+  e.rejectReason = e.status === 'rejected' ? (reason || '') : '';
+  if (e.status === 'rejected') { revertEarlyLeaveAttendance(p, e); }
+  else { applyEarlyLeaveAttendance(p, e); }
+  return apiWrite({
+    m: 'PATCH', path: '/rest/v1/early_leaves?id=' + sbEq(e.id), prefer: 'return=minimal',
+    label: e.status === 'approved' ? '조퇴 승인' : '조퇴 반려',
+    body: {
+      status: e.status, decided_at: at, decided_by: byId || null,
+      reject_reason: e.status === 'rejected' ? (reason || null) : null
+    }
+  });
+}
+/* 관리자 확인 완료 — early_leaves.ack_at / ack_by */
+function ackEarlyLeaves(ids, byId) {
+  if (!ids || !ids.length) { return null; }
+  var at = new Date().toISOString();
+  ids.forEach(function (id) {
+    state.people.forEach(function (p) {
+      (p.earlyLeaves || []).forEach(function (e) {
+        if (e.id === id) { e.ackAt = at; e.ackBy = byId || ''; }
+      });
+    });
+    leaveAlarm.dismissed[id] = 1;
+  });
+  return apiWrite({
+    m: 'PATCH', path: '/rest/v1/early_leaves?id=in.(' + ids.join(',') + ')',
+    prefer: 'return=minimal', label: '조퇴 확인',
+    body: { ack_at: at, ack_by: byId || null }
+  });
+}
+
 /* ---------- 휴무 보고 알람 (관리자) ----------
    leaves.ack_at 이 비어 있는 행 = 관리자가 아직 확인하지 않은 휴무 보고
    - dismissed : 이번 세션에서 닫아 둔 행 (새 행이 올라오면 다시 뜨다)
@@ -919,6 +1045,7 @@ function unackedLeaves() {
       if (l.ackAt) { return; }
       if (l.status === 'approved' || l.status === 'rejected') { return; }   /* 이미 승인·반려된 건은 알람에서 뺀다 */
       out.push({
+        kind: 'leave',
         id: l.id, name: p.name, workerId: p.id, date: l.date,
         status: l.status || 'pending',
         teamName: l.teamName || (p.teamId ? teamLabel(p.teamId) : '미배정'),
@@ -931,6 +1058,38 @@ function unackedLeaves() {
     return a.name.localeCompare(b.name, 'ko');
   });
   return out;
+}
+
+/* 미확인 당일 조퇴 보고 (early_leaves.ack_at IS NULL · 승인/반려된 건 제외) */
+function unackedEarlyLeaves() {
+  var out = [];
+  state.people.forEach(function (p) {
+    (p.earlyLeaves || []).forEach(function (e) {
+      if (e.ackAt) { return; }
+      if (e.status === 'approved' || e.status === 'rejected') { return; }
+      out.push({
+        kind: 'early',
+        id: e.id, name: p.name, workerId: p.id, date: e.date,
+        status: e.status || 'pending',
+        teamName: p.teamId ? teamLabel(p.teamId) : '미배정',
+        start: e.start, end: e.end,
+        hours: earlyHoursLabel(e.start, e.end),
+        gongsu: (e.gongsu === null || e.gongsu === undefined) ? calcGongsu(e.start, e.end) : (+e.gongsu || 0),
+        reason: e.reason || '', reportTo: e.reportTo || '', at: e.at || ''
+      });
+    });
+  });
+  return out;
+}
+/* 알람에 한 번에 띄울 휴무 + 조퇴 (날짜 → 이름 순) */
+function unackedReports() {
+  var all = unackedLeaves().concat(unackedEarlyLeaves());
+  all.sort(function (a, b) {
+    if (a.date !== b.date) { return a.date < b.date ? -1 : 1; }
+    if ((a.kind || '') !== (b.kind || '')) { return a.kind === 'leave' ? -1 : 1; }
+    return a.name.localeCompare(b.name, 'ko');
+  });
+  return all;
 }
 
 /* 관리자 확인 완료 — leaves.ack_at / ack_by 저장 + 화면 상태도 갱신 */

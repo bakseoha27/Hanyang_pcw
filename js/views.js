@@ -410,31 +410,41 @@ function mdLabel(k) {
   return parseInt(p[1], 10) + '월 ' + parseInt(p[2], 10) + '일';
 }
 
+function leaveAlarmRowHTML(l) {
+  var isEarly = l.kind === 'early';
+  var sub = isEarly
+    ? esc(mdLabel(l.date)) + ' · ' + esc(l.start + '~' + l.end) + ' · ' + fmtGs(l.gongsu) + '공수 · ' + esc(l.teamName || '미배정')
+    : esc(mdLabel(l.date)) + ' · ' + esc(l.teamName || '미배정');
+  return '<div class="la-row">' +
+    '<span class="la-av' + (isEarly ? ' em' : '') + '">' + esc(String(l.name || '?').slice(0, 1)) + '</span>' +
+    '<span class="la-main">' +
+    '<span class="la-name">' + esc(l.name) + (isEarly ? ' <em class="la-kind">조퇴</em>' : '') + '</span>' +
+    '<span class="la-sub">' + sub + '</span>' +
+    '</span>' +
+    '<span class="la-right">' +
+    '<span class="la-reason">' + (l.reason ? esc(l.reason) : '사유 없음') + '</span>' +
+    '<span class="la-to">보고 ' + esc(l.reportTo || '관리자') + '</span>' +
+    '<span class="la-acts">' +
+    (isEarly
+      ? '<button class="lv-btn ok" data-act="earlyApprove" data-id="' + l.id + '">승인</button>' +
+        '<button class="lv-btn del" data-act="earlyRejectOpen" data-id="' + l.id + '">반려</button>'
+      : '<button class="lv-btn ok" data-act="leaveApprove" data-id="' + l.id + '">승인</button>' +
+        '<button class="lv-btn del" data-act="leaveRejectOpen" data-id="' + l.id + '">반려</button>') +
+    '</span></div></div>';
+}
+
 function leaveAlarmHTML(list) {
-  var rows = list.map(function (l) {
-    return '<div class="la-row">' +
-      '<span class="la-av">' + esc(String(l.name || '?').slice(0, 1)) + '</span>' +
-      '<span class="la-main">' +
-      '<span class="la-name">' + esc(l.name) + '</span>' +
-      '<span class="la-sub">' + esc(mdLabel(l.date)) + ' · ' + esc(l.teamName || '미배정') + '</span>' +
-      '</span>' +
-      '<span class="la-right">' +
-      '<span class="la-reason">' + (l.reason ? esc(l.reason) : '사유 없음') + '</span>' +
-      '<span class="la-acts">' +
-      '<button class="lv-btn ok" data-act="leaveApprove" data-id="' + l.id + '">승인</button>' +
-      '<button class="lv-btn del" data-act="leaveRejectOpen" data-id="' + l.id + '">반려</button>' +
-      '</span></div></div>';
-  }).join('');
-  return '<div class="la-note">[승인]하면 0공수로 집계되고, [반려]하면 휴무 집계에서 빠집니다. 확인 완료를 누르면 이 알람은 다시 뜨지 않습니다.</div>' +
+  var rows = list.map(leaveAlarmRowHTML).join('');
+  return '<div class="la-note">휴무는 [승인]하면 0공수, [반려]하면 집계에서 빠집니다. 조퇴는 [승인]하면 신청한 근무시간 그대로, [반려]하면 신청 전으로 돌아갑니다. 확인 완료를 누르면 이 알람은 다시 뜨지 않습니다.</div>' +
     rows;
 }
 
 function openLeaveAlarmSheet(list) {
-  list = list || unackedLeaves();
+  list = list || unackedReports();
   if (!list.length) { return; }
   leaveAlarmOpenIds = list.map(function (l) { return l.id; });
-  openSheet('🔔 새 휴무 보고가 올라왔어요 (' + list.length + '건)', leaveAlarmHTML(list),
-    '<button class="btn btn-line" data-act="leaveAlarmList">휴무 목록으로</button>' +
+  openSheet('🔔 새 휴무/조퇴 보고가 올라왔어요 (' + list.length + '건)', leaveAlarmHTML(list),
+    '<button class="btn btn-line" data-act="leaveAlarmList">휴무·조퇴 관리</button>' +
     '<button class="btn btn-primary" data-act="leaveAlarmAck">확인 완료</button>');
 }
 
@@ -463,6 +473,31 @@ function adminLeaveRowHTML(x, withActs) {
       '<button class="lv-btn del" data-act="leaveRejectOpen" data-id="' + l.id + '">반려</button></span>' : '') +
     '</div>';
 }
+/* ---- 당일 조퇴 신청 행 (관리자·팀장) ---- */
+function adminEarlyAllRows() {
+  var rows = [];
+  state.people.forEach(function (p) {
+    (p.earlyLeaves || []).forEach(function (e) { rows.push({ p: p, e: e }); });
+  });
+  return rows;
+}
+function adminEarlyRowHTML(x, withActs) {
+  var p = x.p, e = x.e, st = e.status || 'pending';
+  var gs = (e.gongsu === null || e.gongsu === undefined) ? calcGongsu(e.start, e.end) : (+e.gongsu || 0);
+  return '<div class="lv-row">' +
+    '<div class="lv-main">' +
+    '<div class="lv-date">' + esc(p.name) + ' · ' + mdLabel(e.date) + ' <em class="lvm-wd">' + wd(e.date) + '</em> ' +
+    '<span class="badge ' + leaveBadgeCls(st) + '">' + leaveStatusLabel(st) + '</span></div>' +
+    '<div class="lv-sub">🏃 ' + esc(e.start) + ' ~ ' + esc(e.end) + ' · ' + earlyHoursLabel(e.start, e.end) + ' · <b>' + fmtGs(gs) + '공수</b>' +
+    ' · ' + esc(e.reason || '사유 없음') + '</div>' +
+    '<div class="lv-sub">보고 ' + esc(leaveReportLabel(e.reportTo)) + (p.teamId ? ' · ' + esc(teamLabel(p.teamId)) : '') + '</div>' +
+    (st === 'rejected' && e.rejectReason ? '<div class="lv-sub lv-rej">반려 사유 · ' + esc(e.rejectReason) + '</div>' : '') +
+    '</div>' +
+    (withActs ? '<span class="lv-acts">' +
+      '<button class="lv-btn ok" data-act="earlyApprove" data-id="' + e.id + '">승인</button>' +
+      '<button class="lv-btn del" data-act="earlyRejectOpen" data-id="' + e.id + '">반려</button></span>' : '') +
+    '</div>';
+}
 function adminLeaveManageHTML() {
   var rows = adminLeaveAllRows();
   var pend = rows.filter(function (x) { return (x.l.status || 'pending') === 'pending'; })
@@ -470,28 +505,40 @@ function adminLeaveManageHTML() {
   var done = rows.filter(function (x) { return (x.l.status || 'pending') !== 'pending'; })
     .sort(function (a, b) { return a.l.date === b.l.date ? a.p.name.localeCompare(b.p.name, 'ko') : (a.l.date > b.l.date ? -1 : 1); })
     .slice(0, 30);
-  var html = '<div class="muted" style="margin:-4px 0 8px">휴무 보고를 <b>승인</b>하면 0공수로 집계되고, <b>반려</b>하면 인원 현황 · 공수 집계에서 빠집니다.</div>' +
+  var eRows = adminEarlyAllRows();
+  var ePend = eRows.filter(function (x) { return (x.e.status || 'pending') === 'pending'; })
+    .sort(function (a, b) { return a.e.date === b.e.date ? a.p.name.localeCompare(b.p.name, 'ko') : (a.e.date < b.e.date ? -1 : 1); });
+  var eDone = eRows.filter(function (x) { return (x.e.status || 'pending') !== 'pending'; })
+    .sort(function (a, b) { return a.e.date === b.e.date ? a.p.name.localeCompare(b.p.name, 'ko') : (a.e.date > b.e.date ? -1 : 1); })
+    .slice(0, 30);
+  var html = '<div class="muted" style="margin:-4px 0 8px">휴무를 <b>승인</b>하면 0공수, <b>반려</b>하면 집계에서 빠집니다. 조퇴는 <b>승인</b>하면 신청한 근무시간 그대로, <b>반려</b>하면 신청 전 근태로 되돌립니다.</div>' +
     '<button class="btn btn-line sm block" data-act="leaveProxyOpen">＋ 휴무 대리 등록</button>' +
     '<div class="divider"></div>' +
-    '<div class="lvm-t">대기 <b>' + pend.length + '건</b></div>' +
+    '<div class="lvm-t">🏃 당일 조퇴 · 대기 <b>' + ePend.length + '건</b></div>' +
+    (ePend.length ? ePend.map(function (x) { return adminEarlyRowHTML(x, true); }).join('')
+      : '<div class="empty" style="padding:14px 4px">대기 중인 조퇴 보고가 없습니다.</div>') +
+    '<div class="divider"></div>' +
+    '<div class="lvm-t">🏖️ 휴무 · 대기 <b>' + pend.length + '건</b></div>' +
     (pend.length ? pend.map(function (x) { return adminLeaveRowHTML(x, true); }).join('')
       : '<div class="empty" style="padding:14px 4px">대기 중인 휴무 신청이 없습니다.</div>') +
     '<div class="divider"></div>' +
-    '<div class="lvm-t">처리된 내역 <b>' + done.length + '건</b></div>' +
-    (done.length ? done.map(function (x) { return adminLeaveRowHTML(x, false); }).join('')
+    '<div class="lvm-t">처리된 내역 <b>' + (done.length + eDone.length) + '건</b></div>' +
+    (done.length || eDone.length
+      ? done.map(function (x) { return adminLeaveRowHTML(x, false); }).join('') +
+        eDone.map(function (x) { return adminEarlyRowHTML(x, false); }).join('')
       : '<div class="empty" style="padding:14px 4px">아직 승인·반려한 내역이 없습니다.</div>');
   return html;
 }
 function openLeaveManageSheet() {
-  openSheet('🏖️ 휴무 관리 · 승인 / 반려', '<div id="leaveMgrBox">' + adminLeaveManageHTML() + '</div>',
+  openSheet('🏖️ 휴무·조퇴 관리 · 승인 / 반려', '<div id="leaveMgrBox">' + adminLeaveManageHTML() + '</div>',
     '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>');
 }
 
 function osNotifyLeave(n, first) {
   try {
     if (!window.Notification || Notification.permission !== 'granted') { return; }
-    var title = '🔔 새 휴무 보고 ' + n + '건';
-    var body = first ? (first.name + ' · ' + mdLabel(first.date) + ' · ' + (first.reason || '사유 없음')) : '관리자 화면에서 확인해 주세요.';
+    var title = '🔔 새 휴무/조퇴 보고 ' + n + '건';
+    var body = first ? (first.name + ' · ' + mdLabel(first.date) + ' · ' + (first.kind === 'early' ? '조퇴 ' + first.start + '~' + first.end : (first.reason || '사유 없음'))) : '관리자 화면에서 확인해 주세요.';
     var opt = { body: body, tag: 'pcw-leave-' + (first ? first.id : n), renotify: false };
     try { new Notification(title, opt); } catch (e) { /* 아이콘 없는 환경 */ }
   } catch (e) { /* 알림 미지원 */ }
@@ -503,7 +550,7 @@ function maybeShowLeaveAlarm() {
     if (!state.ready || !state.auth || state.role === 'worker' || !canManage()) { return; }
     var wrap = document.getElementById('sheetWrap');
     if (wrap && wrap.classList.contains('open')) { return; }   /* 다른 시트를 보는 중이면 양보 */
-    var list = unackedLeaves();
+    var list = unackedReports();
     if (!list.length) { return; }
     var fresh = list.filter(function (l) { return !leaveAlarm.dismissed[l.id]; });
     if (!fresh.length) { return; }
@@ -558,6 +605,30 @@ function myLeaveRowsHTML(p) {
       '<div class="lv-main"><div class="lv-date">' + longDate(l.date) + ' ' + badge + ' ' + stBadge + '</div>' +
       '<div class="lv-sub">' + esc(l.reason) + ' · ' + esc(l.teamName || teamLabel(p.teamId)) + ' · 보고 ' + esc(leaveReportLabel(l.reportTo)) + '</div>' +
       (st === 'rejected' && l.rejectReason ? '<div class="lv-sub lv-rej">반려 사유 · ' + esc(l.rejectReason) + '</div>' : '') +
+      '</div>' + acts + '</div>';
+  }).join('');
+}
+
+/* 기술인 홈 · 당일 조퇴 신청 내역 */
+function myEarlyRowsHTML(p) {
+  var list = (p.earlyLeaves || []).slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+  if (!list.length) {
+    return '<div class="empty" style="padding:16px 4px">신청한 당일 조퇴가 없습니다.</div>';
+  }
+  return list.map(function (e) {
+    var st = e.status || 'pending';
+    var du = daysUntil(e.date);
+    var gs = (e.gongsu === null || e.gongsu === undefined) ? calcGongsu(e.start, e.end) : (+e.gongsu || 0);
+    var badge = du === 0 ? '<span class="badge b-work">오늘</span>'
+      : du > 0 ? '<span class="badge b-warn">D-' + du + '</span>'
+        : '<span class="badge b-res">지난 조퇴</span>';
+    var stBadge = '<span class="badge ' + leaveBadgeCls(st) + '">' + leaveStatusLabel(st) + '</span>';
+    var acts = (st !== 'rejected' && du >= 0)
+      ? '<span class="lv-acts"><button class="lv-btn del" data-act="askCancelEarly" data-id="' + e.id + '">취소</button></span>' : '';
+    return '<div class="lv-row">' +
+      '<div class="lv-main"><div class="lv-date">🏃 ' + mdLabel(e.date) + ' ' + wd(e.date) + ' · ' + esc(e.start) + '~' + esc(e.end) + ' ' + badge + ' ' + stBadge + '</div>' +
+      '<div class="lv-sub">' + earlyHoursLabel(e.start, e.end) + ' · <b>' + fmtGs(gs) + '공수</b> · ' + esc(e.reason) + ' · 보고 ' + esc(leaveReportLabel(e.reportTo)) + '</div>' +
+      (st === 'rejected' && e.rejectReason ? '<div class="lv-sub lv-rej">반려 사유 · ' + esc(e.rejectReason) + '</div>' : '') +
       '</div>' + acts + '</div>';
   }).join('');
 }
@@ -686,21 +757,69 @@ function noticePreview(body) {
   return s.length > 48 ? s.slice(0, 48) + '…' : s;
 }
 
+/* 📢 공지사항 맨 위 — 토요일 출근 조사 (2026-11-26 : 단독 카드에서 이리로 통합)
+   · 진행 중 : 출근(예) / 미출근(아니오) 바로 응답 · 관리자·팀장은 조별 현황 · 조사 종료
+   · 종료 후 : `[종료] 11월 28일 토요일 출근조사 여부` 한 줄 (관리자·팀장은 눌러서 결과 보기) */
+function pollOpenNow() {
+  var poll = latestPoll();
+  return !!(poll && pollIsOpen(poll));
+}
+function noticePollHTML(who) {
+  var poll = latestPoll();
+  var mgr = canManage() && state.role !== 'worker';
+  if (!poll) { return ''; }
+  if (!pollIsOpen(poll)) {
+    var line = '[종료] ' + mdLabel(poll.satKey) + ' 토요일 출근조사 여부';
+    return mgr
+      ? '<button class="poll-mini tap" data-act="pollAdmin" data-id="' + poll.id + '">' + esc(line) + '<em>결과 ›</em></button>'
+      : '<div class="poll-mini">' + esc(line) + '</div>';
+  }
+  var c = pollCounts(poll);
+  var p0 = me();
+  var myVote = p0 ? poll.votes[p0.id] : null;
+  /* 이미 투표했으면 큰 투표 박스를 접고 `[투표완료] …` 한 줄 (누르면 다시 열려 수정) */
+  if (myVote && state.ui.pollExpand !== poll.id) {
+    return '<button class="poll-mini done" data-act="pollExpand" data-id="' + poll.id + '">' +
+      esc('[투표완료] ' + mdLabel(poll.satKey) + ' 토요일 출근조사 여부 · ' + (myVote === 'yes' ? '출근(예)' : '미출근(아니오)')) +
+      '<em>변경 ›</em></button>';
+  }
+  return '<div class="poll-inline">' +
+    '<div class="pi-top"><span class="pi-flag">📅 토요일 출근 조사</span><span class="badge b-warn">응답 중</span></div>' +
+    '<div class="poll-title">' + esc(poll.title) + '</div>' +
+    '<div class="muted" style="margin-top:2px">마감 ' + esc(fmtDeadline(poll.deadline)) + ' · 응답 ' + (c.yes + c.no) + '/' + c.total + '명</div>' +
+    '<div class="vote-row">' +
+    '<button class="btn vote-btn yes' + (myVote === 'yes' ? ' on' : '') + '" data-act="vote" data-v="yes">출근(예)</button>' +
+    '<button class="btn vote-btn no' + (myVote === 'no' ? ' on' : '') + '" data-act="vote" data-v="no">미출근(아니오)</button>' +
+    '</div>' +
+    (myVote
+      ? '<div class="hint">내 응답 · <b>' + (myVote === 'yes' ? '출근(예)' : '미출근(아니오)') + '</b> · 다시 눌러 변경할 수 있어요</div>'
+      : '<div class="hint">토요일 출근이 가능한지 선택해 주세요.</div>') +
+    (mgr ? '<div class="btn-row" style="margin-top:8px">' +
+      '<button class="btn btn-line sm" data-act="pollAdmin" data-id="' + poll.id + '">조별 현황 · 변경</button>' +
+      '<button class="btn btn-ghost sm" data-act="closePoll" data-id="' + poll.id + '">조사 종료</button></div>' : '') +
+    '</div>';
+}
+
 function noticeBannerHTML(who) {
   var ns = noticeSorted();
   var canNotice = who === 'admin' && isAdminView();
   var addBtn = canNotice ? '<button class="link-btn" data-act="noticeNew">＋ 새 공지 올리기</button>' : '';
+  var pollBtn = (canNotice && !pollOpenNow()) ? '<button class="link-btn" data-act="newPoll">＋ 토요일 조사</button>' : '';
+  var pollBlock = noticePollHTML(who);
+  var footExtra = (addBtn || pollBtn) ? '<span class="nf-acts">' + addBtn + pollBtn + '</span>' : '';
   if (!ns.length) {
     return '<div class="card notice-card">' +
+      pollBlock +
       '<div class="notice-head"><span class="notice-flag">📢 공지사항</span>' +
       '<span class="notice-meta">' + longDate(todayKey()) + '</span></div>' +
       '<div class="notice-empty">등록된 공지가 없습니다.</div>' +
-      (canNotice ? '<div class="notice-foot">' + addBtn + '</div>' : '') +
+      (canNotice ? '<div class="notice-foot">' + footExtra + '</div>' : '') +
       '</div>';
   }
   var n = ns[0];
   var rest = ns.length - 1;
   return '<div class="card notice-card">' +
+    pollBlock +
     '<div class="notice-head">' +
     '<span class="notice-flag' + (n.pinned ? ' pin' : '') + '">' + (n.pinned ? '📌 필독 공지' : '📢 공지사항') + '</span>' +
     '<span class="notice-meta">' + shortDate(n.date) + ' (' + wd(n.date) + ') · ' + esc(n.author || '관리자') + '</span>' +
@@ -713,7 +832,7 @@ function noticeBannerHTML(who) {
     (rest > 0 || canNotice
       ? '<div class="notice-foot">' +
         (rest > 0 ? '<button class="link-btn" data-act="openNoticeList">공지 ' + ns.length + '건 전체 보기</button>' : '<span></span>') +
-        addBtn + '</div>'
+        footExtra + '</div>'
       : '') +
     '</div>';
 }
@@ -782,8 +901,6 @@ function resignedWorkerView(p) {
 function workerHome(p) {
   var a = todayAtt(p);
   var edit = !!state.ui.timeEdit;
-  var poll = latestPoll();
-  var myVote = poll ? poll.votes[p.id] : null;
 
   var attInner;
   if (edit) {
@@ -810,7 +927,7 @@ function workerHome(p) {
       '<button class="btn btn-out" data-act="clockOut"' + (a && a.in && !a.out ? '' : ' disabled') + '>퇴근하기</button>' +
       '</div>' +
       (a && a.in ? '<button class="btn btn-line sm block time-edit-btn" data-act="timeEditOpen">🕘 시간 수정' + (a.out ? ' · 출근 / 퇴근' : ' · 출근만 기록됨') + '</button>' : '') +
-      '<button class="btn btn-line sm block" style="margin-top:8px" data-act="pastAttOpen">＋ 이전 날짜 공수 추가</button>' +
+      '<button class="btn btn-line sm block" style="margin-top:8px" data-act="earlyLeaveOpen">🏃 당일 조퇴 신청</button>' +
       (a && a.in && a.out ? '<div class="done-line">오늘 근무 완료 · ' + a.in + ' ~ ' + a.out + ' · ' + fmtGs(gongsuOf(a)) + '공수</div>' : '') +
       (a && a.in && !a.out ? '<div class="small-note">퇴근할 때 <b>퇴근하기</b>를 눌러 주세요. 누른 시각이 관리자 화면에 바로 표시됩니다.</div>' : '');
   }
@@ -821,27 +938,6 @@ function workerHome(p) {
     '<div class="clock" id="liveClock">' + nowHM() + '</div></div>' +
     attInner +
     '</div>';
-
-  var pollCard;
-  if (!poll) {
-    pollCard = '<div class="card"><div class="sec-t">토요일 출근 여부</div><div class="empty"><span class="e-ic">📅</span>올라온 공지가 없습니다.<br>관리자가 공지를 올리면 여기에서 응답할 수 있어요.</div></div>';
-  } else {
-    var c = pollCounts(poll);
-    var open = pollIsOpen(poll);
-    var closed = !open;
-    pollCard =
-      '<div class="card">' +
-      '<div class="card-head"><div class="sec-t">토요일 출근 여부</div>' + (closed ? '<span class="badge b-res">응답 마감</span>' : '<span class="badge b-warn">응답 중</span>') + '</div>' +
-      '<div class="poll-title">' + esc(poll.title) + '</div>' +
-      '<div class="muted" style="margin-top:3px">마감 ' + esc(fmtDeadline(poll.deadline)) + ' · 응답 ' + (c.yes + c.no) + '/' + c.total + '명</div>' +
-      '<div class="vote-row">' +
-      '<button class="btn vote-btn yes' + (myVote === 'yes' ? ' on' : '') + '" data-act="vote" data-v="yes"' + (closed ? ' disabled' : '') + '>예</button>' +
-      '<button class="btn vote-btn no' + (myVote === 'no' ? ' on' : '') + '" data-act="vote" data-v="no"' + (closed ? ' disabled' : '') + '>아니오</button>' +
-      '</div>' +
-      (myVote ? '<div class="hint">내 응답 · <b>' + (myVote === 'yes' ? '출근 가능(예)' : '출근 어려움(아니오)') + '</b>' + (closed ? '' : ' · 다시 눌러 변경할 수 있어요') + '</div>'
-        : '<div class="hint">' + (closed ? '응답이 마감되었습니다.' : '토요일 출근이 가능한지 선택해 주세요.') + '</div>') +
-      '</div>';
-  }
 
   var leaveCard =
     '<div class="card">' +
@@ -859,6 +955,15 @@ function workerHome(p) {
     '<div class="muted" style="font-weight:800;color:#475467">신청 내역</div>' +
     '<div id="homeLeaveList">' + myLeaveRowsHTML(p) + '</div>' +
     '<div class="hint">신청한 휴무는 여기서 바로 <b>취소</b>할 수 있습니다. 내일 이후 날짜는 <b>정정</b>도 됩니다. (지난 날짜는 관리자에게)</div>' +
+    '</div>';
+
+  var earlyCard =
+    '<div class="card">' +
+    '<div class="card-head"><div><div class="sec-t">🏃 당일 조퇴 신청</div>' +
+    '<div class="muted">오늘 조퇴한 근무 시간이 공수에 바로 반영됩니다</div></div>' +
+    '<button class="btn btn-line sm" data-act="earlyLeaveOpen">신청</button></div>' +
+    '<div id="homeEarlyList">' + myEarlyRowsHTML(p) + '</div>' +
+    '<div class="hint">신청하면 오늘 근태가 신청한 시간으로 바뀌고 관리자·팀장에게 <b>보고</b>됩니다. 승인되면 확정되고, 반려·취소하면 신청 전 근태로 돌아갑니다.</div>' +
     '</div>';
 
   var openResign = !!state.ui.resignOpen;
@@ -891,7 +996,7 @@ function workerHome(p) {
     '<div class="hello"><span class="av lg">' + esc(p.name.slice(0, 1)) + '</span><div>' +
     '<div class="h-name">' + esc(p.name) + ' 님</div>' +
     '<div class="muted">' + teamLabel(p.teamId) + ' · ' + esc(p.job) + ' · 한양이엔지(주) PCW</div></div></div>' +
-    attCard + pollCard + leaveCard + pdfQuickHTML() + resignCard +
+    attCard + leaveCard + earlyCard + pdfQuickHTML() + resignCard +
     '<div class="foot-note">한양 pcw팀 · Supabase 실시간 저장</div>';
 }
 
@@ -1579,7 +1684,6 @@ function adminTodayBody() {
   var teams = avgByTeam();
   var maxAvg = Math.max.apply(null, teams.map(function (t) { return t.avg; }).concat([1]));
   var barRef = Math.max(200000, maxAvg);
-  var poll = latestPoll();
 
   var statCard = '<div class="card">' +
     '<div class="card-head"><div class="sec-t">오늘 현황</div><div class="muted">' + longDate(todayKey()) + '</div></div>' +
@@ -1605,43 +1709,6 @@ function adminTodayBody() {
         '<span class="ac">' + t.count + '명</span></div>';
     }).join('') : '<div class="muted">아직 만든 조가 없습니다.</div>') +
     '</div></div>';
-
-  var pollCard;
-  if (!poll) {
-    pollCard = '<div class="card"><div class="card-head"><div class="sec-t">토요일 출근 여부</div>' +
-      (isAdminView() ? '<button class="link-btn" data-act="newPoll">+ 토요일 조사</button></div>' : '</div>') +
-      '<div class="empty"><span class="e-ic">📅</span>올린 조사가 없습니다.<br>토요일 출근 여부를 조사로 올려 보세요.</div></div>';
-  } else {
-    var c = pollCounts(poll);
-    var py = c.total ? (c.yes / c.total) * 100 : 0;
-    var pn = c.total ? (c.no / c.total) * 100 : 0;
-    var open = pollIsOpen(poll);
-    var tg = pollTeamGroups(poll);
-    var teamLine = tg.map(function (g) {
-      return '<div class="pt-row"><span class="pt-n">' + esc(g.name) + '</span>' +
-        '<span class="pt-c"><b class="pt-y">' + g.yes + '</b>출근</span>' +
-        '<span class="pt-c"><b class="pt-n2">' + g.no + '</b>미출근</span>' +
-        '<span class="pt-c"><b class="pt-x">' + g.none + '</b>미응답</span></div>';
-    }).join('');
-    pollCard = '<div class="card">' +
-      '<div class="card-head"><div class="sec-t">토요일 출근 여부</div>' +
-      (isAdminView() ? '<button class="link-btn" data-act="newPoll">+ 새 조사</button></div>' : '</div>') +
-      '<div class="poll-title">' + esc(poll.title) + '</div>' +
-      '<div class="muted" style="margin-top:3px">마감 ' + esc(fmtDeadline(poll.deadline)) + ' · ' + (open ? '응답 받는 중' : '응답 마감됨') + '</div>' +
-      '<div class="poll-bars"><i class="pb-yes" style="width:' + py + '%"></i><i class="pb-no" style="width:' + pn + '%"></i></div>' +
-      '<div class="poll-counts">' +
-      '<span class="c-yes">예 <b>' + c.yes + '</b></span>' +
-      '<span class="c-no">아니오 <b>' + c.no + '</b></span>' +
-      '<span>미응답 <b>' + c.none + '</b></span>' +
-      '</div>' +
-      (teamLine ? '<div class="poll-teams">' + teamLine + '</div>' : '') +
-      '<div class="btn-row">' +
-      (open ? '<button class="btn btn-ghost sm" data-act="closePoll" data-id="' + poll.id + '">응답 마감</button>' : '<button class="btn btn-line sm" data-act="newPoll">새 조사 올리기</button>') +
-      '<button class="btn btn-line sm" data-act="pollAdmin" data-id="' + poll.id + '">조별 현황 · 변경</button>' +
-      '</div>' +
-      '<div class="hint">인원별 <b>출근/미출근</b>은 「조별 현황」에서 관리자·팀장이 직접 바꿀 수 있습니다(전화·카톡으로 확인한 경우).</div>' +
-      '</div>';
-  }
 
   var filters = [['all', '전체']].concat(state.teams.map(function (t) { return [t.id, t.name]; }));
   var rp = resignedPeople();
@@ -1723,7 +1790,7 @@ function adminTodayBody() {
     '<div class="hint">당일 휴무 취소는 기술인이 직접 할 수 없어 관리자에게 연락해야 합니다.</div>' +
     '</div>' : '';
 
-  return adminHeadcountCard() + tbmAlertHTML() + statCard + leaveCard + avgCard + pollCard + peopleCard +
+  return adminHeadcountCard() + tbmAlertHTML() + statCard + leaveCard + avgCard + peopleCard +
     '<div class="foot-note">Supabase 실시간 저장 · 20초마다 자동 새로고침</div>';
 }
 
