@@ -151,6 +151,7 @@ textarea,.field textarea{height:auto;}
 .b-work{background:var(--green-soft);color:#027A48;}
 .b-out{background:#EFF2F7;color:#475467;}
 .b-off{background:var(--orange-soft);color:#B54708;}
+.b-warn{background:var(--orange-soft);color:#B54708;}
 .b-off2{background:#F4F0FF;color:#6941C6;}
 .b-none{background:#FEF3F2;color:#B42318;}
 .b-res{background:#F2F4F7;color:#667085;}
@@ -305,6 +306,23 @@ mark{background:#FFF0A8;color:inherit;border-radius:3px;padding:0 1px;}
   box-shadow:0 -12px 40px rgba(16,24,40,.22);
 }
 #sheetWrap.open .sheet{transform:translate(-50%,0);}
+
+/* 🔔 휴무·조퇴 보고 알람 — 모달 팝업 강조 (v15) */
+#sheetWrap.alarm-open .sheet-bg{background:rgba(16,24,40,.62);}
+.sheet.alarm{border-top:4px solid #F04438;box-shadow:0 -20px 70px rgba(16,24,40,.4);}
+.sheet.alarm .sheet-grip{background:#FDA29B;}
+.sheet.alarm .sheet-title b{color:#B42318;}
+#sheetWrap.alarm-open .sheet.alarm{animation:pcwAlarmPop .3s cubic-bezier(.22,.9,.25,1);}
+@keyframes pcwAlarmPop{
+  from{transform:translate(-50%,26%) scale(.96);opacity:.55;}
+  to{transform:translate(-50%,0) scale(1);opacity:1;}
+}
+.la-sum{margin:2px 0 7px;padding:9px 11px;border-radius:11px;background:#FEF3F2;border:1px solid #FDA29B;
+  color:#B42318;font-size:12.5px;font-weight:900;letter-spacing:-.3px;}
+.la-sum b{font-size:14px;}
+.la-sum-d{font-weight:800;color:#B54708;}
+.la-acts{gap:4px;flex-wrap:wrap;justify-content:flex-end;}
+.la-acts .lv-btn{padding:6px 8px;font-size:10.5px;border-radius:8px;letter-spacing:-.3px;}
 .sheet-grip{width:42px;height:4.5px;border-radius:3px;background:#E4E7EC;margin:9px auto 0;flex:0 0 auto;}
 #sheetBody{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 16px calc(18px + env(safe-area-inset-bottom));}
 .sheet-title{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0 11px;}
@@ -908,3 +926,12 @@ a.btn{text-decoration:none;}
 .hc-foot-inline{margin-left:auto;font-size:11px;font-weight:800;color:var(--gray);letter-spacing:-.2px;}
 .hc-foot-inline b{color:#101828;font-weight:900;}
 .hc-card .hc-num.c-out{color:#027A48;}
+
+/* 🏃 인원 현황 카드 : 조퇴 명단 · [조퇴보고] 복사 (v15) */
+.hc-el-sect .hc-t b{color:#B54708;}
+.hc-el-row{align-items:center;gap:5px;}
+.hc-el-row .hc-sub{font-size:11px;}
+.hc-el-bd{flex:0 0 auto;font-size:10px;padding:2px 6px;border-radius:6px;}
+.hc-copy-mini{flex:0 0 auto;height:24px;padding:0 8px;font-size:10.5px;border-radius:8px;}
+.lv-btn.cp{color:#475467;background:#F2F4F7;}
+.la-acts .lv-btn.cp{color:#475467;background:#F2F4F7;}

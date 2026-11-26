@@ -426,7 +426,8 @@ function leaveAlarmRowHTML(l) {
     '<span class="la-to">보고 ' + esc(l.reportTo || '관리자') + '</span>' +
     '<span class="la-acts">' +
     (isEarly
-      ? '<button class="lv-btn ok" data-act="earlyApprove" data-id="' + l.id + '">승인</button>' +
+      ? (canManage() ? '<button class="lv-btn cp" data-act="copyEarlyReport" data-id="' + l.id + '" title="[조퇴보고] 양식 복사">복사</button>' : '') +
+        '<button class="lv-btn ok" data-act="earlyApprove" data-id="' + l.id + '">승인</button>' +
         '<button class="lv-btn del" data-act="earlyRejectOpen" data-id="' + l.id + '">반려</button>'
       : '<button class="lv-btn ok" data-act="leaveApprove" data-id="' + l.id + '">승인</button>' +
         '<button class="lv-btn del" data-act="leaveRejectOpen" data-id="' + l.id + '">반려</button>') +
@@ -435,7 +436,11 @@ function leaveAlarmRowHTML(l) {
 
 function leaveAlarmHTML(list) {
   var rows = list.map(leaveAlarmRowHTML).join('');
-  return '<div class="la-note">휴무는 [승인]하면 0공수, [반려]하면 집계에서 빠집니다. 조퇴는 [승인]하면 신청한 근무시간 그대로, [반려]하면 신청 전으로 돌아갑니다. 확인 완료를 누르면 이 알람은 다시 뜨지 않습니다.</div>' +
+  var nEarly = list.filter(function (l) { return l.kind === 'early'; }).length;
+  var nLeave = list.length - nEarly;
+  return '<div class="la-sum">🔔 확인이 필요합니다 · <b>' + list.length + '건</b>' +
+    ' <span class="la-sum-d">(휴무 ' + nLeave + (nEarly ? ' · 조퇴 ' + nEarly : '') + ')</span></div>' +
+    '<div class="la-note">휴무는 [승인]하면 0공수, [반려]하면 집계에서 빠집니다. 조퇴는 [승인]하면 신청한 근무시간 그대로, [반려]하면 신청 전으로 돌아갑니다. 조퇴는 [복사]로 [조퇴보고] 양식을 바로 복사합니다. 확인 완료를 누르면 이 알람은 다시 뜨지 않습니다.</div>' +
     rows;
 }
 
@@ -445,7 +450,9 @@ function openLeaveAlarmSheet(list) {
   leaveAlarmOpenIds = list.map(function (l) { return l.id; });
   openSheet('🔔 새 휴무/조퇴 보고가 올라왔어요 (' + list.length + '건)', leaveAlarmHTML(list),
     '<button class="btn btn-line" data-act="leaveAlarmList">휴무·조퇴 관리</button>' +
-    '<button class="btn btn-primary" data-act="leaveAlarmAck">확인 완료</button>');
+    '<button class="btn btn-primary" data-act="leaveAlarmAck">확인 완료</button>',
+    { alarm: true });
+  try { if (navigator.vibrate) { navigator.vibrate([90, 60, 90]); } } catch (e) { /* 진동 미지원 */ }
 }
 
 /* =========================================================
@@ -473,7 +480,7 @@ function adminLeaveRowHTML(x, withActs) {
       '<button class="lv-btn del" data-act="leaveRejectOpen" data-id="' + l.id + '">반려</button></span>' : '') +
     '</div>';
 }
-/* ---- 당일 조퇴 신청 행 (관리자·팀장) ---- */
+/* ---- 조퇴 신청 행 (관리자·팀장) ---- */
 function adminEarlyAllRows() {
   var rows = [];
   state.people.forEach(function (p) {
@@ -484,6 +491,8 @@ function adminEarlyAllRows() {
 function adminEarlyRowHTML(x, withActs) {
   var p = x.p, e = x.e, st = e.status || 'pending';
   var gs = (e.gongsu === null || e.gongsu === undefined) ? calcGongsu(e.start, e.end) : (+e.gongsu || 0);
+  var copyBtn = canManage()
+    ? '<button class="lv-btn cp" data-act="copyEarlyReport" data-id="' + e.id + '" title="[조퇴보고] 양식 복사">복사</button>' : '';
   return '<div class="lv-row">' +
     '<div class="lv-main">' +
     '<div class="lv-date">' + esc(p.name) + ' · ' + mdLabel(e.date) + ' <em class="lvm-wd">' + wd(e.date) + '</em> ' +
@@ -493,9 +502,10 @@ function adminEarlyRowHTML(x, withActs) {
     '<div class="lv-sub">보고 ' + esc(leaveReportLabel(e.reportTo)) + (p.teamId ? ' · ' + esc(teamLabel(p.teamId)) : '') + '</div>' +
     (st === 'rejected' && e.rejectReason ? '<div class="lv-sub lv-rej">반려 사유 · ' + esc(e.rejectReason) + '</div>' : '') +
     '</div>' +
-    (withActs ? '<span class="lv-acts">' +
-      '<button class="lv-btn ok" data-act="earlyApprove" data-id="' + e.id + '">승인</button>' +
-      '<button class="lv-btn del" data-act="earlyRejectOpen" data-id="' + e.id + '">반려</button></span>' : '') +
+    '<span class="lv-acts">' + copyBtn +
+    (withActs ? '<button class="lv-btn ok" data-act="earlyApprove" data-id="' + e.id + '">승인</button>' +
+      '<button class="lv-btn del" data-act="earlyRejectOpen" data-id="' + e.id + '">반려</button>' : '') +
+    '</span>' +
     '</div>';
 }
 function adminLeaveManageHTML() {
@@ -514,7 +524,7 @@ function adminLeaveManageHTML() {
   var html = '<div class="muted" style="margin:-4px 0 8px">휴무를 <b>승인</b>하면 0공수, <b>반려</b>하면 집계에서 빠집니다. 조퇴는 <b>승인</b>하면 신청한 근무시간 그대로, <b>반려</b>하면 신청 전 근태로 되돌립니다.</div>' +
     '<button class="btn btn-line sm block" data-act="leaveProxyOpen">＋ 휴무 대리 등록</button>' +
     '<div class="divider"></div>' +
-    '<div class="lvm-t">🏃 당일 조퇴 · 대기 <b>' + ePend.length + '건</b></div>' +
+    '<div class="lvm-t">🏃 조퇴 · 대기 <b>' + ePend.length + '건</b></div>' +
     (ePend.length ? ePend.map(function (x) { return adminEarlyRowHTML(x, true); }).join('')
       : '<div class="empty" style="padding:14px 4px">대기 중인 조퇴 보고가 없습니다.</div>') +
     '<div class="divider"></div>' +
@@ -544,14 +554,27 @@ function osNotifyLeave(n, first) {
   } catch (e) { /* 알림 미지원 */ }
 }
 
-/* 관리자 화면에 그려질 때마다 호출 — 새 행이 있으면 시트 · OS 알림 */
+/* 관리자 화면에 그려질 때마다 호출 — 새 행이 있으면 팝업 · OS 알림
+   - 창이 닫혀 있으면: 아직 닫지 않은 새 보고가 있을 때 즉시 다시 팝업
+   - 알람창이 떠 있으면: 그 사이 새로 올라온 건이 있으면 목록을 다시 그린다
+   - 다른 시트를 보는 중이면 양보 (closeSheet 에서 다시 확인) */
 function maybeShowLeaveAlarm() {
   try {
     if (!state.ready || !state.auth || state.role === 'worker' || !canManage()) { return; }
     var wrap = document.getElementById('sheetWrap');
-    if (wrap && wrap.classList.contains('open')) { return; }   /* 다른 시트를 보는 중이면 양보 */
     var list = unackedReports();
     if (!list.length) { return; }
+    if (wrap && wrap.classList.contains('open')) {
+      if (wrap.classList.contains('alarm-open') && leaveAlarmOpenIds) {
+        var extra = list.filter(function (l) { return leaveAlarmOpenIds.indexOf(l.id) < 0; });
+        if (extra.length) {
+          openLeaveAlarmSheet(list);
+          extra.forEach(function (l) { leaveAlarm.notified[l.id] = 1; });
+          osNotifyLeave(extra.length, extra[0]);
+        }
+      }
+      return;
+    }
     var fresh = list.filter(function (l) { return !leaveAlarm.dismissed[l.id]; });
     if (!fresh.length) { return; }
     openLeaveAlarmSheet(list);
@@ -609,11 +632,11 @@ function myLeaveRowsHTML(p) {
   }).join('');
 }
 
-/* 기술인 홈 · 당일 조퇴 신청 내역 */
+/* 기술인 홈 · 조퇴 신청 내역 */
 function myEarlyRowsHTML(p) {
   var list = (p.earlyLeaves || []).slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
   if (!list.length) {
-    return '<div class="empty" style="padding:16px 4px">신청한 당일 조퇴가 없습니다.</div>';
+    return '<div class="empty" style="padding:16px 4px">신청한 조퇴가 없습니다.</div>';
   }
   return list.map(function (e) {
     var st = e.status || 'pending';
@@ -928,7 +951,7 @@ function workerHome(p) {
       '<button class="btn btn-out" data-act="clockOut"' + (a && a.in && !a.out ? '' : ' disabled') + '>퇴근하기</button>' +
       '</div>' +
       (a && a.in ? '<button class="btn btn-line sm block time-edit-btn" data-act="timeEditOpen">🕘 시간 수정' + (a.out ? ' · 출근 / 퇴근' : ' · 출근만 기록됨') + '</button>' : '') +
-      '<button class="btn btn-line sm block" style="margin-top:8px" data-act="earlyLeaveOpen">🏃 당일 조퇴 신청</button>' +
+      '<button class="btn btn-line sm block" style="margin-top:8px" data-act="earlyLeaveOpen">🏃 조퇴 신청</button>' +
       (a && a.in && a.out ? '<div class="done-line">오늘 근무 완료 · ' + a.in + ' ~ ' + a.out + ' · ' + fmtGs(gongsuOf(a)) + '공수</div>' : '') +
       (a && a.in && !a.out ? '<div class="small-note">퇴근할 때 <b>퇴근하기</b>를 눌러 주세요. 누른 시각이 관리자 화면에 바로 표시됩니다.</div>' : '');
   }
@@ -960,11 +983,11 @@ function workerHome(p) {
 
   var earlyCard =
     '<div class="card">' +
-    '<div class="card-head"><div><div class="sec-t">🏃 당일 조퇴 신청</div>' +
-    '<div class="muted">오늘 조퇴한 근무 시간이 공수에 바로 반영됩니다</div></div>' +
+    '<div class="card-head"><div><div class="sec-t">🏃 조퇴 신청</div>' +
+    '<div class="muted">신청한 날짜의 조퇴 근무 시간이 공수에 바로 반영됩니다</div></div>' +
     '<button class="btn btn-line sm" data-act="earlyLeaveOpen">신청</button></div>' +
     '<div id="homeEarlyList">' + myEarlyRowsHTML(p) + '</div>' +
-    '<div class="hint">신청하면 오늘 근태가 신청한 시간으로 바뀌고 관리자·팀장에게 <b>보고</b>됩니다. 승인되면 확정되고, 반려·취소하면 신청 전 근태로 돌아갑니다.</div>' +
+    '<div class="hint">신청하면 그 날짜 근태가 신청한 시간으로 바뀌고 관리자·팀장에게 <b>보고</b>됩니다. 오늘뿐 아니라 다른 날짜(과거·미래)도 신청할 수 있습니다. 승인되면 확정되고, 반려·취소하면 신청 전 근태로 돌아갑니다.</div>' +
     '</div>';
 
   var openResign = !!state.ui.resignOpen;
@@ -1509,6 +1532,42 @@ function leaveCopyText(dateKey) {
   }).join('\n');
 }
 
+/* ---------- 🏃 조퇴 명단 · [조퇴보고] 복사 양식 ---------- */
+/* 그 날짜 조퇴자 (반려 제외) — 이름 순. [{p: 사람, e: 조퇴신청}] */
+function earlyListFor(k) {
+  var key = k || todayKey();
+  var out = [];
+  peopleAsOf(key).forEach(function (p) {
+    (p.earlyLeaves || []).forEach(function (e) {
+      if (e.date !== key) { return; }
+      if ((e.status || 'pending') === 'rejected') { return; }
+      out.push({ p: p, e: e });
+    });
+  });
+  return out.sort(function (a, b) { return a.p.name.localeCompare(b.p.name, 'ko'); });
+}
+/* 카톡에 붙여넣는 [조퇴보고] 양식 — x = {p, e} 또는 {name, date, start, end, reason} */
+function earlyReportText(x) {
+  var e = (x && x.e) || x || {};
+  var nm = (x && x.p) ? x.p.name : (e.name || '');
+  var k = e.date || todayKey();
+  var sp = String(k).split('-');
+  var dateText = sp.length === 3
+    ? (parseInt(sp[1], 10) + '월 ' + parseInt(sp[2], 10) + '일 ' + wd(k) + '요일')
+    : String(k);
+  return '[조퇴보고]\n' +
+    '날짜 : ' + dateText + '\n' +
+    '이름 : ' + nm + '\n' +
+    '사유 : ' + (e.reason ? e.reason : '사유 미입력') + '\n' +
+    '근무시간 : ' + (e.start || '') + '~' + (e.end || '');
+}
+/* 여러 명이면 사람 블록을 빈 줄(\n\n)로 구분해 한 번에 복사 */
+function earlyReportAllText(k) {
+  var list = earlyListFor(k);
+  if (!list.length) { return ''; }
+  return list.map(function (x) { return earlyReportText(x); }).join('\n\n');
+}
+
 function hcDateKey() {
   var d = state.ui && state.ui.hcDate;
   return /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) ? d : todayKey();
@@ -1568,6 +1627,20 @@ function adminHeadcountCard() {
     if (a && a.in) { nIn++; } else { nNone++; }
   });
 
+  var earlies = earlyListFor(tk);
+  var earlyRows = earlies.length
+    ? '<div class="hc-list">' + earlies.map(function (x) {
+      var e = x.e, st = e.status || 'pending';
+      return '<div class="hc-row hc-el-row">' +
+        '<span class="hc-name">' + esc(x.p.name) + '</span>' +
+        '<span class="hc-sub">' + esc(e.start) + '~' + esc(e.end) + ' · ' +
+        (e.reason ? esc(e.reason) : '사유 미입력') + '</span>' +
+        '<span class="badge ' + leaveBadgeCls(st) + ' hc-el-bd">' + leaveStatusLabel(st) + '</span>' +
+        (canManage() ? '<button class="hc-copy hc-copy-mini" data-act="copyEarlyReport" data-id="' + e.id + '">복사</button>' : '') +
+        '</div>';
+    }).join('') + '</div>'
+    : '';
+
   var offList = offs.length
     ? '<div class="hc-list">' + offs.map(function (o) {
       return '<div class="hc-row"><span class="hc-name">' + esc(o.name) + '</span>' +
@@ -1607,6 +1680,11 @@ function adminHeadcountCard() {
     (canManage() ? '<button class="hc-copy" data-act="copyLeaveList" data-date="' + tk + '">복사</button>' : '') +
     '</div>' +
     offList + '</div>' +
+    '<div class="hc-sect hc-el-sect"><div class="hc-head2"><div class="hc-t">🏃 조퇴 <b>' + earlies.length + '명</b>' +
+    (earlies.length ? '' : ' <span class="hc-none-inline">(없음)</span>') + '</div>' +
+    (canManage() && earlies.length ? '<button class="hc-copy" data-act="copyEarlyReport" data-date="' + tk + '">전체 복사</button>' : '') +
+    '</div>' +
+    earlyRows + '</div>' +
     '<div class="hc-sect"><div class="hc-head2"><div class="hc-t">퇴사자 <b>' + res.length + '명</b>' +
     (res.length ? '' : ' <span class="hc-none-inline">(없음)</span>') + '</div>' +
     '<span class="hc-sub2">최근 7일</span></div>' +

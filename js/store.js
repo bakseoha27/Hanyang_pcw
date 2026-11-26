@@ -516,6 +516,10 @@ async function refresh(silent) {
   if (typing || sheetOpen) {
     await loadData({ silent: true });
     renderSync();
+    /* 알람 팝업이 떠 있는 중에 새 보고가 올라오면 목록에 바로 더한다 */
+    if (sheetOpen && $('#sheetWrap') && $('#sheetWrap').classList.contains('alarm-open')) {
+      try { maybeShowLeaveAlarm(); } catch (e) { /* 알람 실패가 새로고침을 막지 않게 */ }
+    }
     return;
   }
   var vals = snapshotInputs();
@@ -922,7 +926,7 @@ function decideLeave(l, status, byId, reason) {
   });
 }
 
-/* ---------- 당일 조퇴 신청 (early_leaves · 2026-11-26 추가) ----------
+/* ---------- 조퇴 신청 (early_leaves · 2026-11-26 추가 · 날짜 선택 2026-11-27) ----------
    휴무(0공수)와 섞이지 않도록 별도 테이블. 신청하면 그 날 근태를 start~end 로 바꿔
    공수를 반영하고, 관리자가 반려하면 신청 전 상태(out 비움)로 되돌린다. */
 function earlyLeaveById(p, id) {
@@ -963,7 +967,7 @@ function earlyLeaveWriteBody(p, e) {
 }
 function insertEarlyLeave(p, e, label) {
   return apiWrite({
-    m: 'POST', path: '/rest/v1/early_leaves', prefer: 'return=minimal', label: label || '당일 조퇴 신청',
+    m: 'POST', path: '/rest/v1/early_leaves', prefer: 'return=minimal', label: label || '조퇴 신청',
     body: earlyLeaveWriteBody(p, e)
   });
 }
@@ -1060,7 +1064,7 @@ function unackedLeaves() {
   return out;
 }
 
-/* 미확인 당일 조퇴 보고 (early_leaves.ack_at IS NULL · 승인/반려된 건 제외) */
+/* 미확인 조퇴 보고 (early_leaves.ack_at IS NULL · 승인/반려된 건 제외) */
 function unackedEarlyLeaves() {
   var out = [];
   state.people.forEach(function (p) {
