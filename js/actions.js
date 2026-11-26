@@ -74,11 +74,12 @@ function openMoveMember(id) {
     return '<div class="p-row" data-act="setTeam" data-id="' + id + '" data-team="' + t.id + '">' +
       '<span class="av">' + esc(t.name.slice(0, 1)) + '</span>' +
       '<span class="p-main"><span class="p-name">' + esc(t.name) + '</span>' +
-      '<span class="p-sub">' + teamMembers(t.id).length + '명' + (canAdmin() ? ' · 평균 ' + won(avgOf(teamMembers(t.id))) + '원' : '') + '</span></span>' +
+      '<span class="p-sub">' + teamMembers(t.id).length + '명' + (isAdminView() ? ' · 평균 ' + won(avgOf(teamMembers(t.id))) + '원' : '') + '</span></span>' +
       '<span class="p-right">' + (p.teamId === t.id ? '<span class="badge b-ok">현재</span>' : '<span class="badge b-res">이동</span>') + '</span></div>';
   }).join('');
   var body = '<div class="sheet-head"><span class="av lg">' + esc(p.name.slice(0, 1)) + '</span>' +
-    '<div><div class="sheet-name">' + esc(p.name) + '</div><div class="muted">현재 ' + teamLabel(p.teamId) + ' · ' + won(p.price) + '원/일</div></div></div>' +
+    '<div><div class="sheet-name">' + esc(p.name) + '</div><div class="muted">현재 ' + teamLabel(p.teamId) +
+    (isAdminView() ? ' · ' + won(p.price) + '원/일' : '') + '</div></div></div>' +
     '<div class="sect"><div class="sect-t">이동할 조를 선택하세요</div>' +
     (opts || '<div class="empty">아직 만든 조가 없습니다.<br>팀·조 탭에서 조를 먼저 만들어 주세요.</div>') +
     '<div class="p-row" data-act="setTeam" data-id="' + id + '" data-team=""><span class="av">–</span>' +
@@ -215,7 +216,7 @@ function openPersonAdd() {
     '<label class="field"><span>전화번호 <b class="must">*</b></span><input id="pa_phone" type="tel" inputmode="numeric" placeholder="010-0000-0000" autocomplete="tel"></label>' +
     '<label class="field"><span>직종</span><select id="pa_job">' + jobOpts + '</select></label>' +
     '<label class="field"><span>소속 팀/조</span><select id="pa_team">' + teamOptionsHTML(null) + '</select></label>' +
-    (canAdmin()
+    (isAdminView()
       ? '<label class="chk" style="margin-top:12px"><input type="checkbox" id="pa_admin" checked> <b>관리자 권한 부여</b> (is_admin)</label>' +
         '<label class="chk" style="margin-top:8px"><input type="checkbox" id="pa_leader"> <b>팀장 권한 부여</b> (is_leader)</label>' +
         '<div class="banner">관리자 = 모든 기능 + 권한 부여 + 암호 변경. 팀장 = 현황·일보·일정·팀·조·공수표·인원 등록(관리자 전용 항목 제외, 관리자 암호 불필요).</div>'
@@ -233,7 +234,7 @@ function personAddSubmit() {
   var phoneRaw = ($('#pa_phone') ? $('#pa_phone').value : '').trim();
   var job = $('#pa_job') ? $('#pa_job').value : '관리자';
   var tid = $('#pa_team') ? ($('#pa_team').value || null) : null;
-  var isAdmin = canAdmin() && !!(($('#pa_admin') && $('#pa_admin').checked));
+  var isAdmin = isAdminView() && !!(($('#pa_admin') && $('#pa_admin').checked));
   var isLeader = !!(($('#pa_leader') && $('#pa_leader').checked));
   if (!name) { toast('이름을 입력해 주세요.'); return; }
   var birth = birthFromDigits(birthRaw);
@@ -376,7 +377,7 @@ function openReportDetail(id) {
 
 /* ---------------- PDF 업로드 (Storage) ---------------- */
 async function handlePdfUpload(input) {
-  if (!canAdmin()) { toast('관리자만 현장자료를 올릴 수 있습니다.'); return; }
+  if (!isAdminView()) { toast('관리자만 현장자료를 올릴 수 있습니다.'); return; }
   var cat = input.getAttribute('data-cat') || 'risk';
   var file = input.files && input.files[0];
   input.value = '';
@@ -405,9 +406,133 @@ async function handlePdfUpload(input) {
   toast('PDF 업로드 완료 · <b>' + esc(file.name) + '</b><br>' + (cat === 'risk' ? '위험성평가' : '시방서') + ' 자료가 바로 열립니다');
 }
 
+/* ---------------- 기술인 오늘 근태 빠른 기록 (조출 · 조퇴) ---------------- */
+function setTodayAtt(inHM, outHM, label) {
+  var p = me();
+  if (!p) { return; }
+  var err = applyAttTime(p, inHM, outHM);
+  if (err) { toast(err + '<br>다시 확인해 주세요.'); return; }
+  saveAttendance(p, todayKey(), label || '근태 저장');
+  render();
+  var a = todayAtt(p);
+  toast('<b>' + label + '</b> 저장했어요 · ' + inHM + ' ~ ' + outHM + ' · <b>' + fmtGs(gongsuOf(a)) + '공수</b>');
+}
+
+/* 인원 상세 : 선택 날짜·시각으로 예상 공수 미리보기 */
+function pfAttPreview() {
+  var box = document.getElementById('pf_prev');
+  if (!box) { return; }
+  var p = personById(state.ui.personOpen || '');
+  var d = ($('#pf_adate') ? $('#pf_adate').value : '') || todayKey();
+  var iv = $('#pf_tin') ? $('#pf_tin').value : '';
+  var ov = $('#pf_tout') ? $('#pf_tout').value : '';
+  var parts = [];
+  if (iv) {
+    parts.push('예상 공수 <b>' + fmtGs(ov ? calcGongsu(iv, ov) : 1) + '공수</b>' +
+      (iv !== '07:00' || ov !== '17:00' ? ' <span class="muted">(' + iv + ' ~ ' + (ov || '미퇴근') + ')</span>' : ''));
+  } else {
+    parts.push('<span class="muted">출근 시각을 넣으면 공수가 계산됩니다</span>');
+  }
+  if (p) {
+    var a = (p.attendance || {})[d];
+    if (a && (a.in || a.out)) { parts.push('기존 기록 ' + (a.in || '-') + ' ~ ' + (a.out || '-') + ' · 저장하면 덮어씁니다'); }
+    if (leaveOn(p, d)) { parts.push('이 날짜는 휴무 신청이 있어 공수 0으로 표시됩니다'); }
+  }
+  if (d > todayKey()) { parts.push('미래 날짜는 저장할 수 없습니다'); }
+  box.innerHTML = parts.join('<br>');
+}
+
+/* 근태 저장 토스트 (인원 상세 · 선택 날짜) */
+function attSavedToast(gs, d, hasLeave) {
+  toast(longDate(d) + ' 근태 저장 완료 · <b>' + gs + '공수</b>' +
+    (hasLeave ? '<br>휴무 신청이 있어 공수는 0으로 표시됩니다' : '<br>전체 현황 · 한달 공수표에 <b>(수정됨)</b>으로 반영됩니다'));
+}
+
+/* 공수 일괄 적용 실행 (선택 인원 · 요청 1회 upsert) */
+function bulkDoApply(key, date) {
+  var preset = BULK_PRESETS[key];
+  if (!preset) { return; }
+  date = date || todayKey();
+  var ids = Object.keys(bulkSel).filter(function (id) {
+    var p = personById(id);
+    return p && p.status !== 'resigned' && !leaveOn(p, date);
+  });
+  if (!ids.length) { toast('적용할 인원이 없습니다.'); return; }
+  var gs = calcGongsu(preset.in, preset.out);
+  var rows = ids.map(function (id) {
+    return {
+      worker_id: id, work_date: date,
+      check_in: toIso(date, preset.in), check_out: toIso(date, preset.out),
+      in_edited: false, out_edited: false, gongsu: gs
+    };
+  });
+  ids.forEach(function (id) {
+    var p = personById(id);
+    p.attendance = p.attendance || {};
+    p.attendance[date] = { in: preset.in, out: preset.out, inEdited: false, outEdited: false };
+  });
+  bulkSel = {};
+  saveAttendanceBulk(rows, '공수 일괄 적용');
+  closeSheet();
+  render();
+  toast('<b>' + ids.length + '명</b> ' + preset.label + ' 적용 완료' + (date === todayKey() ? '' : '<br>' + longDate(date)));
+  setTimeout(function () { refresh(true); }, 600);
+}
+
+/* 내 정보 · 내 한달 공수표 : 날짜별 직접 입력/수정 (미래 날짜 허용) */
+function openMyGsEdit(date) {
+  var p = me();
+  if (!p) { return; }
+  var d = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? date : todayKey();
+  var a = (p.attendance || {})[d];
+  var lv = leaveOn(p, d);
+  var body =
+    '<div class="muted" style="margin:0 0 8px">날짜를 고르고 출근·퇴근 시각을 넣으면 공수가 바로 계산됩니다. 미래 날짜도 미리 넣을 수 있습니다.</div>' +
+    '<label class="field"><span>날짜</span><input type="date" id="mg_date" value="' + d + '"></label>' +
+    '<div class="grid2">' +
+    '<label class="field"><span>출근 시각</span><input type="time" id="mg_in" value="' + (a && a.in ? a.in : '') + '"></label>' +
+    '<label class="field"><span>퇴근 시각</span><input type="time" id="mg_out" value="' + (a && a.out ? a.out : '') + '"></label>' +
+    '</div>' +
+    '<div class="pf-presets">' +
+    '<button class="chip" data-act="mgPreset" data-in="05:00" data-out="15:00">조출 05:00~15:00</button>' +
+    '<button class="chip" data-act="mgPreset" data-in="07:00" data-out="17:00">1공수 07:00~17:00</button>' +
+    '<button class="chip" data-act="mgPreset" data-in="07:00" data-out="19:00">1.5공수 07:00~19:00</button>' +
+    '<button class="chip" data-act="mgPreset" data-in="07:00" data-out="11:00">조퇴 07:00~11:00</button>' +
+    '</div>' +
+    '<div class="att-now" id="mg_prev"></div>' +
+    (lv ? '<div class="hint">이 날짜는 휴무 신청(' + esc(lv.reason) + ')이 있어 공수는 0으로 표시됩니다.</div>' : '') +
+    '<div class="hint">출근·퇴근을 모두 비우면 그 날짜 기록을 지웁니다.</div>';
+  openSheet('내 한달 공수표 · ' + longDate(d), body,
+    '<button class="btn btn-ghost" data-act="myGsBack">취소</button>' +
+    '<button class="btn btn-primary" data-act="myGsSave">근태 저장 / 수정</button>');
+  setTimeout(mgPreview, 30);
+}
+function mgPreview() {
+  var box = document.getElementById('mg_prev');
+  if (!box) { return; }
+  var iv = $('#mg_in') ? $('#mg_in').value : '';
+  var ov = $('#mg_out') ? $('#mg_out').value : '';
+  var d = ($('#mg_date') ? $('#mg_date').value : '') || todayKey();
+  var p = me();
+  var parts = [];
+  if (iv) {
+    parts.push('예상 공수 <b>' + fmtGs(ov ? calcGongsu(iv, ov) : 1) + '공수</b>' +
+      (iv !== '07:00' || ov !== '17:00' ? ' <span class="muted">(' + iv + ' ~ ' + (ov || '미퇴근') + ')</span>' : ''));
+  } else {
+    parts.push('<span class="muted">출근 시각을 넣으면 공수가 계산됩니다</span>');
+  }
+  if (p) {
+    var a = (p.attendance || {})[d];
+    if (a && (a.in || a.out)) { parts.push('기존 기록 ' + (a.in || '-') + ' ~ ' + (a.out || '-') + ' · 저장하면 덮어씁니다'); }
+    if (leaveOn(p, d)) { parts.push('이 날짜는 휴무 신청이 있어 공수 0으로 표시됩니다'); }
+    if (d > todayKey()) { parts.push('미래 날짜 · 본인 공수표에만 합산되고 관리자 전체 공수표에는 표시되지 않습니다'); }
+  }
+  box.innerHTML = parts.join('<br>');
+}
+
 /* ---------------- 출퇴근 시간 반영 (공통) ---------------- */
-function applyAttTime(p, inVal, outVal) {
-  var k = todayKey();
+function applyAttTime(p, inVal, outVal, dateOpt) {
+  var k = dateOpt || todayKey();
   if (!p.attendance[k]) { p.attendance[k] = { in: '', out: '', inEdited: false, outEdited: false }; }
   var a = p.attendance[k];
   var nIn = String(inVal || '').slice(0, 5);
@@ -417,7 +542,7 @@ function applyAttTime(p, inVal, outVal) {
   if (nIn !== (a.in || '')) { a.in = nIn; a.inEdited = !!nIn; }
   if (nOut !== (a.out || '')) { a.out = nOut; a.outEdited = !!nOut; }
   if (nIn) {
-    var lv = leaveOn(p, k);
+    var lv = k === todayKey() ? leaveOn(p, k) : null;
     if (lv) {
       p.leaves = p.leaves.filter(function (x) { return x !== lv; });
       deleteLeave(lv.id);
@@ -608,7 +733,9 @@ var ACTIONS = {
   },
   leaveAlarmList: function () {
     closeSheet();
-    state.role = 'admin';
+    /* 알람을 열 수 있는 건 이미 관리자·팀장 화면 → 보던 역할 그대로 유지 (팀장은 팀장 화면에 머문다) */
+    if (state.role === 'worker') { state.role = canAdmin() ? 'admin' : 'manager'; }
+    state.ui.timeEdit = false;
     state.ui.adminTab = 'dash';
     state.ui.adminDashView = 'today';
     render();
@@ -619,7 +746,7 @@ var ACTIONS = {
   },
   changeAdminPass: async function () {
     var p = me();
-    if (!p || !p.admin) { toast('관리자만 암호를 바꿀 수 있습니다.'); return; }
+    if (!p || !p.admin || !isAdminView()) { toast('관리자만 암호를 바꿀 수 있습니다.'); return; }
     var o = $('#pw_old') ? $('#pw_old').value : '';
     var n = $('#pw_new') ? $('#pw_new').value : '';
     var n2 = $('#pw_new2') ? $('#pw_new2').value : '';
@@ -680,6 +807,38 @@ var ACTIONS = {
     render();
     saveAttendance(p, k, '출근 저장');
     toast('출근 완료 · ' + p.attendance[k].in + (lv ? ' (오늘 휴무 신청은 취소됐어요)' : '') + '<br>관리자 전체 현황에 반영됩니다');
+  },
+  earlyIn: function () {
+    var p = me();
+    if (!p) { return; }
+    var a = todayAtt(p);
+    if (a && (a.in || a.out)) {
+      confirmSheet('오늘 근태를 조출로 바꿀까요?',
+        '05:00 ~ 15:00 · <b>1공수</b>로 덮어씁니다.<br>지금 기록: ' + (a.in || '-') + ' ~ ' + (a.out || '-'),
+        '조출로 저장', 'earlyInDo', '', false);
+      return;
+    }
+    setTodayAtt('05:00', '15:00', '조출');
+  },
+  earlyInDo: function () { setTodayAtt('05:00', '15:00', '조출'); },
+  earlyOut: function () {
+    var p = me();
+    if (!p) { return; }
+    var a = todayAtt(p);
+    var iv = (a && a.in) ? a.in : '07:00';
+    if (a && a.in && a.out) {
+      confirmSheet('오늘 근태를 조퇴로 바꿀까요?',
+        iv + ' ~ 11:00 · <b>' + fmtGs(calcGongsu(iv, '11:00')) + '공수</b>로 덮어씁니다.<br>지금 기록: ' + a.in + ' ~ ' + a.out,
+        '조퇴로 저장', 'earlyOutDo', '', false);
+      return;
+    }
+    setTodayAtt(iv, '11:00', '조퇴');
+  },
+  earlyOutDo: function () {
+    var p = me();
+    if (!p) { return; }
+    var a = todayAtt(p);
+    setTodayAtt((a && a.in) ? a.in : '07:00', '11:00', '조퇴');
   },
   clockOut: function () {
     var p = me();
@@ -834,7 +993,7 @@ var ACTIONS = {
       resign_reason: pr.reason + (pr.text ? ' · ' + pr.text : '')
     }, '퇴사 처리');
     if (hadAtt) { saveAttendance(p, todayKey(), '퇴사 근태 삭제'); }
-    toast('퇴사 처리 완료 · 출근 대상 · 조 편성' + (canAdmin() ? ' · 평균단가' : '') + '에서 제외됐어요');
+    toast('퇴사 처리 완료 · 출근 대상 · 조 편성' + (isAdminView() ? ' · 평균단가' : '') + '에서 제외됐어요');
   },
 
   /* ----- 관리자 · 전체 현황 ----- */
@@ -859,6 +1018,58 @@ var ACTIONS = {
     state.ui.showArchive = !state.ui.showArchive;
     render();
   },
+  /* 이름 검색 : 입력 즉시 목록 필터 (재렌더 없이 DOM 만 → 포커스 유지) */
+  searchClear: function (el) {
+    var key = el.getAttribute('data-search') || 'dash';
+    state.ui['q_' + key] = '';
+    var inp = document.querySelector('[data-search="' + key + '"]');
+    if (inp) { inp.value = ''; }
+    var btn = document.querySelector('[data-act="searchClear"][data-search="' + key + '"]');
+    if (btn) { btn.classList.add('hide'); }
+    applyNameFilters();
+  },
+  /* 공수 일괄 적용 : 전체 선택 / 선택 해제 (지금 화면에 보이는 인원 기준) */
+  bulkAll: function () {
+    var vis = bulkChecksVisible();
+    var allOn = vis.length > 0 && vis.every(function (c) { return c.checked; });
+    vis.forEach(function (c) {
+      c.checked = !allOn;
+      var id = c.getAttribute('data-id');
+      if (allOn) { delete bulkSel[id]; } else { bulkSel[id] = 1; }
+    });
+    syncBulkUI();
+  },
+  bulkGsApply: function (el) {
+    if (!canManage()) { toast('관리자·팀장만 공수를 일괄 적용할 수 있습니다.'); return; }
+    var key = el.getAttribute('data-gs');
+    var preset = BULK_PRESETS[key];
+    if (!preset) { return; }
+    var date = state.ui.bulkDate || ($('#bulkDate') ? $('#bulkDate').value : '') || todayKey();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { toast('날짜를 선택해 주세요.'); return; }
+    if (date > todayKey()) { toast('미래 날짜는 공수를 넣을 수 없습니다.<br>오늘까지만 입력할 수 있어요.'); return; }
+    var ids = Object.keys(bulkSel).filter(function (id) {
+      var p = personById(id);
+      return p && p.status !== 'resigned';
+    });
+    if (!ids.length) { toast('공수를 넣을 인원을 선택해 주세요.'); return; }
+    var leaveIds = ids.filter(function (id) { return !!leaveOn(personById(id), date); });
+    var useIds = ids.filter(function (id) { return leaveIds.indexOf(id) < 0; });
+    if (!useIds.length) { toast('선택한 인원이 모두 그 날짜에 휴무입니다.'); return; }
+    var ow = useIds.filter(function (id) {
+      var a = personById(id).attendance[date];
+      return !!(a && (a.in || a.out));
+    });
+    if (ow.length || leaveIds.length) {
+      var msg = '<b>' + useIds.length + '명</b>에게 ' + longDate(date) + ' <b>' + preset.label + '</b>을 적용합니다.';
+      if (ow.length) { msg += '<br>이미 기록이 있는 <b>' + ow.length + '명</b>은 덮어씁니다.'; }
+      if (leaveIds.length) { msg += '<br>휴무 신청이 있는 <b>' + leaveIds.length + '명</b>은 제외합니다.'; }
+      confirmSheet('공수를 일괄 적용할까요?', msg, '적용', 'bulkGsDo',
+        'data-gs="' + key + '" data-date="' + date + '"', false);
+      return;
+    }
+    bulkDoApply(key, date);
+  },
+  bulkGsDo: function (el) { bulkDoApply(el.getAttribute('data-gs'), el.getAttribute('data-date')); },
   openPerson: function (el) { openPerson(el.getAttribute('data-id')); },
   pmonth: function (el) {
     var d = parseInt(el.getAttribute('data-d'), 10);
@@ -870,7 +1081,7 @@ var ACTIONS = {
       var idEl = sheet ? sheet.querySelector('[data-act="savePerson"]') : null;
       if (idEl) { q = personById(idEl.getAttribute('data-id')); }
     }
-    if (block && q) { block.innerHTML = attBlockHTML(q); }
+    if (block && q) { block.innerHTML = attBlockHTML(q, block.getAttribute('data-scope') || 'me'); }
   },
   addCert: function () {
     var list = $('#certList');
@@ -926,7 +1137,7 @@ var ACTIONS = {
         apiWrite({ m: 'PATCH', path: '/rest/v1/teams?id=' + sbEq(ot.id), body: { leader_id: null }, prefer: 'return=minimal', label: '반장 해제' });
       }
     }
-    if (canAdmin() && $('#pf_price')) { p.price = Math.max(0, num($('#pf_price').value)); }
+    if (isAdminView() && $('#pf_price')) { p.price = Math.max(0, num($('#pf_price').value)); }
     if ($('#pf_tin') || $('#pf_tout')) {
       var err = applyAttTime(p, $('#pf_tin') ? $('#pf_tin').value : '', $('#pf_tout') ? $('#pf_tout').value : '');
       if (err) { toast(err + '<br>다시 확인해 주세요.'); }
@@ -954,15 +1165,15 @@ var ACTIONS = {
       injury_has: !!p.injury.has, injury_date: p.injury.date || null,
       injury_note: p.injury.note || null, memo: p.memo || null
     };
-    if (canAdmin()) { fields.daily_rate = p.price || null; fields.is_leader = (p.role === 'leader'); }
+    if (isAdminView()) { fields.daily_rate = p.price || null; fields.is_leader = (p.role === 'leader'); }
     patchWorker(p.id, fields, '인원 정보 저장');
     if (sessionRead() && sessionRead().personId === p.id) { sessionSave(p, state.role); }
     render();
     openPerson(p.id);
-    toast(canAdmin() ? '저장됐어요 · 전체 평균단가 <b>' + won(overallAvg()) + '원</b>' : '저장됐어요');
+    toast(isAdminView() ? '저장됐어요 · 전체 평균단가 <b>' + won(overallAvg()) + '원</b>' : '저장됐어요');
   },
   toggleAdmin: function (el) {
-    if (!canAdmin()) { toast('관리자만 권한을 바꿀 수 있습니다.'); return; }
+    if (!isAdminView()) { toast('관리자만 권한을 바꿀 수 있습니다.'); return; }
     var p = personById(el.getAttribute('data-id'));
     if (!p) { return; }
     p.admin = !p.admin;
@@ -973,7 +1184,7 @@ var ACTIONS = {
     toast('<b>' + esc(p.name) + '</b> 님 관리자 권한을 ' + (p.admin ? '부여' : '해제') + '했어요');
   },
   toggleLeader: function (el) {
-    if (!canAdmin()) { toast('관리자만 권한을 바꿀 수 있습니다.'); return; }
+    if (!isAdminView()) { toast('관리자만 권한을 바꿀 수 있습니다.'); return; }
     var p = personById(el.getAttribute('data-id'));
     if (!p) { return; }
     var next = p.role !== 'leader';
@@ -997,7 +1208,7 @@ var ACTIONS = {
     patchWorker(p.id, { status: 'active', resign_date: null, resign_reason: null }, '복직 처리');
     closeSheet();
     render();
-    toast(p.name + ' 님을 복직 처리했어요' + (canAdmin() ? ' · 평균단가에 다시 포함됩니다' : ''));
+    toast(p.name + ' 님을 복직 처리했어요' + (isAdminView() ? ' · 평균단가에 다시 포함됩니다' : ''));
   },
 
   /* ----- 관리자 · 팀·조 ----- */
@@ -1079,7 +1290,7 @@ var ACTIONS = {
     render();
     toast('<b>' + esc(p.name) + '</b> 님을 ' + esc(t.name) + ' 반장으로 지정했어요');
   },
-  bulkOpen: function () { if (!canAdmin()) { toast('관리자만 명단을 일괄 등록할 수 있습니다.'); return; } openBulk(); },
+  bulkOpen: function () { if (!isAdminView()) { toast('관리자만 명단을 일괄 등록할 수 있습니다.'); return; } openBulk(); },
   pastAttOpen: function () { openPastAtt(); },
   pastAttSave: function () { pastAttSave(); },
   personAdd: function () { openPersonAdd(); },
@@ -1089,7 +1300,7 @@ var ACTIONS = {
     if (ta) { ta.value = ''; }
   },
   bulkApply: function () {
-    if (!canAdmin()) { toast('관리자만 명단을 일괄 등록할 수 있습니다.'); return; }
+    if (!isAdminView()) { toast('관리자만 명단을 일괄 등록할 수 있습니다.'); return; }
     var ta = $('#bulkText');
     if (!ta) { return; }
     var parsed = parseRoster(ta.value);
@@ -1119,7 +1330,7 @@ var ACTIONS = {
     closeSheet();
     render();
     toast('<b>' + added + '명</b> 등록 완료' + (newTeams ? ' · 새 조 ' + newTeams + '개 자동 생성' : '') +
-      (canAdmin() ? '<br>전체 평균단가 <b>' + won(overallAvg()) + '원</b>으로 다시 계산됐어요' : '') +
+      (isAdminView() ? '<br>전체 평균단가 <b>' + won(overallAvg()) + '원</b>으로 다시 계산됐어요' : '') +
       (parsed.rows.some(function (r) { return !r.birth; }) ? '<br>생년월일이 비었거나 형식이 다른 줄은 직접 확인해 주세요.' : ''));
   },
 
@@ -1147,21 +1358,61 @@ var ACTIONS = {
       toast(ok ? '전체 일보를 복사했어요' : '복사가 막혔어요 · 아래 내용을 길게 눌러 복사해 주세요');
     });
   },
+  myGsMonth: function (el) {
+    var d = parseInt(el.getAttribute('data-d'), 10);
+    state.ui.myGsMonth = shiftMonth(myGsMonthKey(), d);
+    var box = $('#myGsBox');
+    var p = me();
+    if (box && p) { box.innerHTML = myGsTableHTML(p); }
+  },
+  myGsPick: function (el) { openMyGsEdit(el.getAttribute('data-date')); },
+  myGsBack: function () { openSettings(me()); },
+  mgPreset: function (el) {
+    if ($('#mg_in')) { $('#mg_in').value = el.getAttribute('data-in'); }
+    if ($('#mg_out')) { $('#mg_out').value = el.getAttribute('data-out'); }
+    mgPreview();
+  },
+  myGsSave: function () {
+    var p = me();
+    if (!p) { return; }
+    var d = ($('#mg_date') ? $('#mg_date').value : '') || todayKey();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { toast('날짜를 선택해 주세요.'); return; }
+    var iv = $('#mg_in') ? $('#mg_in').value : '';
+    var ov = $('#mg_out') ? $('#mg_out').value : '';
+    var err = applyAttTime(p, iv, ov, d);
+    if (err) { toast(err + '<br>다시 확인해 주세요.'); return; }
+    saveAttendance(p, d, '내 근태 저장');
+    state.ui.myGsMonth = d.slice(0, 7);
+    openSettings(p);
+    var a = p.attendance[d];
+    toast(longDate(d) + ' 근태 저장 완료 · <b>' + fmtGs(a ? gongsuOf(a) : 0) + '공수</b>' +
+      (d > todayKey() ? '<br>미래 날짜 · 본인 공수표에만 합산됩니다' : ''));
+  },
+  pfPreset: function (el) {
+    if ($('#pf_tin')) { $('#pf_tin').value = el.getAttribute('data-in'); }
+    if ($('#pf_tout')) { $('#pf_tout').value = el.getAttribute('data-out'); }
+    pfAttPreview();
+  },
   saveAttTimes: function (el) {
     var p = personById(el.getAttribute('data-id'));
     if (!p) { return; }
+    if (!canManage()) { toast('관리자·팀장만 근태를 수정할 수 있습니다.'); return; }
+    var d = ($('#pf_adate') ? $('#pf_adate').value : '') || todayKey();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { toast('날짜를 선택해 주세요.'); return; }
+    if (d > todayKey()) { toast('미래 날짜는 공수를 넣을 수 없습니다.<br>오늘까지만 입력할 수 있어요.'); return; }
     var iv = $('#pf_tin') ? $('#pf_tin').value : '';
     var ov = $('#pf_tout') ? $('#pf_tout').value : '';
-    var err = applyAttTime(p, iv, ov);
+    var err = applyAttTime(p, iv, ov, d);
     if (err) { toast(err + '<br>다시 확인해 주세요.'); return; }
-    saveAttendance(p, todayKey(), '출퇴근 시간 수정');
+    saveAttendance(p, d, '출퇴근 시간 수정');
     var sb = $('#sheetBody');
     var keep = sb ? sb.scrollTop : 0;
+    p.attendance = p.attendance || {};
     render();
     openPerson(p.id);
     if (sb) { sb.scrollTop = keep; }
-    var a = todayAtt(p);
-    toast('출퇴근 시간 저장 완료 · 오늘 ' + fmtGs(gongsuOf(a)) + '공수<br>전체 현황 · 한달 공수표에 <b>(수정됨)</b>으로 반영됩니다');
+    var a = p.attendance[d];
+    attSavedToast(a ? fmtGs(gongsuOf(a)) : '0', d, !!leaveOn(p, d));
   },
 
   /* ----- 작업일보 (기술인) ----- */
@@ -1279,9 +1530,9 @@ var ACTIONS = {
   },
 
   /* ----- 관리자 · 토요일 조사 ----- */
-  newPoll: function () { if (!canAdmin()) { toast('관리자만 조사를 올릴 수 있습니다.'); return; } openNewPoll(); },
+  newPoll: function () { if (!isAdminView()) { toast('관리자만 조사를 올릴 수 있습니다.'); return; } openNewPoll(); },
   createPoll: function () {
-    if (!canAdmin()) { toast('관리자만 조사를 올릴 수 있습니다.'); return; }
+    if (!isAdminView()) { toast('관리자만 조사를 올릴 수 있습니다.'); return; }
     var title = ($('#pollTitle').value || '').trim();
     var dl = ($('#pollDeadline').value || '').trim();
     if (!title) { toast('공지 제목을 입력해 주세요.'); return; }
@@ -1333,9 +1584,9 @@ var ACTIONS = {
   },
   openNotice: function (el) { openNoticeDetail(el.getAttribute('data-id')); },
   openNoticeList: function () { openNoticeList(); },
-  noticeNew: function () { if (!canAdmin()) { toast('관리자만 공지를 올릴 수 있습니다.'); return; } openAddNotice(); },
+  noticeNew: function () { if (!isAdminView()) { toast('관리자만 공지를 올릴 수 있습니다.'); return; } openAddNotice(); },
   createNotice: function () {
-    if (!canAdmin()) { toast('관리자만 공지를 올릴 수 있습니다.'); return; }
+    if (!isAdminView()) { toast('관리자만 공지를 올릴 수 있습니다.'); return; }
     var t = ($('#nv_title').value || '').trim();
     var b = ($('#nv_body').value || '').trim();
     if (!t) { toast('공지 제목을 입력해 주세요.'); return; }
@@ -1384,7 +1635,7 @@ var ACTIONS = {
       '삭제', 'schedDoDel', 'data-id="' + esc(s.id) + '"');
   },
   schedDoDel: function (el) {
-    if (!canAdmin()) { return; }
+    if (!isAdminView()) { return; }
     var id = el.getAttribute('data-id');
     var backCal = !!state.ui.schedBackToCal;
     state.schedules = (state.schedules || []).filter(function (x) { return x.id !== id; });
@@ -1428,6 +1679,14 @@ var ACTIONS = {
    이벤트 · 시작
    ========================================================= */
 function onClick(e) {
+  /* 인원 선택 체크박스는 상세 열기(data-act)로 번지지 않게 먼저 처리 */
+  var tgt = e.target;
+  if (tgt && tgt.matches && tgt.matches('input.bulk-chk')) {
+    var cid = tgt.getAttribute('data-id');
+    if (tgt.checked) { bulkSel[cid] = 1; } else { delete bulkSel[cid]; }
+    syncBulkUI();
+    return;
+  }
   var el = e.target.closest ? e.target.closest('[data-act]') : null;
   if (!el) { return; }
   var act = el.getAttribute('data-act');
@@ -1448,6 +1707,16 @@ function onInput(e) {
   if (el.hasAttribute && el.hasAttribute('data-draft') && state.draft) {
     state.draft[el.getAttribute('data-draft')] = el.value;
   }
+  if (el.hasAttribute && el.hasAttribute('data-search')) {
+    var key = el.getAttribute('data-search');
+    state.ui['q_' + key] = el.value;
+    var clr = document.querySelector('[data-act="searchClear"][data-search="' + key + '"]');
+    if (clr) { clr.classList.toggle('hide', !el.value); }
+    applyNameFilters();
+    return;
+  }
+  if (el.id === 'pf_tin' || el.id === 'pf_tout') { pfAttPreview(); }
+  if (el.id === 'mg_in' || el.id === 'mg_out') { mgPreview(); }
 }
 
 function onChange(e) {
@@ -1463,6 +1732,28 @@ function onChange(e) {
   }
   if (el.id === 'patt_date' || el.id === 'patt_in' || el.id === 'patt_out') {
     pattPreview();
+  }
+  if (el.classList && el.classList.contains('bulk-chk')) {
+    var bid = el.getAttribute('data-id');
+    if (el.checked) { bulkSel[bid] = 1; } else { delete bulkSel[bid]; }
+    syncBulkUI();
+  }
+  if (el.id === 'bulkDate') { state.ui.bulkDate = el.value || todayKey(); }
+  if (el.id === 'mg_date') {
+    var mp = me();
+    var md = el.value || todayKey();
+    var ma = mp ? (mp.attendance || {})[md] : null;
+    if ($('#mg_in')) { $('#mg_in').value = ma && ma.in ? ma.in : ''; }
+    if ($('#mg_out')) { $('#mg_out').value = ma && ma.out ? ma.out : ''; }
+    mgPreview();
+  }
+  if (el.id === 'pf_adate') {
+    var pp = personById(state.ui.personOpen || '');
+    var dd = el.value || todayKey();
+    var aa = pp ? (pp.attendance || {})[dd] : null;
+    if ($('#pf_tin')) { $('#pf_tin').value = aa && aa.in ? aa.in : ''; }
+    if ($('#pf_tout')) { $('#pf_tout').value = aa && aa.out ? aa.out : ''; }
+    pfAttPreview();
   }
   if (el.id === 'resignReason') {
     var wrap = $('#resignEtcWrap');
@@ -1523,7 +1814,8 @@ async function boot() {
     state.role = 'admin';
     state.ui.timeEdit = false;
     render();
-  } else if (state.auth && sess && sess.role === 'manager' && canManage() && !canAdmin() && state.role === 'worker') {
+  } else if (state.auth && sess && sess.role === 'manager' && canManage() && state.role === 'worker') {
+    /* 관리자 계정이 팀장 화면으로 두고 나갔던 경우도 그대로 복원 */
     state.role = 'manager';
     state.ui.timeEdit = false;
     render();

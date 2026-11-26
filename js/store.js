@@ -11,7 +11,7 @@ var KST_MS = 9 * 3600 * 1000;
 var state = {
   ready: false,
   auth: null,                 /* { personId } */
-  role: 'worker',             /* worker | admin */
+  role: 'worker',             /* worker | manager | admin  (지금 보고 있는 화면 역할) */
   teams: [],
   people: [],
   reports: [],
@@ -161,6 +161,16 @@ function gongsuMonth(p, mk) {
   var t = 0;
   Object.keys(p.attendance || {}).forEach(function (k) {
     if (k.slice(0, 7) === mk) { t += gongsuOn(p, k); }
+  });
+  return Math.round(t * 1000) / 1000;
+}
+/* 관리자·팀장 전체 화면용 : 오늘 이후(미래) 날짜는 더하지 않는다
+   (기술인이 개인 공수표에서 미리 넣어 둔 미래 공수는 본인 화면에만 보인다) */
+function gongsuMonthUpTo(p, mk) {
+  var tk = todayKey();
+  var t = 0;
+  Object.keys(p.attendance || {}).forEach(function (k) {
+    if (k.slice(0, 7) === mk && k <= tk) { t += gongsuOn(p, k); }
   });
   return Math.round(t * 1000) / 1000;
 }
@@ -357,6 +367,10 @@ function buildState(d) {
     schedMonth: ui.schedMonth || todayKey().slice(0, 7),
     schedDate: ui.schedDate || todayKey(),
     showArchive: !!ui.showArchive,
+    personOpen: ui.personOpen || '',
+    q_dash: ui.q_dash || '', q_gongsu: ui.q_gongsu || '', q_teams: ui.q_teams || '',
+    myGsMonth: ui.myGsMonth || todayKey().slice(0, 7),
+    bulkDate: ui.bulkDate || todayKey(),
     timeEdit: false,
     resignOpen: !!ui.resignOpen
   };
@@ -630,6 +644,13 @@ function canAdmin() {
   var p = me();
   return !!(p && p.admin);
 }
+/* 화면 기준 — 지금 관리자 화면을 보고 있는지 (계정 권한 canAdmin 과 다르다)
+   관리자가 상단에서 팀장 · 기술인으로 전환하면 state.role 이 바뀌어 false 가 되고,
+   단가 · 관리자 권한 부여 · 암호 변경 · 공지/자료/일괄등록 같은 관리자 전용 요소는
+   한 건도 그려지지 않는다. 다시 관리자로 돌아오면 true 로 복귀한다. */
+function isAdminView() {
+  return state.role === 'admin' && canAdmin();
+}
 /* 팀장(반장) — is_admin 또는 is_leader 면 관리자/팀장 공용 화면을 쓸 수 있다
    단, 팀장만인 경우 단가·관리자 권한 부여·관리자 암호는 보이지 않는다 */
 function canManage() {
@@ -744,6 +765,25 @@ function saveAttendance(p, dateKey, label) {
     }
   });
 }
+/* 여러 인원 근태를 한 번에 upsert (관리자·팀장 공수 일괄 적용 · 200명도 요청 1회) */
+function saveAttendanceBulk(rows, label) {
+  if (!rows || !rows.length) { return Promise.resolve({ ok: true }); }
+  return apiWrite({
+    m: 'POST', path: '/rest/v1/attendance?on_conflict=worker_id,work_date',
+    prefer: 'resolution=merge-duplicates,return=minimal', label: label || '공수 일괄 적용',
+    body: rows
+  });
+}
+/* 일괄 적용 프리셋 (관리자·팀장 인원별 출퇴근) */
+var BULK_PRESETS = {
+  early: { in: '05:00', out: '15:00', label: '조출(05:00~15:00)' },
+  '1': { in: '07:00', out: '17:00', label: '1공수(07:00~17:00)' },
+  '1.5': { in: '07:00', out: '19:00', label: '1.5공수(07:00~19:00)' },
+  '2': { in: '07:00', out: '21:00', label: '2공수(07:00~21:00)' },
+  earlyout: { in: '07:00', out: '11:00', label: '조퇴(07:00~11:00)' }
+};
+/* 일괄 적용 체크 선택 (id → 1) · 새로고침해도 유지 */
+var bulkSel = {};
 function insertLeave(p, l) {
   return apiWrite({
     m: 'POST', path: '/rest/v1/leaves', prefer: 'return=minimal', label: '휴무 신청',
