@@ -430,6 +430,7 @@ function openNewPoll() {
   var sat = nextSaturday();
   var body = '<label class="field"><span>공지 제목</span><input id="pollTitle" value="이번 주 토요일(' + shortDate(sat) + ') 출근 여부"></label>' +
     '<label class="field"><span>응답 마감</span><input id="pollDeadline" type="datetime-local" value="' + defaultDeadlineLocal() + '"></label>' +
+    '<label class="chk" style="margin-top:10px"><input type="checkbox" id="poll_push" checked> 올리면서 기술인 전체에게 <b>팝업·알람</b> 보내기</label>' +
     '<div class="banner">공지를 올리면 기술인 화면에 <b>예 / 아니오</b> 버튼이 바로 나타나고, 응답이 실시간으로 집계됩니다.</div>';
   openSheet('토요일 출근 여부 공지', body,
     '<button class="btn btn-ghost" data-act="closeSheet">취소</button>' +
@@ -479,7 +480,9 @@ function openPollAdmin(id) {
           '</span></div>';
       }).join('') + '</div>';
   }).join('') : '<div class="empty">등록된 인원이 없습니다.</div>';
-  openSheet('토요일 투표 · 조별 현황', body, '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>');
+  openSheet('토요일 투표 · 조별 현황', body,
+    '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>' +
+    (isAdminView() ? '<button class="btn btn-line" data-act="pollPush" data-id="' + poll.id + '">📢 전체 알림</button>' : ''));
 }
 
 /* ---------------- 작업일보 상세 ---------------- */
@@ -920,6 +923,7 @@ var ACTIONS = {
         var mv = await verifyAdminPasscode(mcode);
         if (!mv.ok) { toast('관리자 암호를 확인하지 못했어요 · 인터넷 연결을 확인해 주세요.'); return; }
         if (!mv.pass) { toast('관리자 암호가 올바르지 않습니다.'); return; }
+        adminCodeSet(mcode);
       }
       state.auth = { personId: found.id };
       markPrivacyAgree(found);
@@ -928,6 +932,7 @@ var ACTIONS = {
       state.role = found.admin ? 'admin' : 'manager';
       state.ui.adminTab = 'dash';
       render();
+      pushSyncToken();
       toast(found.name + ' 님 ' + (found.admin ? '관리자' : '팀장') + ' 로그인 완료 · ' + teamLabel(found.teamId));
       return;
     }
@@ -944,6 +949,7 @@ var ACTIONS = {
       var v = await verifyAdminPasscode(code);
       if (!v.ok) { toast('관리자 암호를 확인하지 못했어요 · 인터넷 연결을 확인해 주세요.'); return; }
       if (!v.pass) { toast('관리자 암호가 올바르지 않습니다.'); return; }
+      adminCodeSet(code);
       state.auth = { personId: found.id };
       markPrivacyAgree(found);
       if (sensitiveChecked) { markSensitiveAgree(found); }
@@ -951,6 +957,7 @@ var ACTIONS = {
       state.role = 'admin';
       state.ui.adminTab = 'dash';
       render();
+      pushSyncToken();
       toast(found.name + ' 님 관리자 로그인 완료 · ' + teamLabel(found.teamId));
       return;
     }
@@ -964,6 +971,7 @@ var ACTIONS = {
         var v2 = await verifyAdminPasscode(code2);
         if (!v2.ok) { toast('관리자 암호를 확인하지 못했어요 · 인터넷 연결을 확인해 주세요.'); return; }
         if (!v2.pass) { toast('관리자 암호가 올바르지 않습니다.'); return; }
+        adminCodeSet(code2);
       }
       state.auth = { personId: found.id };
       markPrivacyAgree(found);
@@ -972,6 +980,7 @@ var ACTIONS = {
       state.role = 'worker';
       state.ui.workerTab = 'home';
       render();
+      pushSyncToken();
       toast(found.name + ' 님 로그인 완료 · ' + teamLabel(found.teamId));
       return;
     }
@@ -997,6 +1006,7 @@ var ACTIONS = {
     render();
     toast('신규 기술인으로 등록했어요<br>관리자 인원 목록에 추가됩니다');
     insertWorker(np);
+    pushSyncToken();
   },
   openPrivacy: function (el) {
     openPrivacySheet(el ? el.getAttribute('data-from') : '');
@@ -1039,6 +1049,7 @@ var ACTIONS = {
     var r = await updateAdminPasscode(o, n);
     if (!r.ok) { toast('암호를 바꾸지 못했어요 · ' + esc(r.error || '인터넷 연결을 확인해 주세요.')); return; }
     if (!r.pass) { toast('현재 암호가 올바르지 않습니다.'); return; }
+    adminCodeSet(n);
     if ($('#pw_old')) { $('#pw_old').value = ''; }
     if ($('#pw_new')) { $('#pw_new').value = ''; }
     if ($('#pw_new2')) { $('#pw_new2').value = ''; }
@@ -2102,6 +2113,7 @@ var ACTIONS = {
     if (!isAdminView()) { toast('관리자만 조사를 올릴 수 있습니다.'); return; }
     var title = ($('#pollTitle').value || '').trim();
     var dl = ($('#pollDeadline').value || '').trim();
+    var wantPush = !!($('#poll_push') && $('#poll_push').checked);
     if (!title) { toast('공지 제목을 입력해 주세요.'); return; }
     var iso = dl ? (dl.length === 16 ? dl + ':00+09:00' : dl) : null;
     var poll = {
@@ -2114,6 +2126,10 @@ var ACTIONS = {
     render();
     insertPollDb(poll);
     toast('토요일 출근 여부 공지를 올렸어요<br>기술인 화면에 예 / 아니오 버튼이 생겼습니다');
+    if (wantPush) {
+      openPushBroadcast('poll', poll.id, '[토요일 출근 조사] ' + title,
+        '토요일 출근 여부를 앱에서 예 / 아니오로 응답해 주세요.');
+    }
   },
   closePoll: function (el) {
     var id = el.getAttribute('data-id');
@@ -2175,6 +2191,7 @@ var ACTIONS = {
     if (!isAdminView()) { toast('관리자만 공지를 올릴 수 있습니다.'); return; }
     var t = ($('#nv_title').value || '').trim();
     var b = ($('#nv_body').value || '').trim();
+    var wantPush = !!($('#nv_push') && $('#nv_push').checked);
     if (!t) { toast('공지 제목을 입력해 주세요.'); return; }
     var n = { id: uuid(), title: t, body: b, date: todayKey(), pinned: $('#nv_pin').checked, author: (me() ? me().name : '관리자') };
     state.notices.unshift(n);
@@ -2182,6 +2199,55 @@ var ACTIONS = {
     render();
     insertNotice(n);
     toast('공지 등록 완료<br>기술인 홈 <b>맨 위</b>에 바로 표시됩니다');
+    if (wantPush) {
+      openPushBroadcast('notice', n.id, '[공지] ' + t, b || t);
+    }
+  },
+
+  /* ----- 📢 기술인 전체 알림 ----- */
+  noticePush: function (el) {
+    if (!isAdminView()) { toast('관리자만 전체 알림을 보낼 수 있습니다.'); return; }
+    var id = el.getAttribute('data-id');
+    var n = state.notices.filter(function (x) { return x.id === id; })[0];
+    if (!n) { toast('공지를 찾을 수 없어요.'); return; }
+    openPushBroadcast('notice', n.id, '[공지] ' + n.title, n.body || n.title);
+  },
+  pollPush: function (el) {
+    if (!isAdminView()) { toast('관리자만 전체 알림을 보낼 수 있습니다.'); return; }
+    var id = el.getAttribute('data-id');
+    var poll = state.polls.filter(function (x) { return x.id === id; })[0];
+    if (!poll) { toast('조사를 찾을 수 없어요.'); return; }
+    openPushBroadcast('poll', poll.id, '[토요일 출근 조사] ' + poll.title,
+      '토요일 출근 여부를 앱에서 예 / 아니오로 응답해 주세요.');
+  },
+  broadcastSend: async function () {
+    var job = state.ui.pushBroadcast;
+    if (!job) { toast('보낼 알림 정보가 없어요. 다시 시도해 주세요.'); return; }
+    var code = ($('#bc_code') ? $('#bc_code').value : '').trim();
+    if (!code) { toast('관리자 암호를 입력해 주세요.'); return; }
+    toast('기술인 전체에게 알림을 보내는 중…');
+    var r = await sendPushBroadcast({
+      code: code, kind: job.kind, id: job.id, title: job.title, body: job.body, audience: 'all'
+    });
+    if (r.ok && r.data && r.data.ok) {
+      adminCodeSet(code);
+      state.ui.pushBroadcast = null;
+      closeSheet();
+      if (!r.data.total) {
+        toast('보낼 알림이 없어요<br><span class="muted">아직 푸시를 등록한 기술인이 없습니다 (앱을 새로 설치하면 자동 등록)</span>');
+      } else {
+        toast('기술인 전체 알림 발송 완료<br><b>' + (r.data.sent || 0) + '명</b> 수신' +
+          (r.data.failed ? ' · 실패 ' + r.data.failed + '건' : ''));
+      }
+      render();
+      return;
+    }
+    if (r.status === 403) {
+      adminCodeClear();
+      toast('관리자 암호가 올바르지 않습니다.');
+      return;
+    }
+    toast('전체 알림을 보내지 못했어요 · ' + esc((r.data && (r.data.error || r.data.reason)) || r.error || '인터넷 연결을 확인해 주세요.'));
   },
 
   /* ----- 일정 달력 ----- */
@@ -2393,7 +2459,7 @@ async function boot() {
     if (el) { el.textContent = nowHM(); }
   }, 20000);
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) { refresh(true); }
+    if (!document.hidden) { refresh(true); pushSyncToken(); }
   });
 
   var ok = await loadData({ silent: false });
@@ -2416,6 +2482,7 @@ async function boot() {
     render();
   }
   startAutoRefresh();
+  pushSyncToken();
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     navigator.serviceWorker.register('sw.js').catch(function () { /* 오프라인 캐시는 없어도 동작 */ });
   }

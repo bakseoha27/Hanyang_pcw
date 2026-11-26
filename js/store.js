@@ -578,6 +578,7 @@ function sessionClear() {
   try { localStorage.removeItem(AUTH_KEY); } catch (e) { /* 없음 */ }
 }
 function logOut() {
+  pushClearToken();          /* 이 휴대폰의 푸시 토큰 연결을 끊는다 */
   sessionClear();
   state.auth = null;
   state.role = 'worker';

@@ -339,6 +339,7 @@ function privacyDocHTML() {
     '<p>· 출퇴근·공수·휴무·퇴사 정보(사직서 작성·TBM카드 반납 확인 포함)</p>' +
     '<p>· 작업일보</p>' +
     '<p>· 자격 정보(TBM·유도원 등)</p>' +
+    '<p>· 업무 알림 발송용 기기 식별 토큰(FCM) — 휴무·조퇴·공지 등 휴대폰 상단 알림(푸시) 발송 목적으로만 사용</p>' +
     '<p>· 현장 부상 이력 등 민감정보는 이 동의서에 포함하지 않으며, 아래 <b>[선택] 민감정보 수집·이용 동의서</b>로 따로 동의를 받습니다.</p>' +
 
     '<h3>4. 보유 및 이용 기간</h3>' +
@@ -820,6 +821,7 @@ function noticePollHTML(who) {
       : '<div class="hint">토요일 출근이 가능한지 선택해 주세요.</div>') +
     (mgr ? '<div class="btn-row" style="margin-top:8px">' +
       '<button class="btn btn-line sm" data-act="pollAdmin" data-id="' + poll.id + '">조별 현황 · 변경</button>' +
+      '<button class="btn btn-line sm" data-act="pollPush" data-id="' + poll.id + '">📢 전체 알림</button>' +
       '<button class="btn btn-ghost sm" data-act="closePoll" data-id="' + poll.id + '">조사 종료</button></div>' : '') +
     '</div>';
 }
@@ -856,6 +858,7 @@ function noticeBannerHTML(who) {
     (rest > 0 || canNotice
       ? '<div class="notice-foot">' +
         (rest > 0 ? '<button class="link-btn" data-act="openNoticeList">공지 ' + ns.length + '건 전체 보기</button>' : '<span></span>') +
+        (canNotice ? '<button class="link-btn" data-act="noticePush" data-id="' + esc(n.id) + '">📢 전체 알림</button>' : '') +
         footExtra + '</div>'
       : '') +
     '</div>';
@@ -873,6 +876,7 @@ function openNoticeDetail(id) {
     '</div>';
   openSheet('공지사항', body,
     '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>' +
+    (isAdminView() ? '<button class="btn btn-line" data-act="noticePush" data-id="' + esc(n.id) + '">📢 전체 알림</button>' : '') +
     (isAdminView() ? '<button class="btn btn-line" data-act="noticeNew">새 공지 올리기</button>' : ''));
 }
 
@@ -892,10 +896,32 @@ function openAddNotice() {
   var body = '<label class="field"><span>공지 제목</span><input id="nv_title" placeholder="예) [안전] 11/27(금) 정기 안전교육 안내"></label>' +
     '<label class="field"><span>내용</span><textarea id="nv_body" rows="5" placeholder="현장 인원에게 전달할 내용을 적어 주세요"></textarea></label>' +
     '<label class="chk" style="margin-top:12px"><input type="checkbox" id="nv_pin"> 상단에 고정 (필독)</label>' +
+    '<label class="chk" style="margin-top:6px"><input type="checkbox" id="nv_push" checked> 올리면서 기술인 전체에게 <b>팝업·알람</b> 보내기</label>' +
     '<div class="banner">올리면 기술인 홈 <b>맨 위 공지 카드</b>에 바로 표시됩니다.</div>';
   openSheet('새 공지 올리기', body,
     '<button class="btn btn-ghost" data-act="closeSheet">취소</button>' +
     '<button class="btn btn-primary" data-act="createNotice">공지 올리기</button>');
+}
+
+/* =========================================================
+   📢 기술인 전체 알림 (공지사항 · 토요일 출근 조사)
+   — 관리자 암호로 확인한 뒤 Edge Function(broadcast-push)이
+     재직 중인 기술인 전원의 휴대폰에 팝업·소리 알림을 보낸다.
+   ========================================================= */
+function openPushBroadcast(kind, id, title, body) {
+  if (!isAdminView()) { toast('관리자만 전체 알림을 보낼 수 있습니다.'); return; }
+  state.ui.pushBroadcast = { kind: kind, id: id, title: title, body: body };
+  var code = adminCodeGet();
+  var html = '<div class="banner">재직 중인 <b>기술인 전체</b>의 휴대폰에 팝업·소리 알림이 울립니다.<br>알림을 받은 사람이 누르면 앱이 열립니다.</div>' +
+    '<div class="sect"><div class="sect-t">보낼 알림</div>' +
+    '<div class="kv"><span>제목</span><b>' + esc(title) + '</b></div>' +
+    '<div class="kv"><span>내용</span><b style="white-space:pre-wrap">' + esc(body || '') + '</b></div></div>' +
+    '<label class="field" style="margin-top:8px"><span>🔐 관리자 암호</span>' +
+    '<input id="bc_code" type="password" value="' + esc(code) + '" placeholder="관리자 암호를 입력하세요"></label>' +
+    '<div class="hint">보낸 뒤에는 취소할 수 없어요. 내용을 확인하고 눌러 주세요.</div>';
+  openSheet('📢 기술인 전체 알림', html,
+    '<button class="btn btn-ghost" data-act="closeSheet">취소</button>' +
+    '<button class="btn btn-primary" data-act="broadcastSend">전체에게 보내기</button>');
 }
 
 /* =========================================================

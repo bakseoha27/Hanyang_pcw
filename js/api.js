@@ -146,6 +146,41 @@ function sbEq(v) {                       /* ?col=eq.값  (uuid · 날짜 · 숫�
   return 'eq.' + encodeURIComponent(String(v));
 }
 
+/* =========================================================
+   휴대폰 상단 알림(FCM) — 안드로이드 앱과의 연결
+   · 로그인한 재직 기술인이면 관리자·팀장 여부와 관계없이 토큰을 등록한다.
+   · 발송 대상(휴무·조퇴는 관리자·팀장, 전체 공지는 전원)은 서버에서 고른다.
+   ========================================================= */
+var ADMIN_CODE_KEY = 'pcw_admin_code';
+function adminCodeGet() { try { return sessionStorage.getItem(ADMIN_CODE_KEY) || ''; } catch (e) { return ''; } }
+function adminCodeSet(c) { try { if (c) { sessionStorage.setItem(ADMIN_CODE_KEY, c); } } catch (e) { /* 저장 불가 */ } }
+function adminCodeClear() { try { sessionStorage.removeItem(ADMIN_CODE_KEY); } catch (e) { /* 없음 */ } }
+
+function pushBridge() {
+  return (window.AndroidPush && typeof window.AndroidPush.syncToken === 'function') ? window.AndroidPush : null;
+}
+
+function pushSyncToken() {
+  var b = pushBridge();
+  if (!b) { return; }
+  try {
+    var p = (typeof me === 'function') ? me() : null;
+    if (!p || p.status === 'resigned') { b.clearToken(); return; }
+    b.syncToken(String(p.id), p.name || '');
+  } catch (e) { /* 앱이 아니면 무시 */ }
+}
+
+function pushClearToken() {
+  var b = pushBridge();
+  if (!b) { return; }
+  try { b.clearToken(); } catch (e) { /* 무시 */ }
+}
+
+/* 기술인 전체 알림 — Edge Function broadcast-push (관리자 암호로 확인) */
+async function sendPushBroadcast(payload) {
+  return rawFetch({ m: 'POST', path: '/functions/v1/broadcast-push', body: payload, label: '전체 알림' });
+}
+
 window.addEventListener('online', function () {
   scheduleOutbox(300);
   if (window.pcwSyncChanged) { window.pcwSyncChanged(); }

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "803945993097",
+    "project_id": "hanyang-pcw-push",
+    "storage_bucket": "hanyang-pcw-push.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:803945993097:android:f633dfd105b81c3e948758",
+        "android_client_info": {
+          "package_name": "com.hanyang.pcw"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAJixSSOFCG7l5-wnLUfXIWzoUmU4vRbCw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

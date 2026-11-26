@@ -47,6 +47,7 @@ public class MainActivity extends Activity {
 
     private static final int REQ_FILE_CHOOSER = 1001;
     private static final int REQ_STORAGE_PERM = 1002;
+    private static final int REQ_NOTIF_PERM = 1003;
 
     private WebView web;
     private View splash;
@@ -76,6 +77,11 @@ public class MainActivity extends Activity {
         setContentView(root);
 
         configureWebView();
+
+        /* 상단 알림 채널 · 안드로이드 13+ 알림 권한 · FCM 토큰 미리 받기 */
+        PushNotify.ensureChannel(this);
+        askNotificationPermission();
+        warmPushToken();
 
         if (savedInstanceState != null) {
             web.restoreState(savedInstanceState);
@@ -152,6 +158,9 @@ public class MainActivity extends Activity {
         cm.setAcceptCookie(true);
         cm.setAcceptThirdPartyCookies(web, true);
 
+        /* 웹앱이 로그인 후 FCM 토큰을 push_tokens 에 등록할 수 있게 다리를 놓는다 */
+        web.addJavascriptInterface(new AndroidPush(this), "AndroidPush");
+
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -193,6 +202,31 @@ public class MainActivity extends Activity {
                 startDownload(url, userAgent, contentDisposition, mimeType);
             }
         });
+    }
+
+    /* ---------------------------------------------------------------
+       푸시 알림 — 채널 · 권한 · 토큰
+       --------------------------------------------------------------- */
+    private void askNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33) return;   /* 안드로이드 12 이하: 권한 불필요 */
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED) return;
+        requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIF_PERM);
+    }
+
+    /** 앱을 열 때 FCM 토큰을 미리 받아 두고, 저장된 로그인이 있으면 다시 연결한다 */
+    private void warmPushToken() {
+        final Context c = getApplicationContext();
+        new Thread(new Runnable() {
+            @Override public void run() {
+                String token = PushApi.fetchToken(c);
+                if (token == null) return;
+                String worker = PushApi.savedWorker(c);
+                if (worker != null && worker.length() > 0) {
+                    PushApi.upsert(c, worker, token);
+                }
+            }
+        }, "pcw-push-warm").start();
     }
 
     /* ---------------------------------------------------------------
