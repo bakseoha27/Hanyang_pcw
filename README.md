@@ -43,11 +43,23 @@ git add -A && git commit -m "웹앱 수정" && git push
   - **이 키를 바꾸면 기존 앱 위에 덮어설치가 안 됩니다.** (지우고 다시 설치해야 함) 키 파일은 그대로 보관하세요.
   - SHA-256 지문: `50:B7:E3:9B:A1:59:C3:4C:AC:21:97:BF:76:C4:34:09:AB:C7:B5:64:9C:95:F3:FF:48:A2:D6:0E:51:48:84:1A`
   - 이 저장소는 공개 저장소라 키 파일과 비밀번호(`android/gradle.properties`)가 함께 들어 있습니다. 외부 배포용이 아니라 현장 내부 배포용이라 이렇게 두었습니다.
-- 빌드 번호(`versionCode`)는 Actions 실행 번호를 씁니다. 앱을 덮어설치하려면 새 번호가 커야 하므로 자동으로 올라갑니다.
+- 빌드 번호(`versionCode`)는 Actions 실행 번호 + 100 을 씁니다. 앱을 덮어설치하려면 새 번호가 커야 하므로 자동으로 올라갑니다.
+
+## 상단 알림(푸시 · FCM)
+
+- Firebase 프로젝트 `hanyang-pcw-push` · 앱 설정 `android/app/google-services.json` (공개 저장소 허용)
+- **서비스 계정 키(`firebase-service-account.json`)는 저장소에 올리지 않습니다.** Supabase Edge Function 시크릿 `FIREBASE_SERVICE_ACCOUNT` 에만 넣습니다.
+- 알림 채널 `pcw_alarm` (IMPORTANCE_HIGH · 소리·진동), 안드로이드 13+ 는 첫 실행 때 알림 권한을 요청합니다.
+- 앱이 로그인한 기술인의 FCM 토큰을 `push_tokens` 에 저장합니다(관리자·팀장뿐 아니라 재직 기술인 전원). 로그아웃하면 지웁니다.
+- 발송
+  - `leaves` / `early_leaves` 에 INSERT → DB 트리거(pg_net) → `send-push` → **관리자·팀장** (신청자 제외)
+  - 공지·토요일 조사 화면의 **[📢 전체 알림]** → `broadcast-push` (관리자 암호 확인) → **재직 기술인 전원**
+- 만료·무효 토큰은 발송 시 자동으로 지워집니다.
 
 ## 앱이 지원하는 것
 
 - JavaScript · DOM Storage(localStorage) — 로그인 세션, 저장 대기열
+- 상단 알림(푸시) — 휴무·조퇴 신청(관리자·팀장), 공지·토요일 조사(기술인 전체)
 - 파일 업로드(`onShowFileChooser`) — 위험성평가서·시방서 PDF, 사진
 - PDF·첨부파일: PDF 앱으로 바로 열기, 그 밖의 파일은 다운로드 폴더에 저장 후 알림으로 열기
 - 뒤로가기 → 웹 히스토리
