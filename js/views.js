@@ -758,10 +758,6 @@ function workerHome(p) {
       '<button class="btn btn-in" data-act="clockIn"' + (a && a.in ? ' disabled' : '') + '>출근하기</button>' +
       '<button class="btn btn-out" data-act="clockOut"' + (a && a.in && !a.out ? '' : ' disabled') + '>퇴근하기</button>' +
       '</div>' +
-      '<div class="btn-row early-row">' +
-      '<button class="btn btn-early" data-act="earlyIn">조출 (05:00~15:00)</button>' +
-      '<button class="btn btn-early2" data-act="earlyOut">조퇴 (11:00 퇴근)</button>' +
-      '</div>' +
       (a && a.in ? '<button class="btn btn-line sm block time-edit-btn" data-act="timeEditOpen">🕘 시간 수정' + (a.out ? ' · 출근 / 퇴근' : ' · 출근만 기록됨') + '</button>' : '') +
       '<button class="btn btn-line sm block" style="margin-top:8px" data-act="pastAttOpen">＋ 이전 날짜 공수 추가</button>' +
       (a && a.in && a.out ? '<div class="done-line">오늘 근무 완료 · ' + a.in + ' ~ ' + a.out + ' · ' + fmtGs(gongsuOf(a)) + '공수</div>' : '') +
@@ -1470,7 +1466,7 @@ function hcMonthHTML(mk) {
   var last = new Date(y, m, 0).getDate();
   var tk = todayKey();
   var rows = [];
-  var tot = { in: 0, off: 0, res: 0, days: 0 };
+  var tot = { in: 0, off: 0, res: 0, days: 0, empty: 0 };
   for (var d = 1; d <= last; d++) {
     var k = mk + '-' + pad2(d);
     var ps = peopleAsOf(k);
@@ -1487,7 +1483,8 @@ function hcMonthHTML(mk) {
     tot.in += nIn; tot.off += offs.length; tot.res += rs.length;
     if (nIn || offs.length || rs.length) { tot.days++; }
     var empty = !nIn && !offs.length && !rs.length;
-    if (empty && k > tk) { continue; }
+    /* 기록 없는 날은 목록에서 빼고(오늘은 항상 표시) 아래에 몇 일인지 알려 준다 */
+    if (empty && k !== tk) { tot.empty++; continue; }
     rows.push('<div class="hm-day' + (k === tk ? ' today' : '') + (k > tk ? ' fut' : '') + (empty ? ' empty' : '') + '" data-act="hcPick" data-date="' + k + '" role="button" tabindex="0">' +
       '<div class="hm-top"><span class="hm-d">' + shortDate(k) + ' <em>' + wd(k) + '</em>' +
       (k === tk ? ' <span class="hm-today">오늘</span>' : '') + '</span>' +
@@ -1508,7 +1505,7 @@ function hcMonthHTML(mk) {
     '<button data-act="hcMonthMove" data-d="1" aria-label="다음 달">\u203a</button>' +
     '</div>' +
     '<div class="hm-sum">이번 달 <b>출근 연인원 ' + tot.in + '명</b> · <b>휴무 ' + tot.off + '명</b> · <b>퇴사 ' + tot.res + '명</b>' +
-    '<br>기록이 있는 날 <b>' + tot.days + '일</b></div>' +
+    '<br>기록이 있는 날 <b>' + tot.days + '일</b>' + (tot.empty ? ' · 기록 없는 날 ' + tot.empty + '일' : '') + '</div>' +
     '<div class="hm-list">' + (rows.join('') || '<div class="empty">이 달 기록이 없습니다.</div>') + '</div>' +
     '<div class="hint">날짜별 <b>출근</b>은 그 날 출근 기록이 있는 인원, <b>휴무</b>는 휴무 신청(보고) 인원입니다.<br>날짜를 누르면 그 날짜 현황으로 이동합니다.</div>';
 }
