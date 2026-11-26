@@ -108,6 +108,19 @@ b{font-weight:800;}
 textarea{border:1.5px solid var(--line);border-radius:12px;padding:11px 12px;background:#FCFCFD;width:100%;resize:vertical;line-height:1.5;font-weight:600;}
 textarea.mono{font-family:"D2Coding","Roboto Mono",monospace;font-size:14.5px;line-height:1.55;}
 .field input:focus,.field select:focus,textarea:focus{border-color:var(--blue);background:#fff;}
+/* 여러 줄 입력칸은 rows 만큼 높게 (예전엔 48px 로 눌려 있었음) */
+textarea,.field textarea{height:auto;}
+.rep-input{min-height:158px;}
+/* 퇴사 신청 맨 윗줄 체크 2개 */
+.resign-checks{display:flex;gap:8px;margin-top:6px;}
+.resign-checks .chk{
+  flex:1; min-width:0; display:flex; align-items:center; gap:7px;
+  border:1.5px solid var(--line); background:#FCFCFD; border-radius:12px;
+  padding:11px 10px; font-size:12.5px; font-weight:800; color:#344054;
+  cursor:pointer; letter-spacing:-.3px;
+}
+.resign-checks .chk input{width:19px; height:19px; flex:0 0 19px; margin:0; accent-color:var(--red);}
+.resign-checks .chk:has(input:checked){border-color:var(--red); background:var(--red-soft); color:#B42318;}
 .field input[readonly]{background:#F2F4F7;color:#475467;}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 10px;}
 .time-row{display:flex;align-items:center;gap:6px;height:48px;border:1.5px solid var(--line);border-radius:12px;padding:0 8px;background:#FCFCFD;}

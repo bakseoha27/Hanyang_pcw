@@ -439,6 +439,10 @@ function workerHome(p) {
     '<div style="text-align:left"><div class="sec-t" style="color:#B42318">퇴사 신청</div><div class="muted">제출하면 퇴사자 보관함으로 이동합니다</div></div>' +
     '<span class="badge b-res">' + (openResign ? '접기' : '펼치기') + '</span></div>' +
     (openResign ?
+      '<div class="resign-checks">' +
+      '<label class="chk"><input type="checkbox" id="resignPaper"><span>사직서 작성 여부</span></label>' +
+      '<label class="chk"><input type="checkbox" id="resignTbm"><span>TBM카드 반납 여부</span></label>' +
+      '</div>' +
       '<div class="grid2" style="margin-top:4px">' +
       '<label class="field"><span>퇴사일자</span><input type="date" id="resignDate" value="' + todayKeyAdd(7) + '"></label>' +
       '<label class="field"><span>퇴사사유</span><select id="resignReason">' +
@@ -556,7 +560,7 @@ function teamReport(p) {
     '</div>' +
     '<div class="banner">물량이 없더라도 반드시 아래 양식을 포함해 주세요 · <b>서포트는 완전 설치 시 카운트</b></div>' +
     '<label class="field"><span>작업내용</span>' +
-    '<textarea class="mono" rows="4" data-draft="content">' + esc(d.content) + '</textarea></label>' +
+    '<textarea class="mono rep-input" rows="6" data-draft="content">' + esc(d.content) + '</textarea></label>' +
     '<div class="hint">기본 양식이 미리 채워져 있어요. 수량(P / EA)만 고쳐 주세요.</div>' +
     '<label class="field"><span>특이사항</span>' +
     '<textarea rows="2" id="repNote" data-draft="note" placeholder="예)10:00~11:00정기교육으로 출문">' + esc(d.note || '') + '</textarea></label>' +

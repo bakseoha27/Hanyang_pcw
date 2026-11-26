@@ -510,19 +510,33 @@ var ACTIONS = {
     render();
   },
   askResign: function () {
+    var paper = $('#resignPaper');
+    var tbm = $('#resignTbm');
     var d = $('#resignDate').value;
     var reason = $('#resignReason').value;
     var etc = $('#resignEtc') ? ($('#resignEtc').value || '').trim() : '';
+    /* 사직서 작성 · TBM카드 반납 둘 다 체크해야 진행 */
+    if (!paper || !tbm || !paper.checked || !tbm.checked) {
+      toast('사직서 작성 및 TBM카드 반납 여부를 모두 체크해야 퇴사 처리가 가능합니다.');
+      return;
+    }
     if (!d) { toast('퇴사일자를 선택해 주세요.'); return; }
     if (reason === '개인사유(직접입력)' && !etc) { toast('개인사유 내용을 적어 주세요.'); return; }
-    state.ui.pendingResign = { date: d, reason: reason, text: reason === '개인사유(직접입력)' ? etc : '' };
+    state.ui.pendingResign = {
+      date: d, reason: reason, text: reason === '개인사유(직접입력)' ? etc : '',
+      paper: true, tbm: true
+    };
     confirmSheet('퇴사 신청을 제출할까요?',
-      '<b>' + esc(me().name) + '</b> 님 · 퇴사일 <b>' + longDate(d) + '</b><br>사유 <b>' + esc(reason) + (etc ? ' · ' + esc(etc) : '') + '</b><br><br>제출하면 출근 대상 · 조 편성 · 평균단가 계산에서 <b>자동 제외</b>되고 퇴사자 보관함으로 이동합니다.',
+      '<b>' + esc(me().name) + '</b> 님 · 퇴사일 <b>' + longDate(d) + '</b><br>사유 <b>' + esc(reason) + (etc ? ' · ' + esc(etc) : '') + '</b><br>사직서 작성 <b>확인</b> · TBM카드 반납 <b>확인</b><br><br>제출하면 출근 대상 · 조 편성 · 평균단가 계산에서 <b>자동 제외</b>되고 퇴사자 보관함으로 이동합니다.',
       '퇴사 신청 제출', 'resignConfirm');
   },
   resignConfirm: function () {
     var pr = state.ui.pendingResign;
     if (!pr) { return; }
+    if (!pr.paper || !pr.tbm) {
+      toast('사직서 작성 및 TBM카드 반납 여부를 모두 체크해야 퇴사 처리가 가능합니다.');
+      return;
+    }
     var p = me();
     p.status = 'resigned';
     p.resign = { date: pr.date, reason: pr.reason, text: pr.text };
