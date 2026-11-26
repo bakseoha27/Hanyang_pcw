@@ -130,6 +130,7 @@ function loginView() {
     err = '<div class="banner bad" style="margin-bottom:10px">서버에 연결하지 못했어요 · ' + esc(state.sync.err) +
       '<br>전화 · 와이파이 상태를 확인하고 다시 시도해 주세요.</div>';
   }
+  var agreed = !!(state.ui && state.ui.privacyChecked);
   return '<div class="login-brand card">' +
     '<div class="lb-mark">한</div>' +
     '<div class="lb-t">한양 pcw팀 로그인</div>' +
@@ -140,12 +141,64 @@ function loginView() {
     '<label class="field"><span>생년월일</span><input id="li_birth" type="text" inputmode="numeric" placeholder="예) 961228 또는 19961228" autocomplete="bday"></label>' +
     '<label class="field"><span>전화번호</span><input id="li_phone" type="tel" inputmode="numeric" placeholder="010-0000-0000" autocomplete="tel"></label>' +
     '<label class="field"><span>직종</span><select id="li_job">' + loginJobOptionsHTML('배관공') + '</select></label>' +
-    '<button class="btn btn-primary block" style="margin-top:13px" data-act="loginSubmit">로그인</button>' +
+    '<div class="privacy-box">' +
+    '<label class="privacy-agree"><input type="checkbox" id="li_privacy"' + (agreed ? ' checked' : '') + '>' +
+    '<span class="privacy-txt"><b>[필수]</b> 개인정보 수집·이용에 동의합니다</span></label>' +
+    '<button type="button" class="privacy-view" data-act="openPrivacy" data-from="login">내용 보기</button>' +
+    '</div>' +
+    '<button class="btn btn-primary block" style="margin-top:12px" data-act="loginSubmit">로그인</button>' +
     '<div class="hint">등록된 <b>이름 · 생년월일 · 전화번호</b>가 같으면 바로 로그인됩니다. 처음이면 기술인으로 자동 등록돼요.</div>' +
     '<div class="hint"><b>관리자</b>는 관리자 권한을 등록받은 분만 선택할 수 있습니다.</div>' +
     '<div class="hint">로그인은 이 휴대폰에 저장돼 <b>앱을 닫아도 풀리지 않습니다</b>. 로그아웃은 <b>⚙️ 내 정보</b>에서 직접 눌러야 해요.</div>' +
     '</div>' +
     '<div class="foot-note">한양 pcw팀<br>입력한 정보는 현장 Supabase DB에 저장됩니다</div>';
+}
+
+/* =========================================================
+   개인정보 수집·이용 동의서
+   ========================================================= */
+function privacyDocHTML() {
+  return '<div class="pdoc">' +
+    '<div class="lead">한양엔지(주) PCW팀은 「개인정보 보호법」 제15조에 따라 아래와 같이 개인정보를 수집·이용합니다. 내용을 확인하신 뒤 동의 여부를 결정해 주세요.</div>' +
+
+    '<h3>1. 개인정보처리자</h3>' +
+    '<p>· 상호: 한양엔지(주) PCW팀</p>' +
+    '<p>· 개인정보 관리자: 박서하</p>' +
+    '<p>· 문의: 현장 관리자(박서하)에게 직접 연락</p>' +
+    '<p>· 보관 장소: 현장 앱 클라우드 데이터베이스(Supabase · 서울 리전)</p>' +
+
+    '<h3>2. 수집·이용 목적</h3>' +
+    '<p>· 현장 인원·근태·공수 관리</p>' +
+    '<p>· 작업일보 취합</p>' +
+    '<p>· 안전교육 및 자격 만료 관리</p>' +
+    '<p>· 현장 공지 및 비상 연락</p>' +
+
+    '<h3>3. 수집·이용하는 개인정보 항목 <span class="must">(필수)</span></h3>' +
+    '<p>· 성명, 생년월일, 휴대전화번호, 직종, 소속 팀/조</p>' +
+    '<p>· 출퇴근·공수·휴무·퇴사 정보(사직서 작성·TBM카드 반납 확인 포함)</p>' +
+    '<p>· 작업일보</p>' +
+    '<p>· 자격 정보(TBM·유도원 등)</p>' +
+    '<p>· 현장 안전·부상 이력(관리자 열람 전용)</p>' +
+
+    '<h3>4. 보유 및 이용 기간</h3>' +
+    '<p>· 근무 기간 중 보유하며, 퇴사 및 목적 달성 후 지체 없이 파기합니다.</p>' +
+    '<p>· 단, 근로기준법 등 관계 법령에 따라 보존 의무가 있는 경우에는 해당 법정 기간 동안 보관합니다.</p>' +
+
+    '<h3>5. 동의를 거부할 권리 및 불이익</h3>' +
+    '<p>· 동의를 거부할 권리가 있습니다.</p>' +
+    '<p>· 다만 필수 항목에 대한 동의를 거부하시면 「한양 pcw팀」 앱 로그인 및 현장 근태·작업일보 서비스 이용이 제한됩니다.</p>' +
+
+    '<h3>6. 동의 기록</h3>' +
+    '<p>· 로그인할 때 동의 사실과 동의 일시가 앱 데이터베이스에 자동으로 기록됩니다. (동의서 버전 ' + esc(PRIVACY_VERSION) + ')</p>' +
+    '<div class="meta">시행일 2026년 11월 26일 · 이 동의서는 「내 정보」에서 언제든 다시 볼 수 있습니다.</div>' +
+    '</div>';
+}
+
+function openPrivacySheet(from) {
+  var footer = (from === 'settings'
+    ? '<button class="btn btn-line" data-act="openSettings">내 정보로</button>' : '') +
+    '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>';
+  openSheet('개인정보 수집·이용 동의서', privacyDocHTML(), footer);
 }
 
 function readLoginForm() {
@@ -224,6 +277,16 @@ function openSettings(p) {
     '<div class="sect-t">내 휴무 신청 내역</div>' +
     '<div class="muted">내일 이후 휴무는 앱에서 바로 정정 · 취소할 수 있습니다.</div>' +
     '<div id="myLeaveList">' + myLeaveRowsHTML(p) + '</div>' +
+    '</div>' +
+
+    '<div class="sect">' +
+    '<div class="sect-t">개인정보</div>' +
+    '<div class="kv"><span>동의 일시</span><b>' + (p.privacyAgreedAt
+      ? kstDate(p.privacyAgreedAt) + ' ' + kstHM(p.privacyAgreedAt)
+      : '기록 없음 (다음 로그인 시 기록)') + '</b></div>' +
+    '<div class="kv"><span>동의서 버전</span><b>' + esc(p.privacyVersion || PRIVACY_VERSION) + '</b></div>' +
+    '<button class="btn btn-line blue sm block" style="margin-top:9px" data-act="openPrivacy" data-from="settings">개인정보 수집·이용 동의서 보기</button>' +
+    '<div class="hint">로그인할 때 동의 일시가 자동으로 기록됩니다.</div>' +
     '</div>' +
 
     '<div class="sect">' +
@@ -458,7 +521,7 @@ function workerHome(p) {
       : '') +
     '</div>';
 
-  return noticeBannerHTML('worker') + schedCalendarHTML() +
+  return noticeBannerHTML('worker') + schedSummaryHTML() +
     '<div class="hello"><span class="av lg">' + esc(p.name.slice(0, 1)) + '</span><div>' +
     '<div class="h-name">' + esc(p.name) + ' 님</div>' +
     '<div class="muted">' + teamLabel(p.teamId) + ' · ' + esc(p.job) + ' · 한양엔지(주) PCW</div></div></div>' +
@@ -542,7 +605,10 @@ function teamReport(p) {
     '<div class="card">' +
     '<label class="field"><span>팀명</span><input value="' + (t ? esc(t.name) : '') + '" readonly></label>' +
     '<div class="field"><span>작업자 명단 · <b>' + d.memberIds.length + '명</b></span>' +
-    '<button class="btn btn-line sm" data-act="loadPrev" style="margin-bottom:2px">이전 명단 불러오기</button>' +
+    '<div class="btn-row" style="margin:2px 0 4px">' +
+    '<button class="btn btn-line sm" data-act="loadPrev">이전 명단 불러오기</button>' +
+    '<button class="btn btn-line sm" data-act="loadPrevReport">이전 일보 불러오기</button>' +
+    '</div>' +
     '<div class="chips">' +
     d.memberIds.map(function (id) {
       var q = personById(id);
@@ -670,6 +736,39 @@ function schedSelDate() {
 }
 function schedTimeText(s) { return s.time ? esc(s.time) : '종일'; }
 
+function monthDayLabel(k) {
+  var p = String(k).split('-');
+  return parseInt(p[1], 10) + '월 ' + parseInt(p[2], 10) + '일';
+}
+
+/* 홈에 보이는 한 줄 요약 카드 — 누르면 전체 달력이 열린다 */
+function schedSummaryHTML() {
+  var tk = todayKey();
+  var day = tk;
+  var list = schedulesOn(tk).slice().sort(schedSort);
+  if (!list.length) {
+    var future = (state.schedules || []).filter(function (s) { return s.date > tk; }).sort(function (a, b) {
+      if (a.date !== b.date) { return a.date < b.date ? -1 : 1; }
+      return schedSort(a, b);
+    });
+    if (future.length) { day = future[0].date; list = schedulesOn(day).slice().sort(schedSort); }
+  }
+  var main;
+  if (list.length) {
+    main = '<b class="sched-sum-date">' + monthDayLabel(day) + '</b>' +
+      '<span class="sched-sum-title">' + esc(list[0].title) + '</span>' +
+      (list.length > 1 ? '<span class="sched-sum-more">외 ' + (list.length - 1) + '건</span>' : '');
+  } else {
+    main = '<b class="sched-sum-date">' + monthDayLabel(tk) + '</b>' +
+      '<span class="sched-sum-title none">등록된 일정 없음</span>';
+  }
+  return '<button class="card sched-sum" data-act="openSchedCal">' +
+    '<span class="sched-sum-flag">📅 일정</span>' +
+    '<span class="sched-sum-main">' + main + '</span>' +
+    '<span class="sched-sum-go">달력 ›</span>' +
+    '</button>';
+}
+
 function schedCalendarHTML() {
   var mk = schedMonthKey();
   var sel = schedSelDate();
@@ -708,7 +807,7 @@ function schedCalendarHTML() {
 
   return '<div class="card sched-card">' +
     '<div class="card-head">' +
-    '<div><div class="sec-t">📅 일정 달력</div><div class="muted">' + shortDate(sel) + ' (' + wd(sel) + ') 일정 · 이번 달 ' + schedMonthCount(mk) + '건</div></div>' +
+    '<div><div class="sec-t">📅 ' + monthDayLabel(sel) + ' (' + wd(sel) + ')</div><div class="muted">이번 달 ' + schedMonthCount(mk) + '건 · ' + longDate(sel) + '</div></div>' +
     '<div class="sched-nav">' +
     '<button class="sched-arrow" data-act="schedPrev" aria-label="이전 달">‹</button>' +
     '<b class="sched-month">' + monthLabel(mk) + '</b>' +
@@ -741,6 +840,15 @@ function openScheduleSheet(id) {
     '<button class="btn btn-primary" data-act="schedSave" data-id="' + (s ? esc(s.id) : '') + '">' + (s ? '저장' : '등록') + '</button>');
 }
 
+/* 홈 요약 카드를 누르면 열리는 전체 달력 (시트) */
+function openSchedSheet() {
+  var sb = $('#sheetBody');
+  var st = (sb && $('#sheetWrap').classList.contains('open')) ? sb.scrollTop : 0;
+  openSheet('일정 달력', schedCalendarHTML(), '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>');
+  if (sb) { sb.scrollTop = st; }
+  state.ui.schedSheet = true;
+}
+
 /* =========================================================
    관리자 화면
    ========================================================= */
@@ -758,7 +866,7 @@ function adminDash() {
     '<button class="' + (view === 'today' ? 'on' : '') + '" data-act="adminDashView" data-v="today">오늘 현황</button>' +
     '<button class="' + (view === 'gongsu' ? 'on' : '') + '" data-act="adminDashView" data-v="gongsu">한달 공수표</button>' +
     '</div>';
-  return seg + (view === 'gongsu' ? adminGongsu() : noticeBannerHTML('admin') + schedCalendarHTML() + adminTodayBody());
+  return seg + (view === 'gongsu' ? adminGongsu() : noticeBannerHTML('admin') + schedSummaryHTML() + adminTodayBody());
 }
 
 function gsPeopleList() {

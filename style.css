@@ -587,3 +587,37 @@ a.btn{text-decoration:none;}
 .sched-ib.del{color:var(--red);}
 .sched-empty{padding:14px 4px;text-align:center;font-size:12px;color:var(--gray2);font-weight:700;
   background:#F7F9FC;border:1px dashed var(--line);border-radius:12px;}
+
+/* 홈 요약 카드 — 누르면 전체 달력이 열림 */
+.sched-sum{display:flex;align-items:center;gap:9px;width:100%;text-align:left;margin-bottom:12px;padding:12px 13px;}
+.sched-sum:active{filter:brightness(.985);}
+.sched-sum-flag{flex:0 0 auto;font-size:11px;font-weight:900;color:var(--navy);background:#EEF2FA;
+  border-radius:8px;padding:4px 8px;letter-spacing:-.3px;}
+.sched-sum-main{flex:1 1 auto;min-width:0;display:flex;align-items:baseline;gap:6px;overflow:hidden;}
+.sched-sum-date{flex:0 0 auto;font-size:13px;font-weight:900;color:#101828;letter-spacing:-.3px;}
+.sched-sum-title{flex:1 1 auto;min-width:0;font-size:12.5px;font-weight:700;color:#475467;letter-spacing:-.2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sched-sum-title.none{color:var(--gray2);}
+.sched-sum-more{flex:0 0 auto;font-size:10.5px;font-weight:900;color:var(--blue);}
+.sched-sum-go{flex:0 0 auto;font-size:11.5px;font-weight:900;color:var(--blue);letter-spacing:-.2px;}
+
+/* ---------- 개인정보 수집·이용 동의 ---------- */
+.privacy-box{margin-top:12px;display:flex;align-items:center;gap:8px;
+  background:#F7FAFF;border:1.5px solid #DCE7FF;border-radius:14px;padding:11px 12px;}
+.privacy-agree{flex:1 1 auto;min-width:0;display:flex;align-items:flex-start;gap:8px;cursor:pointer;}
+.privacy-agree input{flex:0 0 auto;width:18px;height:18px;margin:1px 0 0;accent-color:var(--blue);}
+.privacy-txt{font-size:12.5px;font-weight:700;color:#344054;letter-spacing:-.25px;line-height:1.4;}
+.privacy-txt b{color:var(--blue);font-weight:900;}
+.privacy-view{flex:0 0 auto;font-size:11.5px;font-weight:900;color:var(--blue);background:#fff;
+  border:1.5px solid #C7D7FE;border-radius:9px;padding:6px 9px;letter-spacing:-.2px;}
+.privacy-view:active{background:#EEF4FF;}
+
+.pdoc{font-size:12.5px;color:#344054;line-height:1.62;letter-spacing:-.2px;padding-bottom:2px;}
+.pdoc .lead{background:#F7FAFF;border:1px solid #E3ECFF;border-radius:12px;padding:10px 11px;
+  color:#243B6B;font-weight:700;margin-bottom:4px;}
+.pdoc h3{font-size:12.5px;font-weight:900;color:var(--navy);margin:14px 0 4px;letter-spacing:-.3px;}
+.pdoc h3:first-child{margin-top:2px;}
+.pdoc p{margin:2px 0;}
+.pdoc .must{color:var(--blue);font-weight:900;}
+.pdoc .meta{margin-top:14px;padding-top:10px;border-top:1px solid var(--line);
+  font-size:11px;color:var(--gray);line-height:1.55;}

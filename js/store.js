@@ -5,6 +5,7 @@ var AUTH_KEY = 'pcw_auth_v2';          /* 로그인 세션 (사용자가 로그�
 var CACHE_KEY = 'pcw_cache_v2';        /* 마지막으로 받아 둔 화면 (끊겼을 때 보여 주기) */
 var BASE_WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 var JOB_LIST = ['배관공', '보통인부', '용접공', '품질관리자'];
+var PRIVACY_VERSION = '2026-11-26-v1';   /* 개인정보 수집·이용 동의서 버전 (동의 기록에 같이 저장) */
 var KST_MS = 9 * 3600 * 1000;
 
 var state = {
@@ -225,7 +226,9 @@ function mapWorker(w) {
       return Array.isArray(c) ? c : [];
     })(),
     injury: { has: !!w.injury_has, date: w.injury_date || '', note: w.injury_note || '' },
-    memo: w.memo || ''
+    memo: w.memo || '',
+    privacyAgreedAt: w.privacy_agreed_at || '',
+    privacyVersion: w.privacy_version || ''
   };
 }
 
@@ -514,6 +517,9 @@ function logOut() {
   state.auth = null;
   state.role = 'worker';
   state.draft = null;
+  state.ui.privacyChecked = false;
+  state.ui.schedSheet = false;
+  state.ui.schedBackToCal = false;
   closeSheet();
   render();
   toast('로그아웃했어요');
@@ -634,6 +640,15 @@ function fmtDeadline(iso) {
 function patchWorker(id, fields, label) {
   return apiWrite({ m: 'PATCH', path: '/rest/v1/workers?id=' + sbEq(id), body: fields, prefer: 'return=minimal', label: label || '인원 저장' });
 }
+/* [필수] 개인정보 동의 기록 : 화면 상태 + DB(workers.privacy_agreed_at / privacy_version) */
+function markPrivacyAgree(p) {
+  if (!p) { return ''; }
+  var at = new Date().toISOString();
+  p.privacyAgreedAt = at;
+  p.privacyVersion = PRIVACY_VERSION;
+  patchWorker(p.id, { privacy_agreed_at: at, privacy_version: PRIVACY_VERSION }, '개인정보 동의 저장');
+  return at;
+}
 function insertWorker(p, label) {
   return apiWrite({
     m: 'POST', path: '/rest/v1/workers', prefer: 'return=minimal', label: label || '신규 인원 등록',
@@ -642,7 +657,8 @@ function insertWorker(p, label) {
       job_type: p.job || null, team_id: p.teamId || null, is_leader: p.role === 'leader',
       is_admin: !!p.admin, daily_rate: p.price || null, certs_json: p.certs || [],
       injury_has: !!p.injury.has, injury_date: p.injury.date || null, injury_note: p.injury.note || null,
-      memo: p.memo || null, status: p.status || 'active'
+      memo: p.memo || null, status: p.status || 'active',
+      privacy_agreed_at: p.privacyAgreedAt || null, privacy_version: p.privacyVersion || null
     }
   });
 }
@@ -775,6 +791,7 @@ function schedShiftMonth(n) {
   var last = new Date(parseInt(mk.slice(0, 4), 10), parseInt(mk.slice(5, 7), 10), 0).getDate();
   state.ui.schedMonth = mk;
   state.ui.schedDate = mk + '-' + pad2(Math.min(day, last));
+  if (state.ui.schedSheet) { openSchedSheet(); return; }
   render();
 }
 function deleteDocument(id) {

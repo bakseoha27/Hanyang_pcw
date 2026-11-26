@@ -15,6 +15,7 @@ function openSheet(title, body, footer) {
 function closeSheet() {
   $('#sheetWrap').classList.remove('open');
   document.body.style.overflow = '';
+  if (state.ui) { state.ui.schedSheet = false; state.ui.schedBackToCal = false; }
 }
 
 function confirmSheet(title, msg, okLabel, action, extra, danger) {
@@ -301,6 +302,12 @@ var ACTIONS = {
   loginSubmit: async function () {
     var f = readLoginForm();
     if (f.err) { toast(f.err); return; }
+    /* [필수] 개인정보 수집·이용 동의 — 체크하지 않으면 로그인·자동등록 모두 차단 */
+    var agreeEl = $('#li_privacy');
+    if (!agreeEl || !agreeEl.checked) {
+      toast('개인정보 수집·이용 동의에 체크해야 로그인할 수 있습니다.');
+      return;
+    }
     var found = state.people.filter(function (p) {
       return p.name === f.name && p.birth === f.birth && phoneDigits(p.phone) === f.pd;
     })[0];
@@ -313,6 +320,7 @@ var ACTIONS = {
       }
       if (found.status === 'resigned') { toast('퇴사 처리된 인원입니다.<br>관리자에게 문의해 주세요.'); return; }
       state.auth = { personId: found.id };
+      markPrivacyAgree(found);
       sessionSave(found, 'admin');
       state.role = 'admin';
       state.ui.adminTab = 'dash';
@@ -324,6 +332,7 @@ var ACTIONS = {
     if (found) {
       if (found.status === 'resigned') { toast('퇴사 처리된 인원입니다.<br>관리자에게 문의해 주세요.'); return; }
       state.auth = { personId: found.id };
+      markPrivacyAgree(found);
       sessionSave(found, 'worker');
       state.role = 'worker';
       state.ui.workerTab = 'home';
@@ -340,7 +349,8 @@ var ACTIONS = {
       id: uuid(), name: f.name, job: f.job || '배관공', birth: f.birth, phone: f.phone,
       price: 0, teamId: null, role: 'worker', admin: false, status: 'active', resign: null,
       attendance: {}, leaves: [], certs: defaultCerts(),
-      injury: { has: false, date: '', note: '' }, memo: ''
+      injury: { has: false, date: '', note: '' }, memo: '',
+      privacyAgreedAt: new Date().toISOString(), privacyVersion: PRIVACY_VERSION
     };
     state.people.push(np);
     state.auth = { personId: np.id };
@@ -350,6 +360,9 @@ var ACTIONS = {
     render();
     toast('신규 기술인으로 등록했어요<br>관리자 인원 목록에 추가됩니다');
     insertWorker(np);
+  },
+  openPrivacy: function (el) {
+    openPrivacySheet(el ? el.getAttribute('data-from') : '');
   },
   openSettings: function (el) {
     var p = (el && el.getAttribute('data-id')) ? personById(el.getAttribute('data-id')) : me();
@@ -869,6 +882,35 @@ var ACTIONS = {
     render();
     toast(longDate(prev.date) + ' 명단 ' + d.memberIds.length + '명을 불러왔어요');
   },
+  loadPrevReport: function () {
+    var p = me();
+    var tid = p ? p.teamId : null;
+    var pick = function (list) {
+      return list.sort(function (a, b) {
+        if (a.date !== b.date) { return a.date < b.date ? 1 : -1; }
+        return (a.submittedAt || '') < (b.submittedAt || '') ? 1 : -1;
+      })[0];
+    };
+    /* 1순위: 같은 조의 가장 최근 일보 · 2순위: 본인이 쓴 가장 최근 일보 */
+    var prev = pick(state.reports.filter(function (r) { return r.teamId === tid && r.date <= todayKey(); }));
+    if (!prev && p) {
+      prev = pick(state.reports.filter(function (r) { return r.authorName === p.name && r.date <= todayKey(); }));
+    }
+    if (!prev) { toast('불러올 이전 작업일보가 없습니다.'); return; }
+    var d = ensureDraft(tid);
+    d.location = prev.location || d.location;
+    d.timeFrom = prev.timeFrom || d.timeFrom;
+    d.timeTo = prev.timeTo || d.timeTo;
+    d.content = prev.content || d.content;
+    d.note = prev.note || '';
+    if (!d.memberIds.length) {
+      d.memberIds = state.people.filter(function (q) {
+        return (prev.memberNames || []).indexOf(q.name) >= 0;
+      }).map(function (q) { return q.id; });
+    }
+    render();
+    toast(longDate(prev.date) + ' 작업일보를 불러왔어요<br>위치 · 시간 · 작업내용 · 특이사항을 채웠습니다');
+  },
   draftAdd: function () { openDraftPicker(); },
   draftToggle: function (el) {
     var id = el.getAttribute('data-id');
@@ -1005,6 +1047,11 @@ var ACTIONS = {
   },
 
   /* ----- 일정 달력 ----- */
+  openSchedCal: function () {
+    if (!state.ui.schedMonth) { state.ui.schedMonth = todayKey().slice(0, 7); }
+    if (!state.ui.schedDate) { state.ui.schedDate = todayKey(); }
+    openSchedSheet();
+  },
   schedPrev: function () { schedShiftMonth(-1); },
   schedNext: function () { schedShiftMonth(1); },
   schedPick: function (el) {
@@ -1012,20 +1059,24 @@ var ACTIONS = {
     if (!d) { return; }
     state.ui.schedDate = d;
     state.ui.schedMonth = d.slice(0, 7);
+    if (state.ui.schedSheet) { openSchedSheet(); return; }
     render();
   },
   schedNew: function () {
     if (!canAdmin()) { toast('관리자만 일정을 등록할 수 있습니다.'); return; }
+    state.ui.schedBackToCal = !!state.ui.schedSheet;
     openScheduleSheet(null);
   },
   schedEdit: function (el) {
     if (!canAdmin()) { toast('관리자만 일정을 수정할 수 있습니다.'); return; }
+    state.ui.schedBackToCal = !!state.ui.schedSheet;
     openScheduleSheet(el.getAttribute('data-id'));
   },
   schedAskDel: function (el) {
     if (!canAdmin()) { toast('관리자만 일정을 삭제할 수 있습니다.'); return; }
     var s = schedById(el.getAttribute('data-id'));
     if (!s) { return; }
+    state.ui.schedBackToCal = !!state.ui.schedSheet;
     confirmSheet('일정을 삭제할까요?',
       '<b>' + esc(s.title) + '</b><br>' + longDate(s.date) + (s.time ? ' · ' + esc(s.time) : '') +
       '<br>삭제하면 기술인·관리자 홈 달력에서도 바로 사라집니다.',
@@ -1034,10 +1085,12 @@ var ACTIONS = {
   schedDoDel: function (el) {
     if (!canAdmin()) { return; }
     var id = el.getAttribute('data-id');
+    var backCal = !!state.ui.schedBackToCal;
     state.schedules = (state.schedules || []).filter(function (x) { return x.id !== id; });
     deleteScheduleDb(id);
     closeSheet();
     render();
+    if (backCal) { openSchedSheet(); }
     toast('일정을 삭제했어요');
   },
   schedSave: function (el) {
@@ -1063,8 +1116,10 @@ var ACTIONS = {
     }
     state.ui.schedMonth = date.slice(0, 7);
     state.ui.schedDate = date;
+    var backCal = !!state.ui.schedBackToCal;
     closeSheet();
     render();
+    if (backCal) { openSchedSheet(); }
   }
 };
 
@@ -1096,6 +1151,9 @@ function onInput(e) {
 
 function onChange(e) {
   var el = e.target;
+  if (el.id === 'li_privacy') {
+    state.ui.privacyChecked = !!el.checked;
+  }
   if (el.id === 'resignReason') {
     var wrap = $('#resignEtcWrap');
     if (wrap) {
