@@ -298,7 +298,9 @@ function buildState(d) {
       id: l.id, date: l.leave_date, reason: l.reason || '',
       at: kstHM(l.created_at), teamName: l.team_name || '',
       reportTo: l.report_to || '', status: l.status || 'pending',
-      ackAt: l.ack_at || '', ackBy: l.ack_by || ''
+      ackAt: l.ack_at || '', ackBy: l.ack_by || '',
+      decidedAt: l.decided_at || '', decidedBy: l.decided_by || '',
+      rejectReason: l.reject_reason || ''
     });
   });
   state.reports = (d.reports || []).map(function (r) {
@@ -602,8 +604,17 @@ function avgOf(list) {
 }
 function overallAvg() { return avgOf(activePeople()); }
 function todayAtt(p) { return p.attendance[todayKey()] || null; }
+/* 그 날짜 휴무 — 반려(rejected)된 신청은 휴무로 치지 않는다 (0공수 · 명단 · 집계에서 제외) */
 function leaveOn(p, k) {
+  return (p.leaves || []).filter(function (l) { return l.date === k && l.status !== 'rejected'; })[0] || null;
+}
+/* 상태와 상관없이 그 날짜에 올라온 신청 (관리자 휴무 관리 목록용) */
+function leaveAnyOn(p, k) {
   return (p.leaves || []).filter(function (l) { return l.date === k; })[0] || null;
+}
+/* 휴무 상태 라벨 */
+function leaveStatusLabel(st) {
+  return st === 'approved' ? '승인' : st === 'rejected' ? '반려' : '대기';
 }
 /* 오늘 퇴근 판정 : 입력된 퇴근 시각이 지금보다 미리(미래)면 아직 근무 중
    (예: 06:27~17:00 을 미리 넣어 두고 14:00 에 보면 → 출근/근무중, 표기는 '17:00 예정')
@@ -811,13 +822,25 @@ var BULK_PRESETS = {
 };
 /* 일괄 적용 체크 선택 (id → 1) · 새로고침해도 유지 */
 var bulkSel = {};
-function insertLeave(p, l) {
+function leaveWriteBody(p, l) {
+  var st = l.status || 'pending';
+  var body = {
+    id: l.id, worker_id: p.id, leave_date: l.date, reason: l.reason || null,
+    team_name: l.teamName || null, report_to: l.reportTo || null, status: st
+  };
+  if (st !== 'pending') {
+    body.decided_at = l.decidedAt || new Date().toISOString();
+    body.decided_by = l.decidedBy || null;
+  }
+  if (st === 'rejected') { body.reject_reason = l.rejectReason || null; }
+  if (l.ackAt) { body.ack_at = l.ackAt; }
+  if (l.ackBy) { body.ack_by = l.ackBy; }
+  return body;
+}
+function insertLeave(p, l, label) {
   return apiWrite({
-    m: 'POST', path: '/rest/v1/leaves', prefer: 'return=minimal', label: '휴무 신청',
-    body: {
-      id: l.id, worker_id: p.id, leave_date: l.date, reason: l.reason || null,
-      team_name: l.teamName || null, report_to: l.reportTo || null, status: 'pending'
-    }
+    m: 'POST', path: '/rest/v1/leaves', prefer: 'return=minimal', label: label || '휴무 신청',
+    body: leaveWriteBody(p, l)
   });
 }
 /* 여러 인원 휴무(0공수) 한 번에 등록 (공수 일괄 적용 · 휴무) */
@@ -829,9 +852,10 @@ function insertLeaveBulk(items) {
     body: items.map(function (x) {
       return {
         id: x.id, worker_id: x.workerId, leave_date: x.date, reason: x.reason || null,
-        team_name: x.teamName || null, report_to: x.reportTo || null, status: 'pending',
-        /* 관리자가 직접 만든 휴무는 이미 확인한 것 → 휴무 보고 알람이 다시 뜨지 않게 */
-        ack_at: x.ackAt || at, ack_by: x.ackBy || null
+        team_name: x.teamName || null, report_to: x.reportTo || null, status: 'approved',
+        /* 관리자가 직접 만든 휴무는 바로 승인된 것 → 휴무 보고 알람이 다시 뜨지 않게 */
+        ack_at: x.ackAt || at, ack_by: x.ackBy || null,
+        decided_at: at, decided_by: x.ackBy || null
       };
     })
   });
@@ -853,6 +877,22 @@ function patchLeave(l) {
 function deleteLeave(id) {
   return apiWrite({ m: 'DELETE', path: '/rest/v1/leaves?id=' + sbEq(id), label: '휴무 취소' });
 }
+/* 휴무 승인 / 반려 — 화면 상태 + DB(leaves.status·decided_at·decided_by·reject_reason) */
+function decideLeave(l, status, byId, reason) {
+  var at = new Date().toISOString();
+  l.status = status === 'rejected' ? 'rejected' : 'approved';
+  l.decidedAt = at;
+  l.decidedBy = byId || '';
+  l.rejectReason = l.status === 'rejected' ? (reason || '') : '';
+  return apiWrite({
+    m: 'PATCH', path: '/rest/v1/leaves?id=' + sbEq(l.id), prefer: 'return=minimal',
+    label: l.status === 'approved' ? '휴무 승인' : '휴무 반려',
+    body: {
+      status: l.status, decided_at: at, decided_by: byId || null,
+      reject_reason: l.status === 'rejected' ? (reason || null) : null
+    }
+  });
+}
 
 /* ---------- 휴무 보고 알람 (관리자) ----------
    leaves.ack_at 이 비어 있는 행 = 관리자가 아직 확인하지 않은 휴무 보고
@@ -866,8 +906,10 @@ function unackedLeaves() {
   state.people.forEach(function (p) {
     (p.leaves || []).forEach(function (l) {
       if (l.ackAt) { return; }
+      if (l.status === 'approved' || l.status === 'rejected') { return; }   /* 이미 승인·반려된 건은 알람에서 뺀다 */
       out.push({
         id: l.id, name: p.name, workerId: p.id, date: l.date,
+        status: l.status || 'pending',
         teamName: l.teamName || (p.teamId ? teamLabel(p.teamId) : '미배정'),
         reason: l.reason || '', reportTo: l.reportTo || '', at: l.at || ''
       });

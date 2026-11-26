@@ -703,6 +703,38 @@ function openLeaveEdit(l, p) {
 function leaveById(p, id) {
   return (p.leaves || []).filter(function (l) { return l.id === id; })[0] || null;
 }
+/* id로 휴무 신청 찾기 (관리자·팀장은 여러 인원의 신청을 다룬다) */
+function leaveFind(id) {
+  var found = null;
+  state.people.forEach(function (p) {
+    (p.leaves || []).forEach(function (l) { if (l.id === id) { found = { p: p, l: l }; } });
+  });
+  return found;
+}
+/* 승인·반려 뒤 : 시트를 다시 그린다 (남은 알람이 있으면 알람, 없으면 휴무 관리 목록) */
+function afterLeaveDecision() {
+  var rest = unackedLeaves();
+  leaveAlarmOpenIds = null;
+  closeSheet();
+  render();
+  if (rest.length) { openLeaveAlarmSheet(rest); } else { openLeaveManageSheet(); }
+}
+/* 휴무 대리 등록 시트 */
+function openLeaveProxySheet() {
+  var ps = activePeople().slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ko'); });
+  if (!ps.length) { toast('등록된 인원이 없습니다.'); return; }
+  var opts = ps.map(function (p) {
+    return '<option value="' + p.id + '">' + esc(p.name) + ' · ' + esc(teamLabel(p.teamId)) + '</option>';
+  }).join('');
+  var body = '<div class="muted" style="margin:-4px 0 8px">전화·카톡으로 받은 휴무를 관리자가 대신 등록합니다. <b>바로 승인</b> 상태로 저장됩니다.</div>' +
+    '<label class="field"><span>인원</span><select id="lp_worker">' + opts + '</select></label>' +
+    '<label class="field"><span>휴무 날짜</span><input type="date" id="lp_date" min="' + todayKey() + '" value="' + todayKey() + '"></label>' +
+    '<label class="field"><span>사유</span><input id="lp_reason" placeholder="예) 병원 진료"></label>' +
+    '<div class="hint">등록하면 그 날 근태 기록이 지워지고 <b>0공수(휴무)</b>로 바뀝니다.</div>';
+  openSheet('휴무 대리 등록', body,
+    '<button class="btn btn-ghost" data-act="leaveManage">돌아가기</button>' +
+    '<button class="btn btn-primary" data-act="leaveProxySave">등록 · 승인</button>');
+}
 
 /* =========================================================
    동작 정의
@@ -871,14 +903,13 @@ var ACTIONS = {
     toast('<b>' + ids.length + '건</b> 휴무 보고를 <b>확인 완료</b>로 표시했습니다');
   },
   leaveAlarmList: function () {
-    closeSheet();
     /* 알람을 열 수 있는 건 이미 관리자·팀장 화면 → 보던 역할 그대로 유지 (팀장은 팀장 화면에 머문다) */
     if (state.role === 'worker') { state.role = canAdmin() ? 'admin' : 'manager'; }
-    state.ui.timeEdit = false;
-    state.ui.adminTab = 'dash';
-    state.ui.adminDashView = 'today';
+    state.role = state.role === 'worker' ? (canAdmin() ? 'admin' : 'manager') : state.role;
+    leaveAlarmOpenIds = null;
+    closeSheet();
     render();
-    toast('전체 현황의 <b>오늘 휴무</b> 카드에서 확인할 수 있어요');
+    openLeaveManageSheet();
   },
   openSensitive: function (el) {
     openSensitiveSheet(el ? el.getAttribute('data-from') : '');
@@ -1110,12 +1141,14 @@ var ACTIONS = {
     var p = me();
     var l = leaveById(p, el.getAttribute('data-id'));
     if (!l) { return; }
-    if (daysUntil(l.date) <= 0) {
-      toast('당일 · 지난 휴무는 앱에서 취소할 수 없어요.<br>박서하 총무 또는 관리자에게 연락해 주세요.');
+    if (daysUntil(l.date) < 0) {
+      toast('지난 날짜의 휴무는 앱에서 취소할 수 없어요.<br>박서하 총무 또는 관리자에게 연락해 주세요.');
       return;
     }
+    var isToday = daysUntil(l.date) === 0;
     confirmSheet('휴무 신청을 취소할까요?',
-      '<b>' + longDate(l.date) + '</b> · ' + esc(l.reason) + '<br>취소하면 관리자 현황에서도 빠집니다.',
+      '<b>' + longDate(l.date) + '</b> · ' + esc(l.reason) + '<br>' +
+      (isToday ? '<b>오늘</b> 휴무입니다. 취소하면 오늘 0공수가 풀리고 <b>미출근</b>으로 바뀝니다.<br>관리자에게도 알려 주세요.' : '취소하면 관리자 현황 · 공수 집계에서도 빠집니다.'),
       '신청 취소', 'doCancelLeave', 'data-id="' + l.id + '"');
   },
   doCancelLeave: function (el) {
@@ -1126,8 +1159,84 @@ var ACTIONS = {
     deleteLeave(l.id);
     closeSheet();
     render();
-    openSettings(p);
     toast('휴무 신청을 취소했어요 · ' + longDate(l.date));
+    setTimeout(function () { refresh(true); }, 600);
+  },
+
+  /* ----- 관리자·팀장 : 휴무 관리 (승인 · 반려 · 대리 등록) ----- */
+  leaveManage: function () { openLeaveManageSheet(); },
+  leaveApprove: function (el) {
+    var who = me();
+    if (!who || !canManage()) { toast('관리자·팀장만 승인할 수 있습니다.'); return; }
+    var f = leaveFind(el.getAttribute('data-id'));
+    if (!f) { toast('휴무 신청을 찾지 못했어요 · 새로고침 후 다시 시도해 주세요.'); return; }
+    decideLeave(f.l, 'approved', who.id);
+    afterLeaveDecision();
+    toast('<b>' + esc(f.p.name) + '</b> 님 ' + mdLabel(f.l.date) + ' 휴무 <b>승인</b><br>0공수로 집계됩니다');
+    setTimeout(function () { refresh(true); }, 600);
+  },
+  leaveRejectOpen: function (el) {
+    var who = me();
+    if (!who || !canManage()) { toast('관리자·팀장만 반려할 수 있습니다.'); return; }
+    var f = leaveFind(el.getAttribute('data-id'));
+    if (!f) { toast('휴무 신청을 찾지 못했어요 · 새로고침 후 다시 시도해 주세요.'); return; }
+    var body = '<div class="muted" style="margin:-4px 0 6px">' + esc(f.p.name) + ' · ' + longDate(f.l.date) +
+      ' · ' + esc(f.l.reason || '사유 없음') + '</div>' +
+      '<label class="field"><span>반려 사유 (선택)</span><input id="lvr_reason" placeholder="예) 현장 인원 부족"></label>' +
+      '<div class="hint">반려하면 이 휴무는 <b>인원 현황 · 공수 집계에서 빠지고</b>, 신청자 화면에 <b>반려</b>로 표시됩니다.</div>';
+    openSheet('휴무 반려', body,
+      '<button class="btn btn-ghost" data-act="leaveManage">돌아가기</button>' +
+      '<button class="btn btn-danger" data-act="leaveRejectDo" data-id="' + f.l.id + '">반려하기</button>');
+  },
+  leaveRejectDo: function (el) {
+    var who = me();
+    if (!who || !canManage()) { toast('관리자·팀장만 반려할 수 있습니다.'); return; }
+    var f = leaveFind(el.getAttribute('data-id'));
+    if (!f) { toast('휴무 신청을 찾지 못했어요 · 새로고침 후 다시 시도해 주세요.'); return; }
+    var reason = ($('#lvr_reason') ? $('#lvr_reason').value : '').trim();
+    decideLeave(f.l, 'rejected', who.id, reason);
+    afterLeaveDecision();
+    toast('<b>' + esc(f.p.name) + '</b> 님 ' + mdLabel(f.l.date) + ' 휴무 <b>반려</b><br>휴무 집계에서 빠집니다');
+    setTimeout(function () { refresh(true); }, 600);
+  },
+  leaveProxyOpen: function () {
+    if (!canManage()) { toast('관리자·팀장만 등록할 수 있습니다.'); return; }
+    openLeaveProxySheet();
+  },
+  leaveProxySave: function () {
+    var who = me();
+    if (!who || !canManage()) { toast('관리자·팀장만 등록할 수 있습니다.'); return; }
+    var w = personById($('#lp_worker') ? $('#lp_worker').value : '');
+    var d = $('#lp_date') ? $('#lp_date').value : '';
+    var r = ($('#lp_reason') ? $('#lp_reason').value : '').trim() || '관리자 대리 등록';
+    if (!w) { toast('휴무 처리할 인원을 골라 주세요.'); return; }
+    if (!d) { toast('휴무 날짜를 선택해 주세요.'); return; }
+    if (d < todayKey()) { toast('지난 날짜는 대리 등록할 수 없어요.'); return; }
+    var at = new Date().toISOString();
+    var ex = leaveAnyOn(w, d);
+    if (ex) {
+      ex.reason = r;
+      ex.teamName = teamLabel(w.teamId);
+      ex.reportTo = '관리자';
+      ex.ackAt = ex.ackAt || at;
+      ex.ackBy = ex.ackBy || who.id;
+      decideLeave(ex, 'approved', who.id);
+      patchLeave(ex);
+    } else {
+      var l = {
+        id: uuid(), date: d, reason: r, at: nowHM(), teamName: teamLabel(w.teamId), reportTo: '관리자',
+        status: 'approved', decidedAt: at, decidedBy: who.id, ackAt: at, ackBy: who.id
+      };
+      w.leaves.push(l);
+      insertLeave(w, l, '휴무 대리 등록');
+    }
+    var had = !!(w.attendance && w.attendance[d]);
+    if (had) { delete w.attendance[d]; saveAttendance(w, d, '휴무로 근태 삭제'); }
+    closeSheet();
+    render();
+    openLeaveManageSheet();
+    toast('<b>' + esc(w.name) + '</b> 님 ' + longDate(d) + ' 휴무 <b>대리 등록 · 승인</b>' + (had ? '<br>그 날 근태를 지워 0공수로 바꿨어요' : ''));
+    setTimeout(function () { refresh(true); }, 700);
   },
   toggleResign: function () {
     state.ui.resignOpen = !state.ui.resignOpen;

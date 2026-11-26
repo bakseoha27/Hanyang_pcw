@@ -419,11 +419,13 @@ function leaveAlarmHTML(list) {
       '<span class="la-sub">' + esc(mdLabel(l.date)) + ' · ' + esc(l.teamName || '미배정') + '</span>' +
       '</span>' +
       '<span class="la-right">' +
-      '<span class="la-reason">' + esc(l.reason || '사유 없음') + '</span>' +
-      '<span class="la-to">보고 ' + esc(l.reportTo || '-') + '</span>' +
-      '</span></div>';
+      '<span class="la-reason">' + (l.reason ? esc(l.reason) : '사유 없음') + '</span>' +
+      '<span class="la-acts">' +
+      '<button class="lv-btn ok" data-act="leaveApprove" data-id="' + l.id + '">승인</button>' +
+      '<button class="lv-btn del" data-act="leaveRejectOpen" data-id="' + l.id + '">반려</button>' +
+      '</span></div></div>';
   }).join('');
-  return '<div class="la-note">확인하면 이 알람은 다시 뜨지 않습니다.</div>' +
+  return '<div class="la-note">[승인]하면 0공수로 집계되고, [반려]하면 휴무 집계에서 빠집니다. 확인 완료를 누르면 이 알람은 다시 뜨지 않습니다.</div>' +
     rows;
 }
 
@@ -434,6 +436,55 @@ function openLeaveAlarmSheet(list) {
   openSheet('🔔 새 휴무 보고가 올라왔어요 (' + list.length + '건)', leaveAlarmHTML(list),
     '<button class="btn btn-line" data-act="leaveAlarmList">휴무 목록으로</button>' +
     '<button class="btn btn-primary" data-act="leaveAlarmAck">확인 완료</button>');
+}
+
+/* =========================================================
+   관리자·팀장 휴무 관리 (승인 · 반려 · 대리 등록)
+   ========================================================= */
+function adminLeaveAllRows() {
+  var rows = [];
+  state.people.forEach(function (p) {
+    (p.leaves || []).forEach(function (l) { rows.push({ p: p, l: l }); });
+  });
+  return rows;
+}
+function adminLeaveRowHTML(x, withActs) {
+  var p = x.p, l = x.l, st = l.status || 'pending';
+  return '<div class="lv-row">' +
+    '<div class="lv-main">' +
+    '<div class="lv-date">' + esc(p.name) + ' · ' + mdLabel(l.date) + ' <em class="lvm-wd">' + wd(l.date) + '</em> ' +
+    '<span class="badge ' + leaveBadgeCls(st) + '">' + leaveStatusLabel(st) + '</span></div>' +
+    '<div class="lv-sub">' + esc(l.reason || '사유 없음') + ' · ' + esc(l.teamName || teamLabel(p.teamId)) +
+    ' · 보고 ' + esc(leaveReportLabel(l.reportTo)) + '</div>' +
+    (st === 'rejected' && l.rejectReason ? '<div class="lv-sub lv-rej">반려 사유 · ' + esc(l.rejectReason) + '</div>' : '') +
+    '</div>' +
+    (withActs ? '<span class="lv-acts">' +
+      '<button class="lv-btn ok" data-act="leaveApprove" data-id="' + l.id + '">승인</button>' +
+      '<button class="lv-btn del" data-act="leaveRejectOpen" data-id="' + l.id + '">반려</button></span>' : '') +
+    '</div>';
+}
+function adminLeaveManageHTML() {
+  var rows = adminLeaveAllRows();
+  var pend = rows.filter(function (x) { return (x.l.status || 'pending') === 'pending'; })
+    .sort(function (a, b) { return a.l.date === b.l.date ? a.p.name.localeCompare(b.p.name, 'ko') : (a.l.date < b.l.date ? -1 : 1); });
+  var done = rows.filter(function (x) { return (x.l.status || 'pending') !== 'pending'; })
+    .sort(function (a, b) { return a.l.date === b.l.date ? a.p.name.localeCompare(b.p.name, 'ko') : (a.l.date > b.l.date ? -1 : 1); })
+    .slice(0, 30);
+  var html = '<div class="muted" style="margin:-4px 0 8px">휴무 보고를 <b>승인</b>하면 0공수로 집계되고, <b>반려</b>하면 인원 현황 · 공수 집계에서 빠집니다.</div>' +
+    '<button class="btn btn-line sm block" data-act="leaveProxyOpen">＋ 휴무 대리 등록</button>' +
+    '<div class="divider"></div>' +
+    '<div class="lvm-t">대기 <b>' + pend.length + '건</b></div>' +
+    (pend.length ? pend.map(function (x) { return adminLeaveRowHTML(x, true); }).join('')
+      : '<div class="empty" style="padding:14px 4px">대기 중인 휴무 신청이 없습니다.</div>') +
+    '<div class="divider"></div>' +
+    '<div class="lvm-t">처리된 내역 <b>' + done.length + '건</b></div>' +
+    (done.length ? done.map(function (x) { return adminLeaveRowHTML(x, false); }).join('')
+      : '<div class="empty" style="padding:14px 4px">아직 승인·반려한 내역이 없습니다.</div>');
+  return html;
+}
+function openLeaveManageSheet() {
+  openSheet('🏖️ 휴무 관리 · 승인 / 반려', '<div id="leaveMgrBox">' + adminLeaveManageHTML() + '</div>',
+    '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>');
 }
 
 function osNotifyLeave(n, first) {
@@ -483,6 +534,7 @@ function readLoginForm() {
    내 정보 · 설정
    ========================================================= */
 function leaveReportLabel(v) { return v ? String(v) : '관리자'; }
+function leaveBadgeCls(st) { return st === 'approved' ? 'b-work' : st === 'rejected' ? 'b-res' : 'b-warn'; }
 
 function myLeaveRowsHTML(p) {
   var leaves = (p.leaves || []).slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
@@ -491,22 +543,22 @@ function myLeaveRowsHTML(p) {
   }
   return leaves.map(function (l) {
     var du = daysUntil(l.date);
+    var st = l.status || 'pending';
     var badge = du > 0 ? '<span class="badge b-warn">D-' + du + '</span>'
       : du === 0 ? '<span class="badge b-work">오늘</span>'
         : '<span class="badge b-res">지난 휴무</span>';
+    var stBadge = '<span class="badge ' + leaveBadgeCls(st) + '">' + leaveStatusLabel(st) + '</span>';
     var acts = '';
-    if (du > 0) {
+    if (du >= 0) {
       acts = '<span class="lv-acts">' +
-        '<button class="lv-btn" data-act="editLeave" data-id="' + l.id + '">정정</button>' +
+        (du > 0 ? '<button class="lv-btn" data-act="editLeave" data-id="' + l.id + '">정정</button>' : '') +
         '<button class="lv-btn del" data-act="askCancelLeave" data-id="' + l.id + '">취소</button></span>';
-    } else if (du === 0) {
-      acts = '<span class="lv-acts"><button class="lv-btn" disabled>취소 불가</button></span>';
     }
     return '<div class="lv-row">' +
-      '<div class="lv-main"><div class="lv-date">' + longDate(l.date) + ' ' + badge + '</div>' +
-      '<div class="lv-sub">' + esc(l.reason) + ' · ' + esc(l.teamName || teamLabel(p.teamId)) + ' · 보고 ' + esc(leaveReportLabel(l.reportTo)) + '</div></div>' +
-      acts + '</div>' +
-      (du === 0 ? '<div class="lv-warn">당일 취소는 박서하 총무에게 개인톡 혹은 관리자에게 연락해 주세요.</div>' : '');
+      '<div class="lv-main"><div class="lv-date">' + longDate(l.date) + ' ' + badge + ' ' + stBadge + '</div>' +
+      '<div class="lv-sub">' + esc(l.reason) + ' · ' + esc(l.teamName || teamLabel(p.teamId)) + ' · 보고 ' + esc(leaveReportLabel(l.reportTo)) + '</div>' +
+      (st === 'rejected' && l.rejectReason ? '<div class="lv-sub lv-rej">반려 사유 · ' + esc(l.rejectReason) + '</div>' : '') +
+      '</div>' + acts + '</div>';
   }).join('');
 }
 
@@ -732,7 +784,6 @@ function workerHome(p) {
   var edit = !!state.ui.timeEdit;
   var poll = latestPoll();
   var myVote = poll ? poll.votes[p.id] : null;
-  var recentLeaves = (p.leaves || []).slice().sort(function (x, y) { return x.date < y.date ? 1 : -1; }).slice(0, 3);
 
   var attInner;
   if (edit) {
@@ -804,13 +855,10 @@ function workerHome(p) {
     '<label class="field"><span>보고 대상</span><input id="leaveReport" type="text" placeholder="예) 박서하 관리자 또는 현장 리더 이름"></label>' +
     '<div class="hint" style="margin-top:5px">보고한 사람 이름을 직접 적어 주세요. 비워 두면 <b>관리자</b>로 기록됩니다.</div>' +
     '<button class="btn btn-ghost sm block" style="margin-top:10px" data-act="applyLeave">휴무 신청하기</button>' +
-    (recentLeaves.length ?
-      '<div class="divider"></div><div class="muted" style="font-weight:800;color:#475467">최근 신청</div>' +
-      recentLeaves.map(function (l) {
-        return '<div class="kv"><span>' + shortDate(l.date) + ' (' + wd(l.date) + ') · ' + esc(l.reason) +
-          '<em class="kv-sub">' + esc(l.teamName || teamLabel(p.teamId)) + ' · 보고 ' + esc(leaveReportLabel(l.reportTo)) + '</em></span><b>신청됨</b></div>';
-      }).join('') || '' : '') +
-    '<div class="hint">신청 내역 정정 · 취소는 오른쪽 위 <b>⚙️ 내 정보</b>에서 할 수 있습니다. (당일 휴무는 관리자에게 연락)</div>' +
+    '<div class="divider"></div>' +
+    '<div class="muted" style="font-weight:800;color:#475467">신청 내역</div>' +
+    '<div id="homeLeaveList">' + myLeaveRowsHTML(p) + '</div>' +
+    '<div class="hint">신청한 휴무는 여기서 바로 <b>취소</b>할 수 있습니다. 내일 이후 날짜는 <b>정정</b>도 됩니다. (지난 날짜는 관리자에게)</div>' +
     '</div>';
 
   var openResign = !!state.ui.resignOpen;
@@ -1449,6 +1497,7 @@ function adminHeadcountCard() {
     '</div>' +
     '<div class="hc-sect">' +
     '<div class="hc-head2"><div class="hc-t">휴무 <b>' + offs.length + '명</b>' + (offs.length ? '' : ' <span class="hc-none-inline">(없음)</span>') + '</div>' +
+    (canManage() ? '<button class="hc-copy" data-act="leaveManage">휴무 관리</button>' : '') +
     (canManage() ? '<button class="hc-copy" data-act="copyLeaveList" data-date="' + tk + '">복사</button>' : '') +
     '</div>' +
     offList + '</div>' +
