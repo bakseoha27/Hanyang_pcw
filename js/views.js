@@ -1348,7 +1348,7 @@ function leaveCopyText(dateKey) {
   var p = String(k).split('-');
   var head = parseInt(p[1], 10) + '월 ' + parseInt(p[2], 10) + '일 ' + wd(k) + '요일 휴무자 명단';
   var list = [];
-  activePeople().forEach(function (x) {
+  peopleAsOf(k).forEach(function (x) {
     var l = leaveOn(x, k);
     if (l) { list.push({ name: x.name, reason: l.reason || '사유 미입력' }); }
   });

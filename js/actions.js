@@ -1582,7 +1582,8 @@ var ACTIONS = {
     var p = me();
     if (!p) { return; }
     var d = el.getAttribute('data-date') || ($('#mg_date') ? $('#mg_date').value : '') || todayKey();
-    delete (p.attendance || {})[d];
+    p.attendance = p.attendance || {};
+    delete p.attendance[d];
     state.ui.myGsMonth = d.slice(0, 7);
     saveAttendance(p, d, '내 근태 삭제');
     openMyGsCal();
