@@ -362,7 +362,8 @@ function buildState(d) {
   };
   state.draft = prev.draft;
   /* 로그인 세션은 DB에서 사라졌다고 앱이 함부로 지우지 않는다 (부트에서만 정리) */
-  if (state.role === 'admin' && !canAdmin()) { state.role = 'worker'; }
+  if (state.role === 'admin' && !canAdmin()) { state.role = canManage() ? 'manager' : 'worker'; }
+  if (state.role === 'manager' && !canManage()) { state.role = 'worker'; }
   return state;
 }
 
@@ -521,14 +522,16 @@ function sessionRead() {
 function sessionSave(p, role) {
   try {
     localStorage.setItem(AUTH_KEY, JSON.stringify({
-      v: 2, personId: p.id, name: p.name, role: role === 'admin' ? 'admin' : 'worker', at: new Date().toISOString()
+      v: 2, personId: p.id, name: p.name,
+      role: role === 'admin' ? 'admin' : (role === 'manager' ? 'manager' : 'worker'),
+      at: new Date().toISOString()
     }));
   } catch (e) { /* 저장 불가 */ }
 }
 function sessionSetRole(r) {
   var s = sessionRead();
   if (!s) { return; }
-  s.role = r === 'admin' ? 'admin' : 'worker';
+  s.role = r === 'admin' ? 'admin' : (r === 'manager' ? 'manager' : 'worker');
   try { localStorage.setItem(AUTH_KEY, JSON.stringify(s)); } catch (e) { /* 저장 불가 */ }
 }
 function sessionClear() {
@@ -585,17 +588,30 @@ function todayAtt(p) { return p.attendance[todayKey()] || null; }
 function leaveOn(p, k) {
   return (p.leaves || []).filter(function (l) { return l.date === k; })[0] || null;
 }
+/* 오늘 퇴근 판정 : 입력된 퇴근 시각이 지금보다 미리(미래)면 아직 근무 중
+   (예: 06:27~17:00 을 미리 넣어 두고 14:00 에 보면 → 출근/근무중, 표기는 '17:00 예정')
+   과거 날짜는 항상 퇴근 */
+function isFutureOut(a) {
+  if (!a || !a.in || !a.out) { return false; }
+  return minFromHM(a.out) > minFromHM(nowHM());
+}
+function isClockedOutToday(p) {
+  var a = todayAtt(p);
+  if (!a || !a.in || !a.out) { return false; }
+  return !isFutureOut(a);
+}
 function statusOf(p) {
   if (p.status === 'resigned') { return '퇴사'; }
   if (leaveOn(p, todayKey())) { return '휴무'; }
   var a = todayAtt(p);
+  if (a && a.in && isFutureOut(a)) { return '출근'; }
   if (a && a.in && a.out) { return '퇴근'; }
   if (a && a.in) { return '근무중'; }
   return '미출근';
 }
 function statusBadge(p) {
   var s = statusOf(p);
-  var cls = s === '근무중' ? 'b-work' : s === '퇴근' ? 'b-out' : s === '휴무' ? 'b-off2' : s === '퇴사' ? 'b-res' : 'b-none';
+  var cls = (s === '근무중' || s === '출근') ? 'b-work' : s === '퇴근' ? 'b-out' : s === '휴무' ? 'b-off2' : s === '퇴사' ? 'b-res' : 'b-none';
   return '<span class="badge ' + cls + '">' + s + '</span>';
 }
 function timeText(p) {
@@ -604,11 +620,25 @@ function timeText(p) {
   if (lv) { return '휴무 · ' + esc(lv.reason); }
   var a = todayAtt(p);
   if (!a || !a.in) { return '출근 기록 없음'; }
-  return '<b>' + a.in + '</b>' + edMark(a.inEdited) + ' 출근' + (a.out ? ' · <i>' + a.out + ' 퇴근</i>' + edMark(a.outEdited) : ' · <i>미퇴근</i>');
+  if (!a.out) { return '<b>' + a.in + '</b>' + edMark(a.inEdited) + ' 출근 · <i>미퇴근</i>'; }
+  if (isFutureOut(a)) {
+    return '<b>' + a.in + '</b>' + edMark(a.inEdited) + ' 출근 · <i>' + a.out + ' 예정</i>' + edMark(a.outEdited);
+  }
+  return '<b>' + a.in + '</b>' + edMark(a.inEdited) + ' 출근 · <i>' + a.out + ' 퇴근</i>' + edMark(a.outEdited);
 }
 function canAdmin() {
   var p = me();
   return !!(p && p.admin);
+}
+/* 팀장(반장) — is_admin 또는 is_leader 면 관리자/팀장 공용 화면을 쓸 수 있다
+   단, 팀장만인 경우 단가·관리자 권한 부여·관리자 암호는 보이지 않는다 */
+function canManage() {
+  var p = me();
+  return !!(p && (p.admin || p.role === 'leader'));
+}
+function isLeaderOnly() {
+  var p = me();
+  return !!(p && !p.admin && p.role === 'leader');
 }
 function adminName() { var p = me(); return p ? p.name : '관리자'; }
 function findReport(tid, date) {

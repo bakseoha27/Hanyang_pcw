@@ -74,7 +74,7 @@ function openMoveMember(id) {
     return '<div class="p-row" data-act="setTeam" data-id="' + id + '" data-team="' + t.id + '">' +
       '<span class="av">' + esc(t.name.slice(0, 1)) + '</span>' +
       '<span class="p-main"><span class="p-name">' + esc(t.name) + '</span>' +
-      '<span class="p-sub">' + teamMembers(t.id).length + '명 · 평균 ' + won(avgOf(teamMembers(t.id))) + '원</span></span>' +
+      '<span class="p-sub">' + teamMembers(t.id).length + '명' + (canAdmin() ? ' · 평균 ' + won(avgOf(teamMembers(t.id))) + '원' : '') + '</span></span>' +
       '<span class="p-right">' + (p.teamId === t.id ? '<span class="badge b-ok">현재</span>' : '<span class="badge b-res">이동</span>') + '</span></div>';
   }).join('');
   var body = '<div class="sheet-head"><span class="av lg">' + esc(p.name.slice(0, 1)) + '</span>' +
@@ -204,7 +204,7 @@ function normTeam(s) { return String(s || '').replace(/\s+/g, ''); }
 
 /* ---------------- 인원 직접 등록 (관리자) ---------------- */
 function openPersonAdd() {
-  if (!canAdmin()) { toast('관리자만 인원을 등록할 수 있습니다.'); return; }
+  if (!canManage()) { toast('관리자·팀장만 인원을 등록할 수 있습니다.'); return; }
   var jobOpts = ['관리자'].concat(JOB_LIST).map(function (j) {
     return '<option value="' + j + '"' + (j === '관리자' ? ' selected' : '') + '>' + j + '</option>';
   }).join('');
@@ -215,21 +215,26 @@ function openPersonAdd() {
     '<label class="field"><span>전화번호 <b class="must">*</b></span><input id="pa_phone" type="tel" inputmode="numeric" placeholder="010-0000-0000" autocomplete="tel"></label>' +
     '<label class="field"><span>직종</span><select id="pa_job">' + jobOpts + '</select></label>' +
     '<label class="field"><span>소속 팀/조</span><select id="pa_team">' + teamOptionsHTML(null) + '</select></label>' +
-    '<label class="chk" style="margin-top:12px"><input type="checkbox" id="pa_admin" checked> <b>관리자 권한 부여</b> (is_admin)</label>' +
-    '<div class="banner">체크하면 이 분이 로그인 화면에서 <b>[관리자]</b>를 고르고 관리자 암호까지 넣어 바로 관리자 화면으로 들어올 수 있습니다. 체크를 풀면 일반 기술인이 됩니다.</div>';
+    (canAdmin()
+      ? '<label class="chk" style="margin-top:12px"><input type="checkbox" id="pa_admin" checked> <b>관리자 권한 부여</b> (is_admin)</label>' +
+        '<label class="chk" style="margin-top:8px"><input type="checkbox" id="pa_leader"> <b>팀장 권한 부여</b> (is_leader)</label>' +
+        '<div class="banner">관리자 = 모든 기능 + 권한 부여 + 암호 변경. 팀장 = 현황·일보·일정·팀·조·공수표·인원 등록(관리자 전용 항목 제외, 관리자 암호 불필요).</div>'
+      : '<label class="chk" style="margin-top:12px"><input type="checkbox" id="pa_leader" checked> <b>팀장 권한 부여</b> (is_leader)</label>' +
+        '<div class="banner">팀장은 현황·일보·일정·팀·조·공수표·인원 등록을 쓸 수 있습니다. <b>관리자 전용 항목과 관리자 권한 부여는 보이지 않습니다.</b></div>');
   openSheet('인원 직접 등록', body,
     '<button class="btn btn-ghost" data-act="closeSheet">취소</button>' +
     '<button class="btn btn-primary" data-act="personAddSubmit">등록</button>');
 }
 
 function personAddSubmit() {
-  if (!canAdmin()) { toast('관리자만 인원을 등록할 수 있습니다.'); return; }
+  if (!canManage()) { toast('관리자·팀장만 인원을 등록할 수 있습니다.'); return; }
   var name = ($('#pa_name') ? $('#pa_name').value : '').trim();
   var birthRaw = ($('#pa_birth') ? $('#pa_birth').value : '').trim();
   var phoneRaw = ($('#pa_phone') ? $('#pa_phone').value : '').trim();
   var job = $('#pa_job') ? $('#pa_job').value : '관리자';
   var tid = $('#pa_team') ? ($('#pa_team').value || null) : null;
-  var isAdmin = !!(($('#pa_admin') && $('#pa_admin').checked));
+  var isAdmin = canAdmin() && !!(($('#pa_admin') && $('#pa_admin').checked));
+  var isLeader = !!(($('#pa_leader') && $('#pa_leader').checked));
   if (!name) { toast('이름을 입력해 주세요.'); return; }
   var birth = birthFromDigits(birthRaw);
   if (!birth) { toast('생년월일을 정확히 입력해 주세요.<br>예) 851029 또는 1985-10-29'); return; }
@@ -249,6 +254,11 @@ function personAddSubmit() {
       exact.admin = true;
       patchWorker(exact.id, { is_admin: true }, '관리자 권한 부여');
       changed.push('관리자 권한 부여');
+    }
+    if (isLeader && !isAdmin && exact.role !== 'leader') {
+      exact.role = 'leader';
+      patchWorker(exact.id, { is_leader: true }, '팀장 권한 부여');
+      changed.push('팀장 권한 부여');
     }
     if (tid && exact.teamId !== tid) {
       exact.teamId = tid;
@@ -270,7 +280,7 @@ function personAddSubmit() {
 
   var np = {
     id: uuid(), name: name, job: job || '관리자', birth: birth, phone: phonePretty(phoneRaw),
-    price: 0, teamId: tid, role: 'worker', admin: isAdmin, status: 'active', resign: null,
+    price: 0, teamId: tid, role: isLeader ? 'leader' : 'worker', admin: isAdmin, status: 'active', resign: null,
     attendance: {}, leaves: [], certs: defaultCerts(),
     injury: { has: false, date: '', note: '' }, memo: '',
     privacyAgreedAt: '', privacyVersion: '', sensitiveAgreedAt: ''
@@ -279,7 +289,7 @@ function personAddSubmit() {
   insertWorker(np, '인원 직접 등록');
   closeSheet();
   render();
-  toast('<b>' + esc(np.name) + '</b> 님을 등록했습니다' + (isAdmin ? ' · 관리자 권한' : '') +
+  toast('<b>' + esc(np.name) + '</b> 님을 등록했습니다' + (isAdmin ? ' · 관리자 권한' : (isLeader ? ' · 팀장 권한' : '')) +
     '<br>' + esc(teamLabel(np.teamId)) + ' · 로그인은 이름·생년월일·전화번호로 바로 됩니다');
 }
 
@@ -366,6 +376,7 @@ function openReportDetail(id) {
 
 /* ---------------- PDF 업로드 (Storage) ---------------- */
 async function handlePdfUpload(input) {
+  if (!canAdmin()) { toast('관리자만 현장자료를 올릴 수 있습니다.'); return; }
   var cat = input.getAttribute('data-cat') || 'risk';
   var file = input.files && input.files[0];
   input.value = '';
@@ -447,6 +458,14 @@ var ACTIONS = {
       render();
       return;
     }
+    if (r === 'manager') {
+      if (!canManage()) { toast('팀장 권한이 없습니다.<br>관리자에게 권한 부여를 요청하세요.'); return; }
+      state.role = 'manager';
+      state.ui.timeEdit = false;
+      sessionSetRole('manager');
+      render();
+      return;
+    }
     if (r !== 'admin') { return; }
     if (!canAdmin()) { toast('관리자 권한이 없습니다.<br>관리자에게 권한 부여를 요청하세요.'); return; }
     state.role = 'admin';
@@ -481,6 +500,31 @@ var ACTIONS = {
     var found = state.people.filter(function (p) {
       return p.name === f.name && p.birth === f.birth && phoneDigits(p.phone) === f.pd;
     })[0];
+
+    /* 팀장 선택 : is_leader 또는 is_admin 인 사람만 통과 · 자동등록 없음 · 관리자만 암호 확인 */
+    if (f.job === LOGIN_MANAGER_LABEL) {
+      if (!found || !(found.admin || found.role === 'leader')) {
+        toast('팀장 권한이 등록된 인원만 선택할 수 있습니다.<br>먼저 관리자에게 권한 등록을 요청해 주세요.');
+        return;
+      }
+      if (found.status === 'resigned') { toast('퇴사 처리된 인원입니다.<br>관리자에게 문의해 주세요.'); return; }
+      if (found.admin) {
+        var mcode = loginPassValue();
+        if (!mcode) { showLoginPass('관리자 계정은 관리자 암호를 입력해야 로그인할 수 있습니다.'); return; }
+        var mv = await verifyAdminPasscode(mcode);
+        if (!mv.ok) { toast('관리자 암호를 확인하지 못했어요 · 인터넷 연결을 확인해 주세요.'); return; }
+        if (!mv.pass) { toast('관리자 암호가 올바르지 않습니다.'); return; }
+      }
+      state.auth = { personId: found.id };
+      markPrivacyAgree(found);
+      if (sensitiveChecked) { markSensitiveAgree(found); }
+      sessionSave(found, found.admin ? 'admin' : 'manager');
+      state.role = found.admin ? 'admin' : 'manager';
+      state.ui.adminTab = 'dash';
+      render();
+      toast(found.name + ' 님 ' + (found.admin ? '관리자' : '팀장') + ' 로그인 완료 · ' + teamLabel(found.teamId));
+      return;
+    }
 
     /* 관리자 선택 : DB에서 is_admin=true 로 등록된 사람만 통과 · 자동등록 없음 · 암호 필수 */
     if (f.job === LOGIN_ADMIN_LABEL) {
@@ -552,7 +596,7 @@ var ACTIONS = {
   },
   leaveAlarmAck: function () {
     var p = me();
-    if (!p || !p.admin) { toast('관리자만 확인할 수 있습니다.'); return; }
+    if (!p || !canManage()) { toast('관리자·팀장만 확인할 수 있습니다.'); return; }
     var list = unackedLeaves();
     if (!list.length) { leaveAlarmOpenIds = null; closeSheet(); render(); return; }
     var ids = list.map(function (l) { return l.id; });
@@ -790,7 +834,7 @@ var ACTIONS = {
       resign_reason: pr.reason + (pr.text ? ' · ' + pr.text : '')
     }, '퇴사 처리');
     if (hadAtt) { saveAttendance(p, todayKey(), '퇴사 근태 삭제'); }
-    toast('퇴사 처리 완료 · 출근 대상 · 조 편성 · 평균단가에서 제외됐어요');
+    toast('퇴사 처리 완료 · 출근 대상 · 조 편성' + (canAdmin() ? ' · 평균단가' : '') + '에서 제외됐어요');
   },
 
   /* ----- 관리자 · 전체 현황 ----- */
@@ -882,7 +926,7 @@ var ACTIONS = {
         apiWrite({ m: 'PATCH', path: '/rest/v1/teams?id=' + sbEq(ot.id), body: { leader_id: null }, prefer: 'return=minimal', label: '반장 해제' });
       }
     }
-    p.price = Math.max(0, num($('#pf_price').value));
+    if (canAdmin() && $('#pf_price')) { p.price = Math.max(0, num($('#pf_price').value)); }
     if ($('#pf_tin') || $('#pf_tout')) {
       var err = applyAttTime(p, $('#pf_tin') ? $('#pf_tin').value : '', $('#pf_tout') ? $('#pf_tout').value : '');
       if (err) { toast(err + '<br>다시 확인해 주세요.'); }
@@ -904,18 +948,21 @@ var ACTIONS = {
     };
     p.memo = $('#pf_memo') ? $('#pf_memo').value : '';
 
-    patchWorker(p.id, {
+    var fields = {
       name: p.name, birth_date: p.birth || null, phone: p.phone || null, job_type: p.job || null,
-      team_id: p.teamId, is_leader: p.role === 'leader', daily_rate: p.price || null,
-      certs_json: p.certs, injury_has: !!p.injury.has, injury_date: p.injury.date || null,
+      team_id: p.teamId, certs_json: p.certs,
+      injury_has: !!p.injury.has, injury_date: p.injury.date || null,
       injury_note: p.injury.note || null, memo: p.memo || null
-    }, '인원 정보 저장');
+    };
+    if (canAdmin()) { fields.daily_rate = p.price || null; fields.is_leader = (p.role === 'leader'); }
+    patchWorker(p.id, fields, '인원 정보 저장');
     if (sessionRead() && sessionRead().personId === p.id) { sessionSave(p, state.role); }
     render();
     openPerson(p.id);
-    toast('저장됐어요 · 전체 평균단가 <b>' + won(overallAvg()) + '원</b>');
+    toast(canAdmin() ? '저장됐어요 · 전체 평균단가 <b>' + won(overallAvg()) + '원</b>' : '저장됐어요');
   },
   toggleAdmin: function (el) {
+    if (!canAdmin()) { toast('관리자만 권한을 바꿀 수 있습니다.'); return; }
     var p = personById(el.getAttribute('data-id'));
     if (!p) { return; }
     p.admin = !p.admin;
@@ -925,6 +972,23 @@ var ACTIONS = {
     openPerson(p.id);
     toast('<b>' + esc(p.name) + '</b> 님 관리자 권한을 ' + (p.admin ? '부여' : '해제') + '했어요');
   },
+  toggleLeader: function (el) {
+    if (!canAdmin()) { toast('관리자만 권한을 바꿀 수 있습니다.'); return; }
+    var p = personById(el.getAttribute('data-id'));
+    if (!p) { return; }
+    var next = p.role !== 'leader';
+    p.role = next ? 'leader' : 'worker';
+    patchWorker(p.id, { is_leader: next }, '팀장 권한 변경');
+    var t = teamById(p.teamId);
+    if (t) {
+      if (next && !t.leaderId) { t.leaderId = p.id; apiWrite({ m: 'PATCH', path: '/rest/v1/teams?id=' + sbEq(t.id), body: { leader_id: p.id }, prefer: 'return=minimal', label: '팀장 지정' }); }
+      else if (!next && t.leaderId === p.id) { t.leaderId = null; apiWrite({ m: 'PATCH', path: '/rest/v1/teams?id=' + sbEq(t.id), body: { leader_id: null }, prefer: 'return=minimal', label: '팀장 해제' }); }
+    }
+    render();
+    openPerson(p.id);
+    toast('<b>' + esc(p.name) + '</b> 님 팀장 권한을 ' + (next ? '부여' : '해제') + '했어요' +
+      (next ? '<br>상단 <b>팀장</b> 화면에서 현황·일보·일정·공수표를 쓸 수 있습니다' : ''));
+  },
   restore: function (el) {
     var p = personById(el.getAttribute('data-id'));
     if (!p) { return; }
@@ -933,12 +997,13 @@ var ACTIONS = {
     patchWorker(p.id, { status: 'active', resign_date: null, resign_reason: null }, '복직 처리');
     closeSheet();
     render();
-    toast(p.name + ' 님을 복직 처리했어요 · 평균단가에 다시 포함됩니다');
+    toast(p.name + ' 님을 복직 처리했어요' + (canAdmin() ? ' · 평균단가에 다시 포함됩니다' : ''));
   },
 
   /* ----- 관리자 · 팀·조 ----- */
-  newTeam: function () { openNewTeam(); },
+  newTeam: function () { if (!canManage()) { toast('관리자·팀장만 조를 만들 수 있습니다.'); return; } openNewTeam(); },
   createTeam: function () {
+    if (!canManage()) { toast('관리자·팀장만 조를 만들 수 있습니다.'); return; }
     var name = ($('#teamName').value || '').trim();
     if (!name) { toast('조 이름을 입력해 주세요.'); return; }
     var dup = state.teams.filter(function (t) { return normTeam(t.name) === normTeam(name); })[0];
@@ -949,8 +1014,9 @@ var ACTIONS = {
     render();
     toast('<b>' + esc(name) + '</b> 조를 만들었어요 · 조원을 배정해 주세요');
   },
-  moveMember: function (el) { openMoveMember(el.getAttribute('data-id')); },
+  moveMember: function (el) { if (!canManage()) { return; } openMoveMember(el.getAttribute('data-id')); },
   setTeam: function (el) {
+    if (!canManage()) { return; }
     var p = personById(el.getAttribute('data-id'));
     if (!p) { return; }
     var tid = el.getAttribute('data-team') || null;
@@ -970,8 +1036,9 @@ var ACTIONS = {
     render();
     toast(p.name + ' 님을 <b>' + teamLabel(tid) + '</b>(으)로 옮겼어요');
   },
-  addMembers: function (el) { openAddMembers(el.getAttribute('data-team')); },
+  addMembers: function (el) { if (!canManage()) { return; } openAddMembers(el.getAttribute('data-team')); },
   applyAddMembers: function (el) {
+    if (!canManage()) { return; }
     var tid = el.getAttribute('data-team');
     var ids = $$('.addchk').filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute('data-id'); });
     ids.forEach(function (id) {
@@ -990,8 +1057,9 @@ var ACTIONS = {
     render();
     toast(ids.length + '명을 <b>' + teamLabel(tid) + '</b>(으)로 옮겼어요');
   },
-  changeLeader: function (el) { openChangeLeader(el.getAttribute('data-team')); },
+  changeLeader: function (el) { if (!canManage()) { return; } openChangeLeader(el.getAttribute('data-team')); },
   setLeader: function (el) {
+    if (!canManage()) { toast('관리자·팀장만 팀장을 바꿀 수 있습니다.'); return; }
     var tid = el.getAttribute('data-team');
     var pid = el.getAttribute('data-id');
     var t = teamById(tid);
@@ -1011,7 +1079,7 @@ var ACTIONS = {
     render();
     toast('<b>' + esc(p.name) + '</b> 님을 ' + esc(t.name) + ' 반장으로 지정했어요');
   },
-  bulkOpen: function () { openBulk(); },
+  bulkOpen: function () { if (!canAdmin()) { toast('관리자만 명단을 일괄 등록할 수 있습니다.'); return; } openBulk(); },
   pastAttOpen: function () { openPastAtt(); },
   pastAttSave: function () { pastAttSave(); },
   personAdd: function () { openPersonAdd(); },
@@ -1021,6 +1089,7 @@ var ACTIONS = {
     if (ta) { ta.value = ''; }
   },
   bulkApply: function () {
+    if (!canAdmin()) { toast('관리자만 명단을 일괄 등록할 수 있습니다.'); return; }
     var ta = $('#bulkText');
     if (!ta) { return; }
     var parsed = parseRoster(ta.value);
@@ -1050,7 +1119,7 @@ var ACTIONS = {
     closeSheet();
     render();
     toast('<b>' + added + '명</b> 등록 완료' + (newTeams ? ' · 새 조 ' + newTeams + '개 자동 생성' : '') +
-      '<br>전체 평균단가 <b>' + won(overallAvg()) + '원</b>으로 다시 계산됐어요' +
+      (canAdmin() ? '<br>전체 평균단가 <b>' + won(overallAvg()) + '원</b>으로 다시 계산됐어요' : '') +
       (parsed.rows.some(function (r) { return !r.birth; }) ? '<br>생년월일이 비었거나 형식이 다른 줄은 직접 확인해 주세요.' : ''));
   },
 
@@ -1210,8 +1279,9 @@ var ACTIONS = {
   },
 
   /* ----- 관리자 · 토요일 조사 ----- */
-  newPoll: function () { openNewPoll(); },
+  newPoll: function () { if (!canAdmin()) { toast('관리자만 조사를 올릴 수 있습니다.'); return; } openNewPoll(); },
   createPoll: function () {
+    if (!canAdmin()) { toast('관리자만 조사를 올릴 수 있습니다.'); return; }
     var title = ($('#pollTitle').value || '').trim();
     var dl = ($('#pollDeadline').value || '').trim();
     if (!title) { toast('공지 제목을 입력해 주세요.'); return; }
@@ -1263,8 +1333,9 @@ var ACTIONS = {
   },
   openNotice: function (el) { openNoticeDetail(el.getAttribute('data-id')); },
   openNoticeList: function () { openNoticeList(); },
-  noticeNew: function () { openAddNotice(); },
+  noticeNew: function () { if (!canAdmin()) { toast('관리자만 공지를 올릴 수 있습니다.'); return; } openAddNotice(); },
   createNotice: function () {
+    if (!canAdmin()) { toast('관리자만 공지를 올릴 수 있습니다.'); return; }
     var t = ($('#nv_title').value || '').trim();
     var b = ($('#nv_body').value || '').trim();
     if (!t) { toast('공지 제목을 입력해 주세요.'); return; }
@@ -1293,17 +1364,17 @@ var ACTIONS = {
     render();
   },
   schedNew: function () {
-    if (!canAdmin()) { toast('관리자만 일정을 등록할 수 있습니다.'); return; }
+    if (!canManage()) { toast('관리자·팀장만 일정을 등록할 수 있습니다.'); return; }
     state.ui.schedBackToCal = !!state.ui.schedSheet;
     openScheduleSheet(null);
   },
   schedEdit: function (el) {
-    if (!canAdmin()) { toast('관리자만 일정을 수정할 수 있습니다.'); return; }
+    if (!canManage()) { toast('관리자·팀장만 일정을 수정할 수 있습니다.'); return; }
     state.ui.schedBackToCal = !!state.ui.schedSheet;
     openScheduleSheet(el.getAttribute('data-id'));
   },
   schedAskDel: function (el) {
-    if (!canAdmin()) { toast('관리자만 일정을 삭제할 수 있습니다.'); return; }
+    if (!canManage()) { toast('관리자·팀장만 일정을 삭제할 수 있습니다.'); return; }
     var s = schedById(el.getAttribute('data-id'));
     if (!s) { return; }
     state.ui.schedBackToCal = !!state.ui.schedSheet;
@@ -1324,7 +1395,7 @@ var ACTIONS = {
     toast('일정을 삭제했어요');
   },
   schedSave: function (el) {
-    if (!canAdmin()) { toast('관리자만 일정을 저장할 수 있습니다.'); return; }
+    if (!canManage()) { toast('관리자·팀장만 일정을 저장할 수 있습니다.'); return; }
     var id = el.getAttribute('data-id') || '';
     var date = ($('#sc_date').value || '').trim();
     var title = ($('#sc_title').value || '').trim();
@@ -1450,6 +1521,10 @@ async function boot() {
   var sess = sessionRead();
   if (state.auth && sess && sess.role === 'admin' && canAdmin() && state.role !== 'admin') {
     state.role = 'admin';
+    state.ui.timeEdit = false;
+    render();
+  } else if (state.auth && sess && sess.role === 'manager' && canManage() && !canAdmin() && state.role === 'worker') {
+    state.role = 'manager';
     state.ui.timeEdit = false;
     render();
   }

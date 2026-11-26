@@ -1,9 +1,11 @@
 /* =========================================================
    화면 렌더링
    ========================================================= */
+var ADMIN_TABS = [['dash', '전체 현황', '📊'], ['teams', '팀·조', '🧩'], ['reports', '작업일보함', '📥'], ['docs', '현장자료', '📁']];
 var TABS = {
   worker: [['home', '근태', '🕒'], ['report', '작업일보', '📝']],
-  admin: [['dash', '전체 현황', '📊'], ['teams', '팀·조', '🧩'], ['reports', '작업일보함', '📥'], ['docs', '현장자료', '📁']]
+  admin: ADMIN_TABS,
+  manager: ADMIN_TABS
 };
 
 function render() {
@@ -22,7 +24,8 @@ function render() {
     resetScrollOnce('login');
     return;
   }
-  if (state.role === 'admin' && !canAdmin()) { state.role = 'worker'; }
+  if (state.role === 'admin' && !canAdmin()) { state.role = canManage() ? 'manager' : 'worker'; }
+  if (state.role === 'manager' && !canManage()) { state.role = 'worker'; }
 
   renderTop();
   var key = state.role === 'worker' ? 'workerTab' : 'adminTab';
@@ -33,8 +36,8 @@ function render() {
   renderTabs();
   renderSync();
   resetScrollOnce(state.role + ':' + state.ui[key]);
-  /* 관리자 : 아직 확인하지 않은 휴무 보고가 있으면 알람 시트를 띄운다 (진입 · 20초 자동 새로고침 공통) */
-  if (state.role === 'admin' && canAdmin()) { setTimeout(maybeShowLeaveAlarm, 120); }
+  /* 관리자·팀장 : 아직 확인하지 않은 휴무 보고가 있으면 알람 시트를 띄운다 (진입 · 20초 자동 새로고침 공통) */
+  if (state.role !== 'worker' && canManage()) { setTimeout(maybeShowLeaveAlarm, 120); }
 }
 
 var lastViewKey = null;
@@ -76,8 +79,10 @@ function renderTop() {
   var p = me();
   if (!p) { renderLoginTop(); return; }
   var roles = '';
-  if (canAdmin()) {
-    var pairs = [['worker', '기술인', p.name], ['admin', '관리자', p.name]];
+  if (canManage()) {
+    var pairs = [['worker', '기술인', p.name]];
+    if (canAdmin()) { pairs.push(['admin', '관리자', p.name]); }
+    else { pairs.push(['manager', '팀장', p.name]); }
     roles = '<div class="roles">' + pairs.map(function (x) {
       var on = state.role === x[0] ? ' active' : '';
       return '<button class="role-btn' + on + '" data-act="role" data-role="' + x[0] + '">' +
@@ -118,8 +123,10 @@ function jobOptionsHTML(sel) {
 
 /* 로그인 화면 전용 : 직종 + 맨 아래 [관리자] 선택칸 */
 var LOGIN_ADMIN_LABEL = '관리자';
+var LOGIN_MANAGER_LABEL = '팀장';
 function loginJobOptionsHTML(sel) {
   return jobOptionsHTML(sel) +
+    '<option value="' + LOGIN_MANAGER_LABEL + '"' + (sel === LOGIN_MANAGER_LABEL ? ' selected' : '') + '>' + LOGIN_MANAGER_LABEL + '</option>' +
     '<option value="' + LOGIN_ADMIN_LABEL + '"' + (sel === LOGIN_ADMIN_LABEL ? ' selected' : '') + '>' + LOGIN_ADMIN_LABEL + '</option>';
 }
 
@@ -163,7 +170,7 @@ function loginView() {
     '</div>' +
     '<button class="btn btn-primary block" style="margin-top:12px" data-act="loginSubmit">로그인</button>' +
     '<div class="hint">등록된 <b>이름 · 생년월일 · 전화번호</b>가 같으면 바로 로그인됩니다. 처음이면 기술인으로 자동 등록돼요.</div>' +
-    '<div class="hint"><b>관리자</b>는 관리자 권한을 등록받은 분만 선택할 수 있습니다.</div>' +
+    '<div class="hint"><b>팀장</b>은 팀장 권한을, <b>관리자</b>는 관리자 권한을 등록받은 분만 선택할 수 있습니다.<br>팀장은 관리자 암호 없이, 관리자 계정은 관리자 암호를 한 번 더 넣고 로그인합니다.</div>' +
     '<div class="hint">로그인은 이 휴대폰에 저장돼 <b>앱을 닫아도 풀리지 않습니다</b>. 로그아웃은 <b>⚙️ 내 정보</b>에서 직접 눌러야 해요.</div>' +
     '</div>' +
     '<div class="foot-note">한양 pcw팀<br>입력한 정보는 현장 Supabase DB에 저장됩니다</div>';
@@ -303,7 +310,7 @@ function osNotifyLeave(n, first) {
 /* 관리자 화면에 그려질 때마다 호출 — 새 행이 있으면 시트 · OS 알림 */
 function maybeShowLeaveAlarm() {
   try {
-    if (!state.ready || !state.auth || state.role !== 'admin' || !canAdmin()) { return; }
+    if (!state.ready || !state.auth || state.role === 'worker' || !canManage()) { return; }
     var wrap = document.getElementById('sheetWrap');
     if (wrap && wrap.classList.contains('open')) { return; }   /* 다른 시트를 보는 중이면 양보 */
     var list = unackedLeaves();
@@ -458,13 +465,14 @@ function noticePreview(body) {
 
 function noticeBannerHTML(who) {
   var ns = noticeSorted();
-  var addBtn = who === 'admin' ? '<button class="link-btn" data-act="noticeNew">＋ 새 공지 올리기</button>' : '';
+  var canNotice = who === 'admin' && canAdmin();
+  var addBtn = canNotice ? '<button class="link-btn" data-act="noticeNew">＋ 새 공지 올리기</button>' : '';
   if (!ns.length) {
     return '<div class="card notice-card">' +
       '<div class="notice-head"><span class="notice-flag">📢 공지사항</span>' +
       '<span class="notice-meta">' + longDate(todayKey()) + '</span></div>' +
       '<div class="notice-empty">등록된 공지가 없습니다.</div>' +
-      (who === 'admin' ? '<div class="notice-foot">' + addBtn + '</div>' : '') +
+      (canNotice ? '<div class="notice-foot">' + addBtn + '</div>' : '') +
       '</div>';
   }
   var n = ns[0];
@@ -479,7 +487,7 @@ function noticeBannerHTML(who) {
     '<span class="notice-prev">' + esc(noticePreview(n.body)) + '</span>' +
     '<span class="notice-more">자세히 보기 ›</span>' +
     '</button>' +
-    (rest > 0 || who === 'admin'
+    (rest > 0 || canNotice
       ? '<div class="notice-foot">' +
         (rest > 0 ? '<button class="link-btn" data-act="openNoticeList">공지 ' + ns.length + '건 전체 보기</button>' : '<span></span>') +
         addBtn + '</div>'
@@ -574,7 +582,7 @@ function workerHome(p) {
       '<div class="attbox' + (a && a.in ? ' on' : '') + '"><div class="lab">출근</div><div class="val' + (a && a.in ? '' : ' dim') + '">' +
       (a && a.in ? a.in + edMark(a.inEdited) : '미등록') + '</div></div>' +
       '<div class="attbox' + (a && a.out ? ' out' : '') + '"><div class="lab">퇴근</div><div class="val' + (a && a.out ? '' : ' dim') + '">' +
-      (a && a.out ? a.out + edMark(a.outEdited) : '미등록') + '</div></div>' +
+      (a && a.out ? a.out + edMark(a.outEdited) + (isFutureOut(a) ? ' <span class="muted">예정</span>' : '') : '미등록') + '</div></div>' +
       '</div>' +
       '<div class="btn-row">' +
       '<button class="btn btn-in" data-act="clockIn"' + (a && a.in ? ' disabled' : '') + '>출근하기</button>' +
@@ -839,7 +847,7 @@ function pdfRowHTML(cat, f, isAdmin) {
 }
 
 function docsViewerHTML(who) {
-  var isAdmin = who === 'admin';
+  var isAdmin = who === 'admin' && canAdmin();
   return DOC_CATS.map(function (c) {
     var files = state.docs[c.key] || [];
     var latest = files[0];
@@ -939,7 +947,7 @@ function schedCalendarHTML() {
       '<span class="sched-time">' + schedTimeText(s) + '</span>' +
       '<span class="sched-main"><span class="sched-title">' + esc(s.title) + '</span>' +
       (s.memo ? '<span class="sched-memo">' + esc(s.memo).replace(/\n/g, '<br>') + '</span>' : '') + '</span>' +
-      (canAdmin() ? '<span class="sched-acts">' +
+      (canManage() ? '<span class="sched-acts">' +
         '<button class="sched-ib" data-act="schedEdit" data-id="' + esc(s.id) + '" aria-label="일정 수정">✎</button>' +
         '<button class="sched-ib del" data-act="schedAskDel" data-id="' + esc(s.id) + '" aria-label="일정 삭제">🗑</button></span>' : '') +
       '</div>';
@@ -959,10 +967,10 @@ function schedCalendarHTML() {
     '<div class="sched-grid">' + cells.join('') + '</div>' +
     '<div class="sched-dayhead">' +
     '<div class="sched-daytitle">' + longDate(sel) + (sel === todayKey() ? ' <span class="badge b-work">오늘</span>' : '') + '</div>' +
-    (canAdmin() ? '<button class="btn btn-line sm" data-act="schedNew">+ 일정 추가</button>' : '') +
+    (canManage() ? '<button class="btn btn-line sm" data-act="schedNew">+ 일정 추가</button>' : '') +
     '</div>' +
     '<div class="sched-list">' + rows + '</div>' +
-    (!canAdmin() ? '<div class="hint">일정 등록·수정은 관리자만 할 수 있습니다.</div>' : '') +
+    (!canManage() ? '<div class="hint">일정 등록·수정은 관리자·팀장만 할 수 있습니다.</div>' : '') +
     '</div>';
 }
 
@@ -1212,7 +1220,7 @@ function adminTodayBody() {
     var a = todayAtt(p);
     var lv = leaveOn(p, todayKey());
     if (lv) { cnt.off++; }
-    else if (a && a.in) { cnt.in++; if (a.out) { cnt.out++; } }
+    else if (a && a.in) { cnt.in++; if (a.out && !isFutureOut(a)) { cnt.out++; } }
     else { cnt.none++; }
   });
   var res = resignedPeople().length;
@@ -1232,7 +1240,7 @@ function adminTodayBody() {
     '<div class="stat-foot">총 인원 <b>' + ps.length + '명</b> (퇴사자 제외) · 미출근 <b>' + cnt.none + '명</b></div>' +
     '</div>';
 
-  var avgCard = '<div class="card">' +
+  var avgCard = !canAdmin() ? '' : '<div class="card">' +
     '<div class="card-head"><div class="sec-t">평균 단가</div><span class="pill-mini">퇴사자 자동 제외</span></div>' +
     '<div class="avg-big"><b>' + won(overallAvg()) + '</b><span>원 / 1일</span></div>' +
     '<div class="avg-sub">전체 ' + ps.length + '명 기준 · 단가 미입력 인원 제외 · 수정하면 즉시 다시 계산</div>' +
@@ -1249,7 +1257,7 @@ function adminTodayBody() {
   var pollCard;
   if (!poll) {
     pollCard = '<div class="card"><div class="card-head"><div class="sec-t">토요일 출근 여부</div>' +
-      '<button class="link-btn" data-act="newPoll">+ 토요일 조사</button></div>' +
+      (canAdmin() ? '<button class="link-btn" data-act="newPoll">+ 토요일 조사</button></div>' : '</div>') +
       '<div class="empty"><span class="e-ic">📅</span>올린 조사가 없습니다.<br>토요일 출근 여부를 조사로 올려 보세요.</div></div>';
   } else {
     var c = pollCounts(poll);
@@ -1258,7 +1266,7 @@ function adminTodayBody() {
     var open = pollIsOpen(poll);
     pollCard = '<div class="card">' +
       '<div class="card-head"><div class="sec-t">토요일 출근 여부</div>' +
-      '<button class="link-btn" data-act="newPoll">+ 새 조사</button></div>' +
+      (canAdmin() ? '<button class="link-btn" data-act="newPoll">+ 새 조사</button></div>' : '</div>') +
       '<div class="poll-title">' + esc(poll.title) + '</div>' +
       '<div class="muted" style="margin-top:3px">마감 ' + esc(fmtDeadline(poll.deadline)) + ' · ' + (open ? '응답 받는 중' : '응답 마감됨') + '</div>' +
       '<div class="poll-bars"><i class="pb-yes" style="width:' + py + '%"></i><i class="pb-no" style="width:' + pn + '%"></i></div>' +
@@ -1289,7 +1297,7 @@ function adminTodayBody() {
       '<span class="p-main"><span class="p-name">' + esc(p.name) + ' ' +
       (p.role === 'leader' ? '<span class="tag tag-leader">반장</span>' : '') +
       (p.admin ? '<span class="tag tag-admin">관리자</span>' : '') + '</span>' +
-      '<span class="p-sub">' + teamLabel(p.teamId) + ' · ' + birthText(p.birth) + '생 · ' + won(p.price) + '원</span></span>' +
+      '<span class="p-sub">' + teamLabel(p.teamId) + ' · ' + birthText(p.birth) + '생' + (canAdmin() ? ' · ' + won(p.price) + '원' : '') + '</span></span>' +
       '<span class="p-right">' + statusBadge(p) + '<span class="p-time">' + timeText(p) + '</span></span>' +
       '</div>';
   }).join('');
@@ -1310,7 +1318,7 @@ function adminTodayBody() {
           '<span class="p-right"><span class="badge b-res">보관</span><span class="p-time">' + teamLabel(p.teamId) + '</span></span>' +
           '</div>';
       }).join('') : '<div class="empty">퇴사자가 없습니다.</div>') +
-      '<div class="hint">퇴사자는 출근 명단 · 조 편성 · 평균단가 계산에서 자동으로 빠져 있습니다. 잘못 처리했다면 상세 화면에서 복직시킬 수 있어요.</div>'
+      '<div class="hint">퇴사자는 출근 명단 · 조 편성' + (canAdmin() ? ' · 평균단가 계산' : '') + '에서 자동으로 빠져 있습니다. 잘못 처리했다면 상세 화면에서 복직시킬 수 있어요.</div>'
       : '') +
     '</div>';
 
@@ -1364,8 +1372,8 @@ function adminTeams() {
     '<button class="btn btn-dark sm" data-act="newTeam">+ 새 팀/조 만들기</button>' +
     '<button class="btn btn-dark sm" data-act="personAdd">+ 인원 직접 등록</button>' +
     '</div>' +
-    '<button class="btn btn-line sm block" style="margin-top:8px" data-act="bulkOpen">명단/엑셀 일괄 등록</button>' +
-    '<div class="hint">엑셀 명단을 붙여넣으면 조와 인원이 한 번에 만들어지고 평균단가도 다시 계산됩니다.</div>' +
+    (canAdmin() ? '<button class="btn btn-line sm block" style="margin-top:8px" data-act="bulkOpen">명단/엑셀 일괄 등록</button>' : '') +
+    (canAdmin() ? '<div class="hint">엑셀 명단을 붙여넣으면 조와 인원이 한 번에 만들어지고 평균단가도 다시 계산됩니다.</div>' : '') +
     '</div>';
 
   var cards = state.teams.map(function (t) {
@@ -1376,7 +1384,7 @@ function adminTeams() {
       '<div class="card-head" style="margin-bottom:6px">' +
       '<div class="row gap8">' + (leader ? '<span class="av">' + esc(leader.name.slice(0, 1)) + '</span>' : '<span class="av">?</span>') +
       '<div><div class="team-name">' + esc(t.name) + '</div>' +
-      '<div class="team-sub">반장 ' + (leader ? esc(leader.name) : '미지정') + ' · ' + mem.length + '명 · 평균 ' + won(avgOf(mem)) + '원</div></div></div>' +
+      '<div class="team-sub">반장 ' + (leader ? esc(leader.name) : '미지정') + ' · ' + mem.length + '명' + (canAdmin() ? ' · 평균 ' + won(avgOf(mem)) + '원' : '') + '</div></div></div>' +
       '<span class="badge ' + (rep ? 'b-ok' : 'b-warn') + '">' + (rep ? '일보 제출' : '일보 미제출') + '</span>' +
       '</div>' +
       '<div class="chips">' +
@@ -1396,7 +1404,7 @@ function adminTeams() {
   if (un.length) {
     unCard = '<div class="card unassigned team-card">' +
       '<div class="card-head"><div><div class="team-name">미배정 ' + un.length + '명</div>' +
-      '<div class="team-sub">조를 지정하면 평균단가에 포함됩니다</div></div><span class="badge b-warn">미배정</span></div>' +
+      '<div class="team-sub">조를 지정하면 조 편성에 포함됩니다</div></div><span class="badge b-warn">미배정</span></div>' +
       '<div class="chips">' + un.map(function (m) {
         return '<button class="chip" data-act="moveMember" data-id="' + m.id + '">' + esc(m.name) + ' <i>⇄</i></button>';
       }).join('') + '</div></div>';
@@ -1623,16 +1631,16 @@ function openPerson(id) {
     '</div>' +
 
     '<div class="sect">' +
-    '<div class="sect-t">신상 정보 · 단가</div>' +
+    '<div class="sect-t">신상 정보' + (canAdmin() ? ' · 단가' : '') + '</div>' +
     '<div class="grid2">' +
     '<label class="field"><span>이름</span><input id="pf_name" value="' + esc(p.name) + '"></label>' +
     '<label class="field"><span>생년월일</span><input id="pf_birth" type="date" value="' + esc(p.birth) + '"></label>' +
     '<label class="field"><span>연락처</span><input id="pf_phone" type="tel" value="' + esc(p.phone) + '"></label>' +
     '<label class="field"><span>소속 조</span><select id="pf_team">' + teamOpts + '</select></label>' +
     '<label class="field"><span>직종</span><input id="pf_job" value="' + esc(p.job) + '"></label>' +
-    '<label class="field"><span>단가 (원/일)</span><input id="pf_price" type="number" inputmode="numeric" value="' + p.price + '"></label>' +
+    (canAdmin() ? '<label class="field"><span>단가 (원/일)</span><input id="pf_price" type="number" inputmode="numeric" value="' + p.price + '"></label>' : '') +
     '</div>' +
-    '<div class="hint">단가를 저장하면 전체 · 조별 평균단가가 바로 다시 계산됩니다.</div>' +
+    (canAdmin() ? '<div class="hint">단가를 저장하면 전체 · 조별 평균단가가 바로 다시 계산됩니다.</div>' : '') +
     '</div>' +
 
     todaySec +
@@ -1661,14 +1669,18 @@ function openPerson(id) {
     '</div></div>' +
     '</div>' +
 
+    (canAdmin() ?
     '<div class="sect">' +
-    '<div class="sect-t">관리자 권한</div>' +
-    '<div class="muted">이 사람이 앱에서 <b>관리자 화면</b>(전체 현황 · 한달 공수표 · 일보함)을 열 수 있게 합니다.</div>' +
-    '<div class="kv"><span>현재 상태</span><b>' + (p.admin ? '관리자 권한 있음' : '권한 없음') + '</b></div>' +
-    '<button class="btn ' + (p.admin ? 'btn-danger' : 'btn-line') + ' sm block" style="margin-top:9px" data-act="toggleAdmin" data-id="' + p.id + '">' +
+    '<div class="sect-t">권한 부여</div>' +
+    '<div class="muted">관리자 화면 전체 권한과, 단가를 뺀 팀장 공용 화면 권한을 따로 줄 수 있습니다.</div>' +
+    '<div class="kv"><span>관리자 권한</span><b>' + (p.admin ? '있음' : '없음') + '</b></div>' +
+    '<button class="btn ' + (p.admin ? 'btn-danger' : 'btn-line') + ' sm block" style="margin-top:6px" data-act="toggleAdmin" data-id="' + p.id + '">' +
     (p.admin ? '관리자 권한 해제' : '관리자 권한 부여') + '</button>' +
-    '<div class="hint">권한을 받은 기술인은 상단 <b>관리자</b> 버튼을 누를 수 있게 됩니다.' + (p.admin ? ' 해제하면 바로 적용됩니다.' : '') + '</div>' +
-    '</div>' +
+    '<div class="kv" style="margin-top:11px"><span>팀장 권한</span><b>' + (p.role === 'leader' ? '있음' : '없음') + '</b></div>' +
+    '<button class="btn ' + (p.role === 'leader' ? 'btn-danger' : 'btn-line') + ' sm block" style="margin-top:6px" data-act="toggleLeader" data-id="' + p.id + '">' +
+    (p.role === 'leader' ? '팀장 권한 해제' : '팀장 권한 부여') + '</button>' +
+    '<div class="hint">팀장은 전체 현황 · 팀·조 · 일보함 · 일정 · 공수표를 쓰지만 <b>단가·관리자 권한·암호</b>는 볼 수 없습니다. 관리자 권한이 있으면 상단 <b>관리자</b> 버튼도 생깁니다.</div>' +
+    '</div>' : '') +
 
     '<div class="sect">' +
     '<div class="sect-t">특이사항 메모</div>' +
@@ -1679,7 +1691,7 @@ function openPerson(id) {
       '<div class="sect"><div class="sect-t">퇴사 정보</div>' +
       '<div class="kv"><span>퇴사일</span><b>' + (p.resign ? longDate(p.resign.date) : '-') + '</b></div>' +
       '<div class="kv"><span>사유</span><b>' + (p.resign ? esc(p.resign.reason) : '-') + '</b></div>' +
-      '<button class="btn btn-line sm block" style="margin-top:10px" data-act="restore" data-id="' + p.id + '">복직 처리 (평균단가 · 조 편성에 다시 포함)</button>' +
+      '<button class="btn btn-line sm block" style="margin-top:10px" data-act="restore" data-id="' + p.id + '">복직 처리' + (canAdmin() ? ' (평균단가 · 조 편성에 다시 포함)' : ' (조 편성에 다시 포함)') + '</button>' +
       '</div>' : '');
 
   var footer = '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>' +

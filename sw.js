@@ -1,5 +1,5 @@
 /* 한양 pcw팀 PWA 서비스워커 · 앱 껍데기만 캐시 (데이터는 항상 Supabase 에서) */
-var CACHE = 'pcw-site-v9';
+var CACHE = 'pcw-site-v10';
 var ASSETS = [
   './',
   './index.html',
