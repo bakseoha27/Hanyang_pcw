@@ -333,7 +333,7 @@ function buildState(d) {
     schedDate: ui.schedDate || todayKey(),
     showArchive: !!ui.showArchive,
     timeEdit: false,
-    resignOpen: false
+    resignOpen: !!ui.resignOpen
   };
   state.draft = prev.draft;
   /* 로그인 세션은 DB에서 사라졌다고 앱이 함부로 지우지 않는다 (부트에서만 정리) */
