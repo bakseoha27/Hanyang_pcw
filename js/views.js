@@ -79,31 +79,54 @@ function renderLoginTop() {
 function renderTop() {
   var p = me();
   if (!p) { renderLoginTop(); return; }
-  var roles = '';
-  /* 역할 전환 버튼
-     - 관리자 계정 : 관리자 | 팀장 | 기술인 (3단, 언제든 관리자로 복귀)
-     - 실제 팀장   : 팀장 | 기술인 (2단, 관리자 버튼 없음)
+  /* 역할 전환 : 헤더 우측(⚙️ 왼쪽)의 컴팩트 버튼 한 개 + 선택 메뉴
+     - 관리자 계정 : 관리자 | 팀장 | 기술인
+     - 실제 팀장   : 팀장 | 기술인
      - 일반 기술인 : 버튼 없음 */
-  var pairs = null;
-  if (p.admin) {
-    pairs = [['admin', '관리자', p.name], ['manager', '팀장', p.name], ['worker', '기술인', p.name]];
-  } else if (p.role === 'leader') {
-    pairs = [['manager', '팀장', p.name], ['worker', '기술인', p.name]];
-  }
-  if (pairs) {
-    roles = '<div class="roles">' + pairs.map(function (x) {
-      var on = state.role === x[0] ? ' active' : '';
-      return '<button class="role-btn' + on + '" data-act="role" data-role="' + x[0] + '">' +
-        '<span class="r-main">' + x[1] + '</span><span class="r-sub">' + esc(x[2]) + '</span></button>';
-    }).join('') + '</div>';
+  var pairs = roleChoices(p);
+  var roleChip = '';
+  if (pairs.length > 1) {
+    var cur = pairs.filter(function (x) { return x[0] === state.role; })[0] || pairs[0];
+    roleChip = '<button class="role-chip" data-act="roleMenu" aria-label="화면 전환 · 지금 ' + cur[1] + '">' +
+      '<span class="rc-lab">' + cur[1] + '</span><span class="rc-car">▾</span></button>';
   }
   $('#topbar').innerHTML =
     '<div class="tb-row">' +
     topBrandHTML() +
     '<div class="tb-btns">' +
+    roleChip +
     '<button class="tb-ic" data-act="openSettings" title="내 정보" aria-label="내 정보">⚙️</button>' +
     '</div>' +
-    '</div>' + roles;
+    '</div>';
+}
+
+/* 지금 계정이 고를 수 있는 화면 목록 [역할키, 표시이름, 설명] */
+function roleChoices(p) {
+  if (!p) { return []; }
+  if (p.admin) {
+    return [['admin', '관리자', '모든 기능 · 단가 · 권한 · 암호'],
+      ['manager', '팀장', '현황 · 일보 · 일정 · 공수표 (단가 제외)'],
+      ['worker', '기술인', '내 근태 · 작업일보 · 내 정보']];
+  }
+  if (p.role === 'leader') {
+    return [['manager', '팀장', '현황 · 일보 · 일정 · 공수표 (단가 제외)'],
+      ['worker', '기술인', '내 근태 · 작업일보 · 내 정보']];
+  }
+  return [];
+}
+
+function openRoleMenu() {
+  var p = me();
+  var list = roleChoices(p);
+  if (list.length < 2) { return; }
+  var body = '<div class="muted" style="margin:-4px 0 10px">보고 싶은 화면을 골라 주세요. 고른 화면은 앱을 다시 열어도 유지됩니다.</div>' +
+    '<div class="role-list">' + list.map(function (x) {
+      var on = state.role === x[0];
+      return '<button class="role-opt' + (on ? ' on' : '') + '" data-act="role" data-role="' + x[0] + '">' +
+        '<span class="ro-main"><span class="ro-t">' + x[1] + '</span><span class="ro-s">' + x[2] + '</span></span>' +
+        '<span class="ro-ck">' + (on ? '✓' : '') + '</span></button>';
+    }).join('') + '</div>';
+  openSheet('화면 전환', body, '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>');
 }
 
 function renderTabs() {
@@ -207,6 +230,23 @@ function bulkChecksVisible() {
   });
 }
 
+/* 공수 일괄 적용 — 시간 선택창 항목
+   값 형식: "p:시작|종료" (프리셋) · "leave" (휴무 0공수) · "custom" (직접 입력) */
+function bulkGsOptionsHTML() {
+  var list = [
+    ['p:07:00|11:00', '0.5공수 · 조퇴 (07:00~11:00)'],
+    ['p:07:00|17:00', '1공수 (07:00~17:00)'],
+    ['p:07:00|19:00', '1.5공수 (07:00~19:00)'],
+    ['p:07:00|21:00', '2공수 (07:00~21:00)'],
+    ['p:05:00|15:00', '조출 (05:00~15:00 · 1공수)'],
+    ['leave', '휴무 (0공수)'],
+    ['custom', '직접 입력 (시간 → 자동 공수계산)']
+  ];
+  return list.map(function (x) {
+    return '<option value="' + x[0] + '"' + (x[0] === 'p:07:00|17:00' ? ' selected' : '') + '>' + x[1] + '</option>';
+  }).join('');
+}
+
 /* =========================================================
    로그인
    ========================================================= */
@@ -252,6 +292,7 @@ function loginView() {
     '<label class="field"><span>생년월일</span><input id="li_birth" type="text" inputmode="numeric" placeholder="예) 961228 또는 19961228" autocomplete="bday"></label>' +
     '<label class="field"><span>전화번호</span><input id="li_phone" type="tel" inputmode="numeric" placeholder="010-0000-0000" autocomplete="tel"></label>' +
     '<label class="field"><span>직종</span><select id="li_job">' + loginJobOptionsHTML('배관공') + '</select></label>' +
+    '<label class="field"><span>입사일자 <span class="muted">(처음 등록할 때만 저장)</span></span><input id="li_hire" type="date" value="' + todayKey() + '"></label>' +
     '<label class="field hide" id="li_pass_wrap"><span>🔐 관리자 암호</span>' +
     '<input id="li_pass" type="password" autocomplete="current-password" placeholder="관리자 암호를 입력하세요"></label>' +
     '<div class="privacy-box">' +
@@ -469,6 +510,15 @@ function myLeaveRowsHTML(p) {
   }).join('');
 }
 
+/* 설정 시트의 메뉴 한 줄 (아이콘 · 제목 · 설명 · ›) */
+function setRowHTML(act, ic, title, sub) {
+  return '<button class="set-row" data-act="' + act + '">' +
+    '<span class="set-ic">' + ic + '</span>' +
+    '<span class="set-main"><span class="set-t">' + title + '</span>' +
+    '<span class="set-s">' + sub + '</span></span>' +
+    '<span class="set-go">›</span></button>';
+}
+
 function openSettings(p) {
   if (!p) { return; }
   var passSect = '';
@@ -486,40 +536,36 @@ function openSettings(p) {
       '<div class="hint">현재 암호가 맞아야 새 암호로 바뀝니다. 잊어버리면 앱에서 바꿀 수 없으니 꼭 기억해 두세요.</div>' +
       '</div>';
   }
+  var mk0 = todayKey().slice(0, 7);
+  var mGs = gongsuMonth(p, mk0);
+  var mDays = 0;
+  Object.keys(p.attendance || {}).forEach(function (k) {
+    if (k.slice(0, 7) !== mk0) { return; }
+    if (p.attendance[k] && p.attendance[k].in && !leaveOn(p, k)) { mDays++; }
+  });
+  var leaves = (p.leaves || []).slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+  var nextLv = leaves.filter(function (l) { return l.date >= todayKey(); })[0];
+  var leaveSub = !leaves.length ? '신청한 휴무 없음'
+    : (leaves.length + '건 신청' + (nextLv ? ' · 다음 휴무 ' + shortDate(nextLv.date) + '(' + wd(nextLv.date) + ')' : ''));
+
   var body =
     '<div class="sheet-head">' +
     '<span class="av lg">' + esc(p.name.slice(0, 1)) + '</span>' +
-    '<div style="flex:1"><div class="sheet-name">' + esc(p.name) + ' <span class="tag tag-job">기술인</span></div>' +
-    '<div class="muted">' + teamLabel(p.teamId) + ' · ' + esc(p.job) + ' · ' + birthText(p.birth) + '생</div></div>' +
+    '<div style="flex:1"><div class="sheet-name">' + esc(p.name) + ' <span class="tag tag-job">' +
+    (p.admin ? '관리자' : p.role === 'leader' ? '팀장' : '기술인') + '</span></div>' +
+    '<div class="muted">' + teamLabel(p.teamId) + ' · ' + esc(p.job) + ' · ' + birthText(p.birth) + '생' +
+    (p.hireDate ? ' · 입사 ' + shortDate(p.hireDate) : '') + '</div></div>' +
+    '</div>' +
+
+    '<div class="set-list">' +
+    setRowHTML('myInfoEdit', '👤', '개인정보 수정', esc(p.name) + ' · ' + esc(p.job) + ' · ' + esc(p.phone)) +
+    setRowHTML('myLeavesOpen', '🏖️', '휴무신청내역', leaveSub) +
+    setRowHTML('myGsOpen', '📅', '공수표 확인', monthLabel(mk0) + ' · ' + fmtGs(mGs) + '공수 · 출근 ' + mDays + '일') +
     '</div>' +
 
     '<div class="sect">' +
-    '<div class="sect-t">개인정보 수정</div>' +
-    '<div class="grid2">' +
-    '<label class="field"><span>이름</span><input id="mi_name" value="' + esc(p.name) + '"></label>' +
-    '<label class="field"><span>생년월일</span><input id="mi_birth" type="text" inputmode="numeric" value="' + esc(p.birth) + '" placeholder="예) 961228 또는 19961228"></label>' +
-    '<label class="field"><span>전화번호</span><input id="mi_phone" type="tel" value="' + esc(p.phone) + '"></label>' +
-    '<label class="field"><span>직종</span><select id="mi_job">' + jobOptionsHTML(p.job) + '</select></label>' +
-    '</div>' +
-    '<button class="btn btn-line sm block" style="margin-top:9px" data-act="saveMyInfo" data-id="' + p.id + '">개인정보 저장</button>' +
-    '<div class="hint">이름 · 직종 · 연락처 · 생년월일은 관리자 인원 목록에도 바로 반영됩니다. 생년월일은 <b>숫자 6자리(961228)</b> 또는 <b>8자리(19961228)</b>로 적어 주세요.</div>' +
-    '</div>' +
-
-    '<div class="sect">' +
-    '<div class="sect-t">📅 내 한달 공수표</div>' +
-    '<div class="muted">날짜를 누르면 그 날 출근·퇴근 시간을 직접 입력·수정할 수 있습니다. 미래 날짜도 미리 넣을 수 있어요.</div>' +
-    '<div id="myGsBox">' + myGsTableHTML(p) + '</div>' +
-    '</div>' +
-
-    '<div class="sect">' +
-    '<div class="sect-t">내 휴무 신청 내역</div>' +
-    '<div class="muted">내일 이후 휴무는 앱에서 바로 정정 · 취소할 수 있습니다.</div>' +
-    '<div id="myLeaveList">' + myLeaveRowsHTML(p) + '</div>' +
-    '</div>' +
-
-    '<div class="sect">' +
-    '<div class="sect-t">개인정보</div>' +
-    '<div class="kv"><span>동의 일시</span><b>' + (p.privacyAgreedAt
+    '<div class="sect-t">개인정보 · 민감정보 동의</div>' +
+    '<div class="kv"><span>개인정보 수집·이용 동의</span><b>' + (p.privacyAgreedAt
       ? kstDate(p.privacyAgreedAt) + ' ' + kstHM(p.privacyAgreedAt)
       : '기록 없음 (다음 로그인 시 기록)') + '</b></div>' +
     '<div class="kv"><span>동의서 버전</span><b>' + esc(p.privacyVersion || PRIVACY_VERSION) + '</b></div>' +
@@ -543,6 +589,33 @@ function openSettings(p) {
     '</div>';
 
   openSheet('내 정보', body, '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>');
+}
+
+/* 내 정보 → 개인정보 수정 (접힌 서브시트) */
+function openMyInfoEdit(p) {
+  if (!p) { return; }
+  var body =
+    '<div class="grid2">' +
+    '<label class="field"><span>이름</span><input id="mi_name" value="' + esc(p.name) + '"></label>' +
+    '<label class="field"><span>생년월일</span><input id="mi_birth" type="text" inputmode="numeric" value="' + esc(p.birth) + '" placeholder="예) 961228 또는 19961228"></label>' +
+    '<label class="field"><span>전화번호</span><input id="mi_phone" type="tel" value="' + esc(p.phone) + '"></label>' +
+    '<label class="field"><span>직종</span><select id="mi_job">' + jobOptionsHTML(p.job) + '</select></label>' +
+    '<label class="field"><span>입사일자</span><input id="mi_hire" type="date" value="' + esc(p.hireDate || '') + '"></label>' +
+    '</div>' +
+    '<div class="hint">이름 · 직종 · 연락처 · 생년월일 · 입사일자는 관리자 인원 목록에도 바로 반영됩니다. 생년월일은 <b>숫자 6자리(961228)</b> 또는 <b>8자리(19961228)</b>로 적어 주세요.</div>' +
+    '<button class="btn btn-line sm block" style="margin-top:9px" data-act="saveMyInfo" data-id="' + p.id + '">개인정보 저장</button>';
+  openSheet('개인정보 수정', body,
+    '<button class="btn btn-ghost" data-act="myGsToSettings">설정으로</button>');
+}
+
+/* 내 정보 → 휴무신청내역 (서브시트) */
+function openMyLeavesSheet(p) {
+  if (!p) { return; }
+  var body = '<div class="muted" style="margin:-4px 0 8px">내일 이후 휴무는 앱에서 바로 정정 · 취소할 수 있습니다.</div>' +
+    '<div id="myLeaveList">' + myLeaveRowsHTML(p) + '</div>';
+  openSheet('휴무신청내역', body,
+    '<button class="btn btn-ghost" data-act="myGsToSettings">설정으로</button>' +
+    '<button class="btn btn-primary" data-act="closeSheet">닫기</button>');
 }
 
 /* =========================================================
@@ -1269,21 +1342,81 @@ function tbmAlertHTML() {
 }
 
 /* ---------- 📋 오늘 인원 현황 요약 카드 ---------- */
-function adminHeadcountCard() {
-  var tk = todayKey();
-  var ps = activePeople();
-  var res = resignedPeople().slice().sort(function (a, b) {
+/* 카톡 보고용 휴무자 명단 텍스트 */
+function leaveCopyText(dateKey) {
+  var k = dateKey || todayKey();
+  var p = String(k).split('-');
+  var head = parseInt(p[1], 10) + '월 ' + parseInt(p[2], 10) + '일 ' + wd(k) + '요일 휴무자 명단';
+  var list = [];
+  activePeople().forEach(function (x) {
+    var l = leaveOn(x, k);
+    if (l) { list.push({ name: x.name, reason: l.reason || '사유 미입력' }); }
+  });
+  list.sort(function (a, b) { return a.name.localeCompare(b.name, 'ko'); });
+  if (!list.length) { return head + ' : 없음'; }
+  return head + '\n' + list.map(function (x, i) {
+    return (i === 0 ? ': ' : '  ') + x.name + '(사유 : ' + x.reason + ')';
+  }).join('\n');
+}
+
+function hcDateKey() {
+  var d = state.ui && state.ui.hcDate;
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) ? d : todayKey();
+}
+/* 그 날짜 기준 재직자 (그 뒤에 퇴사한 사람은 포함) */
+function peopleAsOf(k) {
+  return state.people.filter(function (p) {
+    if (p.status !== 'resigned') { return true; }
+    var rd = p.resign && p.resign.date;
+    return !!(rd && rd > k);
+  });
+}
+/* 그 날짜까지 퇴사한 사람 */
+function resignedAsOf(k) {
+  return state.people.filter(function (p) {
+    if (p.status !== 'resigned') { return false; }
+    var rd = p.resign && p.resign.date;
+    return !rd || rd <= k;
+  });
+}
+function hcOffList(ps, k) {
+  var out = [];
+  ps.forEach(function (p) {
+    var l = leaveOn(p, k);
+    if (l) { out.push({ name: p.name, reason: l.reason || '' }); }
+  });
+  return out.sort(function (a, b) { return a.name.localeCompare(b.name, 'ko'); });
+}
+
+/* 인원 현황 카드에 보이는 퇴사자 = 퇴사일로부터 7일 이내 (일주일 지나면 카드에서 숨김 · 보관함에는 그대로) */
+function resignedInCard(tk) {
+  return state.people.filter(function (p) {
+    if (p.status !== 'resigned') { return false; }
+    var rd = p.resign && p.resign.date;
+    if (!rd) { return false; }
+    if (rd > tk) { return false; }
+    var gap = Math.round((parseKey(tk) - parseKey(rd)) / 86400000);
+    return gap >= 0 && gap <= 7;
+  }).sort(function (a, b) {
     var da = (a.resign && a.resign.date) || '';
     var db = (b.resign && b.resign.date) || '';
     return da === db ? a.name.localeCompare(b.name, 'ko') : (da < db ? 1 : -1);
   });
-  var offs = [];
+}
+
+function adminHeadcountCard() {
+  var tk = hcDateKey();
+  var isToday = tk === todayKey();
+  var ps = peopleAsOf(tk);
+  var res = resignedInCard(tk);
+  var offs = hcOffList(ps, tk);
+  var outCnt = Math.max(0, ps.length - offs.length);
+  var nIn = 0, nNone = 0;
   ps.forEach(function (p) {
-    (p.leaves || []).forEach(function (l) {
-      if (l.date === tk) { offs.push({ name: p.name, reason: l.reason || '' }); }
-    });
+    if (leaveOn(p, tk)) { return; }
+    var a = (p.attendance || {})[tk];
+    if (a && a.in) { nIn++; } else { nNone++; }
   });
-  offs.sort(function (a, b) { return a.name.localeCompare(b.name, 'ko'); });
 
   var offList = offs.length
     ? '<div class="hc-list">' + offs.map(function (o) {
@@ -1296,24 +1429,94 @@ function adminHeadcountCard() {
     ? '<div class="hc-list">' + res.map(function (p) {
       var r = p.resign || {};
       return '<div class="hc-row"><span class="hc-name">' + esc(p.name) + '</span>' +
-        '<span class="hc-sub">(' + (r.date ? String(r.date).replace(/-/g, '.') + ' 퇴사' : '퇴사') +
+        '<span class="hc-sub">(' + (r.date ? String(r.date).replace(/-/g, '-') + ' 퇴사' : '퇴사') +
         (r.reason ? ' · ' + esc(r.reason) : '') + ')</span></div>';
     }).join('') + '</div>'
     : '';
 
   return '<div class="card hc-card">' +
-    '<div class="card-head"><div class="sec-t">📋 ' + mdLabel(tk) + ' 인원 현황</div>' +
-    '<span class="muted">퇴사자 제외 총원</span></div>' +
+    '<div class="hc-nav">' +
+    '<button class="hc-arrow" data-act="hcDay" data-d="-1" aria-label="이전 날짜">‹</button>' +
+    '<div class="hc-navmid"><div class="sec-t">📋 ' + mdLabel(tk) + ' 인원 현황</div>' +
+    '<div class="muted">' + wd(tk) + '요일' + (isToday ? ' · 오늘' : '') + '</div></div>' +
+    '<button class="hc-arrow" data-act="hcDay" data-d="1" aria-label="다음 날짜">›</button>' +
+    '</div>' +
+    '<div class="hc-tools">' +
+    (isToday ? '' : '<button class="hc-today" data-act="hcToday">오늘</button>') +
+    '<button class="hc-month" data-act="hcMonth" data-date="' + tk + '">한달 보기</button>' +
+    '<span class="hc-foot-inline">출근 <b>' + nIn + '</b> · 미출근 <b>' + nNone + '</b></span>' +
+    '</div>' +
     '<div class="hc-grid">' +
     '<div class="hc-item"><div class="hc-num">' + ps.length + '</div><div class="hc-lab">총원</div></div>' +
-    '<div class="hc-item"><div class="hc-num c-off">' + offs.length + '</div><div class="hc-lab">휴무 인원</div></div>' +
-    '<div class="hc-item"><div class="hc-num c-res">' + res.length + '</div><div class="hc-lab">퇴사자</div></div>' +
+    '<div class="hc-item"><div class="hc-num c-off">' + offs.length + '</div><div class="hc-lab">휴무</div></div>' +
+    '<div class="hc-item"><div class="hc-num c-out">' + outCnt + '</div><div class="hc-lab">출력인원</div></div>' +
     '</div>' +
-    '<div class="hc-sect"><div class="hc-t">휴무 <b>' + offs.length + '명</b>' + (offs.length ? '' : ' <span class="hc-none-inline">(없음)</span>') + '</div>' +
+    '<div class="hc-sect">' +
+    '<div class="hc-head2"><div class="hc-t">휴무 <b>' + offs.length + '명</b>' + (offs.length ? '' : ' <span class="hc-none-inline">(없음)</span>') + '</div>' +
+    (canManage() ? '<button class="hc-copy" data-act="copyLeaveList" data-date="' + tk + '">복사</button>' : '') +
+    '</div>' +
     offList + '</div>' +
-    '<div class="hc-sect"><div class="hc-t">퇴사자 <b>' + res.length + '명</b>' + (res.length ? '' : ' <span class="hc-none-inline">(없음)</span>') + '</div>' +
+    '<div class="hc-sect"><div class="hc-head2"><div class="hc-t">퇴사자 <b>' + res.length + '명</b>' +
+    (res.length ? '' : ' <span class="hc-none-inline">(없음)</span>') + '</div>' +
+    '<span class="hc-sub2">최근 7일</span></div>' +
     resList + '</div>' +
     '</div>';
+}
+
+/* 한달 간단히 보기 — 날짜별 출근·휴무·퇴사 요약 */
+function hcMonthHTML(mk) {
+  var sp = String(mk).split('-');
+  var y = parseInt(sp[0], 10), m = parseInt(sp[1], 10);
+  var last = new Date(y, m, 0).getDate();
+  var tk = todayKey();
+  var rows = [];
+  var tot = { in: 0, off: 0, res: 0, days: 0 };
+  for (var d = 1; d <= last; d++) {
+    var k = mk + '-' + pad2(d);
+    var ps = peopleAsOf(k);
+    var offs = hcOffList(ps, k);
+    var rs = state.people.filter(function (p) {
+      return p.status === 'resigned' && p.resign && p.resign.date === k;
+    });
+    var nIn = 0;
+    ps.forEach(function (p) {
+      if (leaveOn(p, k)) { return; }
+      var a = (p.attendance || {})[k];
+      if (a && a.in) { nIn++; }
+    });
+    tot.in += nIn; tot.off += offs.length; tot.res += rs.length;
+    if (nIn || offs.length || rs.length) { tot.days++; }
+    var empty = !nIn && !offs.length && !rs.length;
+    if (empty && k > tk) { continue; }
+    rows.push('<div class="hm-day' + (k === tk ? ' today' : '') + (k > tk ? ' fut' : '') + (empty ? ' empty' : '') + '" data-act="hcPick" data-date="' + k + '" role="button" tabindex="0">' +
+      '<div class="hm-top"><span class="hm-d">' + shortDate(k) + ' <em>' + wd(k) + '</em>' +
+      (k === tk ? ' <span class="hm-today">오늘</span>' : '') + '</span>' +
+      '<span class="hm-cs">' +
+      '<i class="hm-c hi-in">출근 ' + nIn + '</i>' +
+      '<i class="hm-c hi-off">휴무 ' + offs.length + '</i>' +
+      '<i class="hm-c hi-res">퇴사 ' + rs.length + '</i>' +
+      '</span></div>' +
+      (offs.length ? '<div class="hm-names">휴무 · ' + offs.map(function (o) {
+        return esc(o.name) + (o.reason ? '(' + esc(o.reason) + ')' : '');
+      }).join(', ') + '</div>' : '') +
+      (rs.length ? '<div class="hm-names">퇴사 · ' + rs.map(function (x) { return esc(x.name); }).join(', ') + '</div>' : '') +
+      '</div>');
+  }
+  return '<div class="month-nav">' +
+    '<button data-act="hcMonthMove" data-d="-1" aria-label="이전 달">\u2039</button>' +
+    '<span class="m-lab">' + monthLabel(mk) + '</span>' +
+    '<button data-act="hcMonthMove" data-d="1" aria-label="다음 달">\u203a</button>' +
+    '</div>' +
+    '<div class="hm-sum">이번 달 <b>출근 연인원 ' + tot.in + '명</b> · <b>휴무 ' + tot.off + '명</b> · <b>퇴사 ' + tot.res + '명</b>' +
+    '<br>기록이 있는 날 <b>' + tot.days + '일</b></div>' +
+    '<div class="hm-list">' + (rows.join('') || '<div class="empty">이 달 기록이 없습니다.</div>') + '</div>' +
+    '<div class="hint">날짜별 <b>출근</b>은 그 날 출근 기록이 있는 인원, <b>휴무</b>는 휴무 신청(보고) 인원입니다.<br>날짜를 누르면 그 날짜 현황으로 이동합니다.</div>';
+}
+
+function openHcMonth(mk) {
+  openSheet('인원 현황 · 한달 보기',
+    '<div id="hcMonthBox">' + hcMonthHTML(mk || hcDateKey().slice(0, 7)) + '</div>',
+    '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>');
 }
 
 function adminTodayBody() {
@@ -1367,6 +1570,13 @@ function adminTodayBody() {
     var py = c.total ? (c.yes / c.total) * 100 : 0;
     var pn = c.total ? (c.no / c.total) * 100 : 0;
     var open = pollIsOpen(poll);
+    var tg = pollTeamGroups(poll);
+    var teamLine = tg.map(function (g) {
+      return '<div class="pt-row"><span class="pt-n">' + esc(g.name) + '</span>' +
+        '<span class="pt-c"><b class="pt-y">' + g.yes + '</b>출근</span>' +
+        '<span class="pt-c"><b class="pt-n2">' + g.no + '</b>미출근</span>' +
+        '<span class="pt-c"><b class="pt-x">' + g.none + '</b>미응답</span></div>';
+    }).join('');
     pollCard = '<div class="card">' +
       '<div class="card-head"><div class="sec-t">토요일 출근 여부</div>' +
       (isAdminView() ? '<button class="link-btn" data-act="newPoll">+ 새 조사</button></div>' : '</div>') +
@@ -1378,10 +1588,13 @@ function adminTodayBody() {
       '<span class="c-no">아니오 <b>' + c.no + '</b></span>' +
       '<span>미응답 <b>' + c.none + '</b></span>' +
       '</div>' +
+      (teamLine ? '<div class="poll-teams">' + teamLine + '</div>' : '') +
       '<div class="btn-row">' +
       (open ? '<button class="btn btn-ghost sm" data-act="closePoll" data-id="' + poll.id + '">응답 마감</button>' : '<button class="btn btn-line sm" data-act="newPoll">새 조사 올리기</button>') +
-      '<button class="btn btn-line sm" data-act="pollDetail" data-id="' + poll.id + '">누가 응답했나</button>' +
-      '</div></div>';
+      '<button class="btn btn-line sm" data-act="pollAdmin" data-id="' + poll.id + '">조별 현황 · 변경</button>' +
+      '</div>' +
+      '<div class="hint">인원별 <b>출근/미출근</b>은 「조별 현황」에서 관리자·팀장이 직접 바꿀 수 있습니다(전화·카톡으로 확인한 경우).</div>' +
+      '</div>';
   }
 
   var filters = [['all', '전체']].concat(state.teams.map(function (t) { return [t.id, t.name]; }));
@@ -1411,12 +1624,15 @@ function adminTodayBody() {
     '<button class="bulk-all" id="bulkAllBtn" data-act="bulkAll">전체 선택</button>' +
     '<span class="bulk-cnt" id="bulkCnt">0명 선택</span></div>' +
     '<div class="bulk-date"><span>날짜</span><input type="date" id="bulkDate" max="' + todayKey() + '" value="' + (state.ui.bulkDate || todayKey()) + '"></div>' +
-    '<div class="bulk-grid">' +
-    '<button class="btn btn-line" data-act="bulkGsApply" data-gs="early">조출 (05:00~15:00)</button>' +
-    '<button class="btn btn-line" data-act="bulkGsApply" data-gs="earlyout">조퇴 (07:00~11:00)</button>' +
-    '<button class="btn btn-primary" data-act="bulkGsApply" data-gs="1">1공수 (07:00~17:00)</button>' +
-    '<button class="btn btn-primary" data-act="bulkGsApply" data-gs="1.5">1.5공수 (07:00~19:00)</button>' +
-    '<button class="btn btn-line span2" data-act="bulkGsApply" data-gs="2">2공수 (07:00~21:00)</button>' +
+    '<div class="bulk-pick"><span class="bulk-lab">시간</span>' +
+    '<span class="bulk-selwrap"><select id="bulkGsSel" aria-label="공수 선택">' + bulkGsOptionsHTML() + '</select><i class="bulk-car">▾</i></span>' +
+    '<button class="bulk-apply" data-act="bulkGsApply">적용</button></div>' +
+    '<div class="bulk-custom hide" id="bulkCustom">' +
+    '<div class="bulk-times">' +
+    '<label class="bt-f"><span>시 작</span><input type="time" id="bulk_in"></label>' +
+    '<label class="bt-f"><span>종 료</span><input type="time" id="bulk_out"></label>' +
+    '</div>' +
+    '<div class="bulk-prev" id="bulkPrev">시작·종료 시간을 넣으면 공수가 자동 계산됩니다.</div>' +
     '</div></div>';
 
   var peopleCard = '<div class="card">' +
@@ -1448,7 +1664,7 @@ function adminTodayBody() {
   var leaveCard = todayLeaves.length ? '<div class="card">' +
     '<div class="card-head"><div><div class="sec-t">오늘 휴무</div>' +
     '<div class="muted">' + longDate(todayKey()) + ' · ' + todayLeaves.length + '명</div></div>' +
-    '<span class="badge b-off2">휴무</span></div>' +
+    '<button class="hc-copy" data-act="copyLeaveList" data-date="' + todayKey() + '">복사</button></div>' +
     todayLeaves.map(function (p) {
       var l = leaveOn(p, todayKey());
       return '<div class="p-row" data-act="openPerson" data-id="' + p.id + '">' +
@@ -1679,44 +1895,81 @@ function certRowHTML(c) {
     '</div>';
 }
 
-/* 내 정보 · 📅 내 한달 공수표 (기술인 본인 — 미래 날짜도 입력·합산) */
+/* 내 정보 · 📅 내 한달 공수표 — 달력형 (일~토 7열 · 미래 날짜도 입력·합산) */
 function myGsMonthKey() {
   var mk = state.ui.myGsMonth || todayKey().slice(0, 7);
   return /^\d{4}-\d{2}$/.test(mk) ? mk : todayKey().slice(0, 7);
 }
-function myGsTableHTML(p) {
+
+function myGsCalCellHTML(p, k, d, tk) {
+  var a = (p.attendance || {})[k];
+  var lv = leaveOn(p, k);
+  var gs = lv ? 0 : gongsuOf(a);
+  var cls = 'mgc';
+  if (String(k) === tk) { cls += ' today'; }
+  if (k > tk) { cls += ' fut'; }
+  if (lv) { cls += ' leave'; }
+  else if (a && a.in) { cls += ' has'; }
+  var inner = '<span class="mgc-d">' + d + '</span>';
+  if (lv) {
+    inner += '<span class="mgc-b off">휴무</span>';
+  } else if (a && a.in) {
+    var hmShort = function (t) { return String(t || '').replace(':00', ''); };
+    inner += '<span class="mgc-b g' + String(gs).replace('.', '') + '">' + fmtGs(gs) + '</span>' +
+      '<span class="mgc-t">' + (a.out ? hmShort(a.in) + '~' + hmShort(a.out) : hmShort(a.in)) + '</span>';
+  }
+  return '<button class="' + cls + '" data-act="myGsPick" data-date="' + k + '" aria-label="' +
+    longDate(k) + ' 출퇴근 입력">' + inner + '</button>';
+}
+
+function myGsCalHTML(p) {
   var mk = myGsMonthKey();
   var sp = mk.split('-');
   var y = parseInt(sp[0], 10), m = parseInt(sp[1], 10);
+  var firstDow = new Date(y, m - 1, 1).getDay();
   var last = new Date(y, m, 0).getDate();
   var tk = todayKey();
-  var rows = [], total = 0, workDays = 0;
-  for (var d = 1; d <= last; d++) {
+  var cells = [];
+  var total = 0, workDays = 0, offDays = 0;
+  var i, d;
+  for (i = 0; i < firstDow; i++) { cells.push('<span class="mgc blank"></span>'); }
+  for (d = 1; d <= last; d++) {
     var k = mk + '-' + pad2(d);
     var a = (p.attendance || {})[k];
     var lv = leaveOn(p, k);
-    var gs = lv ? 0 : gongsuOf(a);
-    if (a && a.in) { workDays++; }
-    total += gs;
-    var cls = 'att-tr mygs-row' + (k === tk ? ' today' : '') + (k > tk ? ' fut' : '');
-    var right;
-    if (lv) { right = '<span class="gs-badge off">0</span><span class="badge b-off2">휴무</span>'; }
-    else if (a && a.in) { right = '<span class="gs-badge g' + String(gs).replace('.', '') + '">' + fmtGs(gs) + '공수</span>'; }
-    else { right = '<span class="mygs-add">입력 ›</span>'; }
-    rows.push('<div class="' + cls + '" data-act="myGsPick" data-date="' + k + '" role="button" tabindex="0">' +
-      '<span class="ad">' + pad2(d) + '일<em>' + wd(k) + '</em></span>' +
-      '<span class="at">' + (a && a.in ? a.in : '--:--') + '</span>' +
-      '<span class="at out">' + (a && a.out ? a.out : '--:--') + '</span>' +
-      '<span class="ab">' + right + '</span></div>');
+    if (lv) { offDays++; } else if (a && a.in) { workDays++; total += gongsuOf(a); }
+    cells.push(myGsCalCellHTML(p, k, d, tk));
   }
+  while (cells.length % 7 !== 0) { cells.push('<span class="mgc blank"></span>'); }
   total = Math.round(total * 1000) / 1000;
-  return '<div class="month-nav">' +
-    '<button data-act="myGsMonth" data-d="-1">\u2039</button>' +
-    '<span class="m-lab">' + monthLabel(mk) + '</span>' +
-    '<button data-act="myGsMonth" data-d="1">\u203a</button>' +
+
+  return '<div class="mgc-nav">' +
+    '<button class="mgc-arrow" data-act="myGsMonth" data-d="-1" aria-label="이전 달">‹</button>' +
+    '<b class="mgc-lab">' + monthLabel(mk) + '</b>' +
+    '<button class="mgc-arrow" data-act="myGsMonth" data-d="1" aria-label="다음 달">›</button>' +
     '</div>' +
-    '<div class="att-table">' + rows.join('') + '</div>' +
-    '<div class="mygs-total">이번 달 총 공수: <b>' + fmtGs(total) + '공수</b> · 출근 <b>' + workDays + '일</b></div>';
+    '<div class="mgc-week">' + ['일', '월', '화', '수', '목', '금', '토'].map(function (w, idx) {
+      return '<span class="mgc-wd' + (idx === 0 ? ' sun' : idx === 6 ? ' sat' : '') + '">' + w + '</span>';
+    }).join('') + '</div>' +
+    '<div class="mgc-grid">' + cells.join('') + '</div>' +
+    '<div class="mgc-legend">' +
+      '<span class="lg-i"><i class="lg-d g1"></i>1공수</span>' +
+      '<span class="lg-i"><i class="lg-d g15"></i>1.5</span>' +
+      '<span class="lg-i"><i class="lg-d off"></i>휴무</span>' +
+      '<span class="lg-i lg-tip">날짜를 누르면 출퇴근 입력</span>' +
+    '</div>' +
+    '<div class="mygs-total">이번 달 총 공수: <b>' + fmtGs(total) + '공수</b> · 출근 <b>' + workDays + '일</b>' +
+      (offDays ? ' · 휴무 <b>' + offDays + '일</b>' : '') + '</div>';
+}
+
+function openMyGsCal() {
+  var p = me();
+  if (!p) { return; }
+  var body = '<div class="muted" style="margin:-6px 0 2px">날짜를 누르면 그 날 출근·퇴근 시간을 직접 입력·수정할 수 있습니다. <b>미래 날짜</b>도 미리 넣을 수 있어요.</div>' +
+    '<div id="myGsBox">' + myGsCalHTML(p) + '</div>';
+  openSheet('📅 내 한달 공수표', body,
+    '<button class="btn btn-ghost" data-act="myGsToSettings">설정으로</button>' +
+    '<button class="btn btn-primary" data-act="closeSheet">닫기</button>');
 }
 
 function attBlockHTML(p, scope) {
@@ -1812,6 +2065,7 @@ function openPerson(id) {
     '<label class="field"><span>연락처</span><input id="pf_phone" type="tel" value="' + esc(p.phone) + '"></label>' +
     '<label class="field"><span>소속 조</span><select id="pf_team">' + teamOpts + '</select></label>' +
     '<label class="field"><span>직종</span><input id="pf_job" value="' + esc(p.job) + '"></label>' +
+    '<label class="field"><span>입사일자</span><input id="pf_hire" type="date" value="' + esc(p.hireDate || '') + '"></label>' +
     (isAdminView() ? '<label class="field"><span>단가 (원/일)</span><input id="pf_price" type="number" inputmode="numeric" value="' + p.price + '"></label>' : '') +
     '</div>' +
     (isAdminView() ? '<div class="hint">단가를 저장하면 전체 · 조별 평균단가가 바로 다시 계산됩니다.</div>' : '') +

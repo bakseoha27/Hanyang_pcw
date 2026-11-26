@@ -700,3 +700,185 @@ a.btn{text-decoration:none;}
 .mygs-row .mygs-add{font-size:11px;font-weight:900;color:#2F6BFF;}
 .mygs-total{margin-top:9px;padding:10px 11px;border-radius:11px;background:#F2F6FF;color:#14213D;font-size:13px;font-weight:800;text-align:center;letter-spacing:-.3px;}
 .mygs-total b{font-weight:900;color:#1E4FD8;}
+
+/* =========================================================
+   2026-11-26 · v12 개편
+   (헤더 역할 버튼 · 설정 메뉴 · 개인 공수표 달력 · 일괄 적용 · 토요일 투표 · 인원 현황)
+   ========================================================= */
+
+/* ---------- 헤더 : 컴팩트 역할 버튼 + 선택 메뉴 ---------- */
+.role-chip{
+  display:inline-flex;align-items:center;gap:4px;height:34px;padding:0 10px;border-radius:11px;
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.26);color:#fff;
+  font-size:12px;font-weight:900;letter-spacing:-.3px;
+}
+.role-chip:active{background:rgba(255,255,255,.24);}
+.role-chip .rc-car{font-size:9px;opacity:.8;line-height:1;}
+.role-list{display:flex;flex-direction:column;gap:8px;}
+.role-opt{
+  display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  border:1.5px solid var(--line);background:#fff;border-radius:14px;padding:12px 13px;
+}
+.role-opt.on{border-color:#C7D7FE;background:#F5F9FF;}
+.ro-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.ro-t{font-size:15px;font-weight:900;color:#101828;letter-spacing:-.4px;}
+.ro-s{font-size:11.5px;font-weight:700;color:var(--gray);}
+.ro-ck{flex:0 0 auto;width:22px;text-align:center;font-size:14px;font-weight:900;color:var(--blue);}
+
+/* ---------- 설정(내 정보) 메뉴 ---------- */
+.set-list{display:flex;flex-direction:column;gap:8px;margin:2px 0 4px;}
+.set-row{
+  display:flex;align-items:center;gap:11px;width:100%;text-align:left;
+  background:#F8FAFC;border:1px solid #EDF0F6;border-radius:14px;padding:13px 13px;
+}
+.set-row:active{background:#F1F5FB;}
+.set-ic{
+  flex:0 0 auto;width:38px;height:38px;border-radius:12px;background:#fff;border:1px solid #E7EBF3;
+  display:flex;align-items:center;justify-content:center;font-size:18px;
+}
+.set-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.set-t{font-size:14.5px;font-weight:900;color:#101828;letter-spacing:-.35px;}
+.set-s{font-size:11.5px;font-weight:700;color:var(--gray);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.set-go{flex:0 0 auto;font-size:18px;font-weight:900;color:#B6BFCE;}
+
+/* ---------- 내 한달 공수표 : 달력형 (일~토 7열) ---------- */
+.mgc-nav{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#F8FAFC;border-radius:12px;padding:5px;margin-top:6px;}
+.mgc-arrow{width:38px;height:34px;border-radius:9px;background:#fff;border:1px solid #EAEDF3;font-size:18px;font-weight:900;color:var(--navy);line-height:1;display:flex;align-items:center;justify-content:center;}
+.mgc-arrow:active{background:#EEF2FA;}
+.mgc-lab{font-size:14px;font-weight:900;letter-spacing:-.3px;color:var(--navy);}
+.mgc-week{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:9px 0 3px;}
+.mgc-wd{text-align:center;font-size:10.5px;font-weight:900;color:var(--gray2);letter-spacing:-.2px;}
+.mgc-wd.sun{color:#E15A4B;}
+.mgc-wd.sat{color:#3B72D9;}
+.mgc-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
+.mgc{
+  position:relative;min-width:0;height:56px;border-radius:10px;border:1.5px solid transparent;background:#F7F9FC;
+  display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:1px;padding:4px 1px 3px;
+  color:#344054;overflow:hidden;
+}
+.mgc.blank{background:transparent;pointer-events:none;}
+.mgc:active{background:#EAF2FF;}
+.mgc-d{font-size:12.5px;font-weight:900;letter-spacing:-.3px;line-height:1.15;}
+.mgc.today{border-color:var(--blue);background:#F2F7FF;}
+.mgc.today .mgc-d{color:var(--blue);}
+.mgc.fut .mgc-d{color:#98A2B3;}
+.mgc.leave{background:#F7F4FF;}
+.mgc-b{
+  max-width:100%;font-size:8.5px;font-weight:900;padding:1px 4px;border-radius:5px;line-height:1.35;
+  letter-spacing:-.3px;white-space:nowrap;background:#F2F4F7;color:#475467;
+}
+.mgc-b.g1{background:#E6F8F0;color:#027A48;}
+.mgc-b.g05{background:#EAF2FF;color:#1E4FD8;}
+.mgc-b.g15{background:var(--orange-soft);color:#B54708;}
+.mgc-b.g2{background:var(--red-soft);color:#B42318;}
+.mgc-b.g175,.mgc-b.g1875{background:#EEF2FA;color:#344054;}
+.mgc-b.off{background:#EFE7FE;color:#6941C6;}
+.mgc-t{max-width:100%;font-size:7.5px;font-weight:800;color:#8A94A6;letter-spacing:-.3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;}
+.mgc-legend{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:9px 1px 0;font-size:10.5px;font-weight:800;color:var(--gray);}
+.lg-i{display:inline-flex;align-items:center;gap:4px;}
+.lg-d{display:inline-block;width:9px;height:9px;border-radius:3px;background:#F2F4F7;}
+.lg-d.g1{background:#B6EBD3;}
+.lg-d.g15{background:#FBDBA7;}
+.lg-d.off{background:#DCCEFB;}
+.lg-tip{margin-left:auto;color:var(--gray2);font-weight:700;}
+
+/* ---------- 공수 일괄 적용 : 시간 선택창 ---------- */
+.bulk-pick{display:flex;align-items:center;gap:7px;}
+.bulk-lab{font-size:11.5px;font-weight:900;color:#667085;flex:none;}
+.bulk-selwrap{position:relative;flex:1;min-width:0;display:block;}
+.bulk-selwrap select{
+  appearance:none;-webkit-appearance:none;width:100%;height:40px;border:1px solid #E3E9F2;border-radius:10px;
+  background:#fff;padding:0 26px 0 10px;font-size:12.5px;font-weight:800;color:#14213D;letter-spacing:-.3px;
+}
+.bulk-car{position:absolute;right:9px;top:50%;transform:translateY(-50%);font-size:9px;color:#667085;pointer-events:none;font-style:normal;}
+.bulk-apply{
+  flex:none;height:40px;padding:0 14px;border-radius:10px;background:var(--navy);color:#fff;
+  font-size:12.5px;font-weight:900;letter-spacing:-.3px;
+}
+.bulk-apply:active{filter:brightness(1.15);}
+.bulk-custom{margin-top:8px;background:#fff;border:1px solid #E3E9F2;border-radius:10px;padding:8px 9px;}
+.bulk-times{display:flex;gap:8px;}
+.bt-f{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;}
+.bt-f>span{font-size:10.5px;font-weight:900;color:#667085;letter-spacing:.6px;}
+.bt-f input{width:100%;height:38px;border:1px solid #E3E9F2;border-radius:9px;padding:0 6px;background:#FCFCFD;font-size:13.5px;font-weight:800;color:#14213D;}
+.bulk-prev{margin-top:6px;font-size:11.5px;font-weight:800;color:#475467;letter-spacing:-.2px;}
+.bulk-prev b{color:#1E4FD8;font-weight:900;}
+.bulk-prev b.bp-bad{color:#B42318;}
+
+/* ---------- 토요일 투표 : 조별 현황 · 인원별 변경 ---------- */
+.poll-teams{margin-top:9px;border:1px solid #EEF1F6;border-radius:11px;overflow:hidden;}
+.pt-row{display:flex;align-items:center;gap:6px;padding:7px 10px;border-bottom:1px solid #F4F6FA;font-size:11.5px;font-weight:800;color:#667085;}
+.pt-row:last-child{border-bottom:0;}
+.pt-n{flex:1;min-width:0;font-size:12px;font-weight:900;color:#101828;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pt-c{flex:0 0 auto;display:inline-flex;align-items:baseline;gap:2px;font-size:10.5px;color:var(--gray);}
+.pt-c b{font-size:12.5px;font-weight:900;margin-right:1px;}
+.pt-y{color:#027A48;}
+.pt-n2{color:#475467;}
+.pt-x{color:#B54708;}
+.pv-row{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid #F4F6FA;}
+.pv-row:last-child{border-bottom:0;}
+.pv-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}
+.pv-btns{flex:0 0 auto;display:flex;gap:4px;}
+.pv-btn{
+  height:30px;padding:0 9px;border-radius:9px;border:1.5px solid var(--line);background:#fff;
+  font-size:11px;font-weight:900;color:#667085;letter-spacing:-.3px;
+}
+.pv-btn.yes.on{background:var(--green);border-color:var(--green);color:#fff;}
+.pv-btn.no.on{background:#475467;border-color:#475467;color:#fff;}
+
+/* ---------- 📋 인원 현황 카드 : 날짜 이동 · 복사 · 한달 보기 ---------- */
+.hc-nav{display:flex;align-items:center;gap:8px;}
+.hc-arrow{
+  flex:0 0 auto;width:36px;height:36px;border-radius:11px;background:#F2F4F7;color:var(--navy);
+  font-size:18px;font-weight:900;line-height:1;display:flex;align-items:center;justify-content:center;
+}
+.hc-arrow:active{background:#E4E8F0;}
+.hc-navmid{flex:1;min-width:0;text-align:center;}
+.hc-navmid .sec-t{font-size:14px;}
+.hc-tools{display:flex;align-items:center;gap:6px;margin:8px 0 0;}
+.hc-copy{
+  height:28px;padding:0 11px;border-radius:9px;background:#EAF2FF;color:#1E4FD8;
+  font-size:11.5px;font-weight:900;letter-spacing:-.3px;border:1px solid #C7D7FE;
+}
+.hc-copy:active{background:#DCE8FF;}
+.hc-month{
+  height:28px;padding:0 11px;border-radius:9px;background:#fff;color:#475467;border:1px solid var(--line);
+  font-size:11.5px;font-weight:900;letter-spacing:-.3px;
+}
+.hc-today{
+  height:28px;padding:0 10px;border-radius:9px;background:var(--navy);color:#fff;
+  font-size:11.5px;font-weight:900;letter-spacing:-.3px;
+}
+.hc-foot{margin-top:9px;font-size:11.5px;font-weight:700;color:var(--gray);background:#F8FAFC;border-radius:10px;padding:7px 10px;}
+.hc-foot b{color:#101828;font-weight:900;}
+.hc-card .hc-grid{margin-top:10px;}
+
+/* 한달 보기 */
+.hm-sum{margin-top:9px;background:#F7FAFF;border:1px solid #E3ECFF;border-radius:11px;padding:9px 11px;
+  font-size:12px;font-weight:700;color:#344054;line-height:1.55;letter-spacing:-.2px;}
+.hm-sum b{color:#1E4FD8;font-weight:900;}
+.hm-list{margin-top:9px;display:flex;flex-direction:column;gap:4px;}
+.hm-day{border:1px solid #EEF1F6;border-radius:10px;padding:7px 9px;background:#fff;}
+.hm-day.empty{opacity:.55;}
+.hm-day.today{border-color:#C7D7FE;background:#F7FAFF;}
+.hm-day.fut{background:#FBFCFE;}
+.hm-top{display:flex;align-items:center;gap:6px;}
+.hm-d{flex:0 0 auto;min-width:74px;font-size:12.5px;font-weight:900;color:#101828;letter-spacing:-.3px;font-variant-numeric:tabular-nums;}
+.hm-d em{font-style:normal;font-size:10.5px;color:#98A2B3;font-weight:800;margin-left:2px;}
+.hm-today{font-size:9.5px;font-weight:900;color:var(--blue);background:var(--blue-soft);border-radius:5px;padding:1px 4px;margin-left:3px;}
+.hm-cs{margin-left:auto;display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;}
+.hm-c{font-style:normal;font-size:10.5px;font-weight:900;letter-spacing:-.3px;padding:2px 6px;border-radius:6px;background:#F2F4F7;color:#667085;}
+.hm-c.hi-in{background:#E6F8F0;color:#027A48;}
+.hm-c.hi-off{background:#F4F0FF;color:#6941C6;}
+.hm-c.hi-res{background:#FEF3F2;color:#B42318;}
+.hm-c.hi-in:first-child{background:#E6F8F0;}
+.hm-names{margin-top:4px;font-size:11px;font-weight:700;color:#667085;line-height:1.45;letter-spacing:-.2px;}
+
+/* 인원 현황 카드 v12.1 — 총원/휴무/출력인원 · 복사 줄 안으로 */
+.hc-tools{flex-wrap:wrap;}
+.hc-head2{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.hc-sub2{font-size:10.5px;font-weight:800;color:var(--gray2);letter-spacing:-.2px;}
+.hc-foot-inline{margin-left:auto;font-size:11px;font-weight:800;color:var(--gray);letter-spacing:-.2px;}
+.hc-foot-inline b{color:#101828;font-weight:900;}
+.hc-card .hc-num.c-out{color:#027A48;}

@@ -245,6 +245,7 @@ function mapWorker(w) {
     teamId: w.team_id || null,
     role: w.is_leader ? 'leader' : 'worker',
     admin: !!w.is_admin,
+    hireDate: w.hire_date || '',
     status: w.status || 'active',
     resign: (w.status === 'resigned')
       ? { date: w.resign_date || '', reason: w.resign_reason || '', text: '' }
@@ -370,6 +371,8 @@ function buildState(d) {
     personOpen: ui.personOpen || '',
     q_dash: ui.q_dash || '', q_gongsu: ui.q_gongsu || '', q_teams: ui.q_teams || '',
     myGsMonth: ui.myGsMonth || todayKey().slice(0, 7),
+    hcDate: /^\d{4}-\d{2}-\d{2}$/.test(String(ui.hcDate || '')) ? ui.hcDate : todayKey(),
+    hcMonth: ui.hcMonth || todayKey().slice(0, 7),
     bulkDate: ui.bulkDate || todayKey(),
     timeEdit: false,
     resignOpen: !!ui.resignOpen
@@ -693,6 +696,29 @@ function pollCounts(poll) {
   });
   return { yes: yes, no: no, none: Math.max(0, ps.length - yes - no), total: ps.length };
 }
+/* 토요일 투표 — 조(팀)별 현황 : 조마다 출근/미출근/미응답 인원과 명단 */
+function pollTeamGroups(poll) {
+  var map = {}, out = [];
+  activePeople().forEach(function (p) {
+    var tid = (p.teamId && teamById(p.teamId)) ? p.teamId : '';
+    if (!map[tid]) {
+      map[tid] = { id: tid, name: tid ? teamLabel(tid) : '미배정', list: [], yes: 0, no: 0, none: 0 };
+      out.push(map[tid]);
+    }
+    var v = (poll && poll.votes) ? (poll.votes[p.id] || '') : '';
+    if (v !== 'yes' && v !== 'no') { v = ''; }
+    map[tid].list.push({ p: p, vote: v });
+    if (v === 'yes') { map[tid].yes++; } else if (v === 'no') { map[tid].no++; } else { map[tid].none++; }
+  });
+  var order = {};
+  state.teams.forEach(function (t, i) { order[t.id] = i; });
+  out.sort(function (a, b) {
+    var oa = a.id ? (order[a.id] === undefined ? 90 : order[a.id]) : 99;
+    var ob = b.id ? (order[b.id] === undefined ? 90 : order[b.id]) : 99;
+    return oa - ob;
+  });
+  return out;
+}
 function avgByTeam() {
   return state.teams.map(function (t) {
     var m = teamMembers(t.id);
@@ -736,6 +762,7 @@ function insertWorker(p, label) {
     m: 'POST', path: '/rest/v1/workers', prefer: 'return=minimal', label: label || '신규 인원 등록',
     body: {
       id: p.id, name: p.name, birth_date: p.birth || null, phone: p.phone || null,
+      hire_date: p.hireDate || null,
       job_type: p.job || null, team_id: p.teamId || null, is_leader: p.role === 'leader',
       is_admin: !!p.admin, daily_rate: p.price || null, certs_json: p.certs || [],
       injury_has: !!p.injury.has, injury_date: p.injury.date || null, injury_note: p.injury.note || null,
@@ -791,6 +818,30 @@ function insertLeave(p, l) {
       id: l.id, worker_id: p.id, leave_date: l.date, reason: l.reason || null,
       team_name: l.teamName || null, report_to: l.reportTo || null, status: 'pending'
     }
+  });
+}
+/* 여러 인원 휴무(0공수) 한 번에 등록 (공수 일괄 적용 · 휴무) */
+function insertLeaveBulk(items) {
+  if (!items || !items.length) { return Promise.resolve({ ok: true }); }
+  var at = new Date().toISOString();
+  return apiWrite({
+    m: 'POST', path: '/rest/v1/leaves', prefer: 'return=minimal', label: '휴무 일괄 등록',
+    body: items.map(function (x) {
+      return {
+        id: x.id, worker_id: x.workerId, leave_date: x.date, reason: x.reason || null,
+        team_name: x.teamName || null, report_to: x.reportTo || null, status: 'pending',
+        /* 관리자가 직접 만든 휴무는 이미 확인한 것 → 휴무 보고 알람이 다시 뜨지 않게 */
+        ack_at: x.ackAt || at, ack_by: x.ackBy || null
+      };
+    })
+  });
+}
+/* 여러 인원 그 날짜 근태 한 번에 삭제 (휴무로 바꿀 때) */
+function deleteAttendanceBulk(ids, dateKey) {
+  if (!ids || !ids.length) { return Promise.resolve({ ok: true }); }
+  return apiWrite({
+    m: 'DELETE', label: '근태 일괄 삭제',
+    path: '/rest/v1/attendance?work_date=' + sbEq(dateKey) + '&worker_id=in.(' + ids.join(',') + ')'
   });
 }
 function patchLeave(l) {

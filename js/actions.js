@@ -215,6 +215,7 @@ function openPersonAdd() {
     '<label class="field"><span>생년월일 <b class="must">*</b></span><input id="pa_birth" inputmode="numeric" placeholder="예) 851029 또는 1985-10-29" autocomplete="bday"></label>' +
     '<label class="field"><span>전화번호 <b class="must">*</b></span><input id="pa_phone" type="tel" inputmode="numeric" placeholder="010-0000-0000" autocomplete="tel"></label>' +
     '<label class="field"><span>직종</span><select id="pa_job">' + jobOpts + '</select></label>' +
+    '<label class="field"><span>입사일자</span><input id="pa_hire" type="date" value="' + todayKey() + '"></label>' +
     '<label class="field"><span>소속 팀/조</span><select id="pa_team">' + teamOptionsHTML(null) + '</select></label>' +
     (isAdminView()
       ? '<label class="chk" style="margin-top:12px"><input type="checkbox" id="pa_admin" checked> <b>관리자 권한 부여</b> (is_admin)</label>' +
@@ -282,6 +283,7 @@ function personAddSubmit() {
   var np = {
     id: uuid(), name: name, job: job || '관리자', birth: birth, phone: phonePretty(phoneRaw),
     price: 0, teamId: tid, role: isLeader ? 'leader' : 'worker', admin: isAdmin, status: 'active', resign: null,
+    hireDate: ($('#pa_hire') ? $('#pa_hire').value : '') || todayKey(),
     attendance: {}, leaves: [], certs: defaultCerts(),
     injury: { has: false, date: '', note: '' }, memo: '',
     privacyAgreedAt: '', privacyVersion: '', sensitiveAgreedAt: ''
@@ -350,6 +352,35 @@ function openPollDetail(id) {
   openSheet('응답 현황', body, '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>');
 }
 
+/* 토요일 투표 — 조별 현황 + 인원별 출근/미출근 직접 변경 (관리자·팀장) */
+function openPollAdmin(id) {
+  var poll = state.polls.filter(function (x) { return x.id === id; })[0];
+  if (!poll) { return; }
+  if (!canManage()) { toast('관리자·팀장만 바꿀 수 있습니다.'); return; }
+  var groups = pollTeamGroups(poll);
+  var c = pollCounts(poll);
+  var body = '<div class="muted" style="margin:-4px 0 10px">' + esc(poll.title) +
+    '<br>출근 <b>' + c.yes + '</b> · 미출근 <b>' + c.no + '</b> · 미응답 <b>' + c.none + '</b>' +
+    '<br>전화·카톡으로 확인한 인원은 아래 <b>출근 / 미출근</b>을 눌러 바로 바꿔 주세요.' +
+    (pollIsOpen(poll) ? '' : '<br>응답은 마감됐지만 관리자는 계속 바꿀 수 있습니다.') + '</div>';
+  body += groups.length ? groups.map(function (g) {
+    return '<div class="sect"><div class="sect-t">' + esc(g.name) +
+      ' <span class="pt-c"><b class="pt-y">' + g.yes + '</b>출근</span>' +
+      ' <span class="pt-c"><b class="pt-n2">' + g.no + '</b>미출근</span>' +
+      ' <span class="pt-c"><b class="pt-x">' + g.none + '</b>미응답</span></div>' +
+      g.list.map(function (x) {
+        return '<div class="pv-row"><span class="av">' + esc(x.p.name.slice(0, 1)) + '</span>' +
+          '<span class="pv-main"><span class="p-name">' + esc(x.p.name) + '</span>' +
+          '<span class="p-sub">' + (x.vote === 'yes' ? '출근' : x.vote === 'no' ? '미출근' : '미응답') + '</span></span>' +
+          '<span class="pv-btns">' +
+          '<button class="pv-btn yes' + (x.vote === 'yes' ? ' on' : '') + '" data-act="pollSetVote" data-id="' + poll.id + '" data-wid="' + x.p.id + '" data-v="yes">출근</button>' +
+          '<button class="pv-btn no' + (x.vote === 'no' ? ' on' : '') + '" data-act="pollSetVote" data-id="' + poll.id + '" data-wid="' + x.p.id + '" data-v="no">미출근</button>' +
+          '</span></div>';
+      }).join('') + '</div>';
+  }).join('') : '<div class="empty">등록된 인원이 없습니다.</div>';
+  openSheet('토요일 투표 · 조별 현황', body, '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>');
+}
+
 /* ---------------- 작업일보 상세 ---------------- */
 function openReportDetail(id) {
   var r = state.reports.filter(function (x) { return x.id === id; })[0];
@@ -375,35 +406,77 @@ function openReportDetail(id) {
   openSheet('작업일보 상세', body, '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>');
 }
 
-/* ---------------- PDF 업로드 (Storage) ---------------- */
+/* ---------------- PDF 업로드 (Storage) ----------------
+   · Storage object key 는 ASCII 만 (한글 파일명은 Supabase Storage 가 400 InvalidKey 로 거절)
+     → 경로는 날짜+타임스탬프+난수.pdf, 원본 한글 이름은 DB documents.file_name/title 에 저장
+   · 업로드가 끝나지 않아도 안내가 뜨게 시간 제한 + try/catch/finally 로 상태 복구 */
+var pdfUploading = false;
+
+function pdfObjectPath(cat, file) {
+  var ext = /\.pdf$/i.test(file.name) ? '.pdf' : '.pdf';
+  var t = Date.now();
+  var rnd = Math.random().toString(36).replace(/[^a-z0-9]/g, '').slice(0, 6) || 'x';
+  return cat + '/' + todayKey().replace(/-/g, '') + '_' + t + '_' + rnd + ext;
+}
+
+function withTimeout(promise, ms, msg) {
+  var timer = null;
+  var guard = new Promise(function (resolve, reject) {
+    timer = setTimeout(function () { reject(new Error(msg || ('시간 초과 (' + Math.round(ms / 1000) + '초)'))); }, ms);
+  });
+  return Promise.race([promise, guard]).then(function (r) {
+    if (timer) { clearTimeout(timer); }
+    return r;
+  }, function (e) {
+    if (timer) { clearTimeout(timer); }
+    throw e;
+  });
+}
+
 async function handlePdfUpload(input) {
   if (!isAdminView()) { toast('관리자만 현장자료를 올릴 수 있습니다.'); return; }
+  if (pdfUploading) { toast('다른 PDF를 올리는 중입니다.<br>잠시만 기다려 주세요.'); return; }
   var cat = input.getAttribute('data-cat') || 'risk';
   var file = input.files && input.files[0];
-  input.value = '';
   if (!file) { return; }
+  var label = cat === 'risk' ? '위험성평가' : '시방서';
   var okType = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
   if (!okType) { toast('PDF 파일만 올릴 수 있어요.'); return; }
   if (file.size > 50 * 1024 * 1024) {
     toast('50MB 이하 PDF만 올릴 수 있어요.<br>(' + (file.size / 1024 / 1024).toFixed(1) + 'MB)');
     return;
   }
-  toast('PDF 업로드 중… (' + (file.size / 1024 / 1024).toFixed(1) + 'MB)');
-  var safe = String(file.name).replace(/[^\w.\-가-힣]/g, '_').slice(-60);
-  var path = cat + '/' + todayKey() + '_' + Date.now() + '_' + safe;
-  var up = await storageUpload(path, file, 'application/pdf');
-  if (!up.ok) {
-    toast('PDF 업로드에 실패했어요.<br>' + esc(up.error || ''));
-    return;
+  pdfUploading = true;
+  var mb = (file.size / 1024 / 1024).toFixed(1);
+  toast('PDF 업로드 중… (' + mb + 'MB)<br><b>' + esc(file.name) + '</b>');
+  try {
+    var path = pdfObjectPath(cat, file);
+    var up = await withTimeout(storageUpload(path, file, 'application/pdf'), 90000,
+      '업로드가 90초 안에 끝나지 않았어요. 전화·와이파이 상태를 확인하고 다시 시도해 주세요.');
+    if (!up || !up.ok) {
+      var why = up ? String(up.error || ('HTTP ' + up.status)) : '알 수 없는 오류';
+      var tip = /InvalidKey|Invalid key/i.test(why)
+        ? '<br>파일 이름을 영문으로 바꿔 다시 시도해 주세요.'
+        : (/exceeded|too large|413/i.test(why) ? '<br>50MB 이하 PDF만 올릴 수 있어요.' : '<br>잠시 후 다시 시도해 주세요.');
+      toast('PDF 업로드에 실패했어요.<br><b>' + esc(why) + '</b>' + tip);
+      return;
+    }
+    var doc = {
+      id: uuid(), type: cat, name: file.name, title: String(file.name).replace(/\.pdf$/i, ''),
+      url: storagePublicUrl(path), path: path, by: (me() ? me().name : ''), addedAt: todayKey()
+    };
+    if (!state.docs[cat]) { state.docs[cat] = []; }
+    state.docs[cat].unshift(doc);
+    render();
+    insertDocument(doc);
+    toast('PDF 업로드 완료 · <b>' + esc(file.name) + '</b><br>' + label + ' 자료가 바로 열립니다');
+  } catch (e) {
+    toast('PDF 업로드에 실패했어요.<br>' + esc((e && e.message) || '알 수 없는 오류') +
+      '<br>전화·와이파이 상태를 확인하고 다시 시도해 주세요.');
+  } finally {
+    pdfUploading = false;
+    try { input.value = ''; } catch (e2) { /* noop */ }
   }
-  var doc = {
-    id: uuid(), type: cat, name: file.name, title: String(file.name).replace(/\.pdf$/i, ''),
-    url: storagePublicUrl(path), path: path, by: (me() ? me().name : ''), addedAt: todayKey()
-  };
-  state.docs[cat].unshift(doc);
-  render();
-  insertDocument(doc);
-  toast('PDF 업로드 완료 · <b>' + esc(file.name) + '</b><br>' + (cat === 'risk' ? '위험성평가' : '시방서') + ' 자료가 바로 열립니다');
 }
 
 /* ---------------- 기술인 오늘 근태 빠른 기록 (조출 · 조퇴) ---------------- */
@@ -448,7 +521,69 @@ function attSavedToast(gs, d, hasLeave) {
     (hasLeave ? '<br>휴무 신청이 있어 공수는 0으로 표시됩니다' : '<br>전체 현황 · 한달 공수표에 <b>(수정됨)</b>으로 반영됩니다'));
 }
 
-/* 공수 일괄 적용 실행 (선택 인원 · 요청 1회 upsert) */
+/* 공수 일괄 적용 — 시간 선택창 적용
+   kind:'att' → 출근·퇴근 시간 저장 / kind:'leave' → 휴무(0공수) 등록 */
+var bulkPending = null;
+
+function bulkApplyNow() {
+  var b = bulkPending;
+  if (!b) { return; }
+  var ids = b.ids || [];
+  var date = b.date;
+  if (!ids.length) { toast('적용할 인원이 없습니다.'); return; }
+  if (b.kind === 'leave') {
+    var leaveRows = [];
+    ids.forEach(function (id) {
+      var p = personById(id);
+      if (!p) { return; }
+      p.leaves = p.leaves || [];
+      p.attendance = p.attendance || {};
+      delete p.attendance[date];
+      if (leaveOn(p, date)) { return; }
+      var meId = me() ? me().id : null;
+      var l = {
+        id: uuid(), date: date, reason: b.reason || '관리자 일괄 휴무', at: nowHM(),
+        teamName: teamLabel(p.teamId), reportTo: '관리자', status: 'pending',
+        ackAt: new Date().toISOString(), ackBy: meId
+      };
+      p.leaves.push(l);
+      leaveRows.push({
+        id: l.id, workerId: p.id, date: date, reason: l.reason, teamName: l.teamName,
+        reportTo: l.reportTo, ackAt: l.ackAt, ackBy: meId
+      });
+    });
+    insertLeaveBulk(leaveRows);
+    deleteAttendanceBulk(ids, date);
+    bulkSel = {};
+    bulkPending = null;
+    closeSheet();
+    render();
+    toast('<b>' + ids.length + '명</b> ' + longDate(date) + ' 휴무(0공수) 처리 완료<br>공수표·집계에 바로 0공수로 반영됩니다');
+    setTimeout(function () { refresh(true); }, 700);
+    return;
+  }
+  var gs = calcGongsu(b.in, b.out);
+  var rows = ids.map(function (id) {
+    return {
+      worker_id: id, work_date: date,
+      check_in: toIso(date, b.in), check_out: toIso(date, b.out),
+      in_edited: false, out_edited: false, gongsu: gs
+    };
+  });
+  ids.forEach(function (id) {
+    var p = personById(id);
+    p.attendance = p.attendance || {};
+    p.attendance[date] = { in: b.in, out: b.out, inEdited: false, outEdited: false };
+  });
+  bulkSel = {};
+  bulkPending = null;
+  saveAttendanceBulk(rows, '공수 일괄 적용');
+  closeSheet();
+  render();
+  toast('<b>' + ids.length + '명</b> ' + b.label + ' 적용 완료' + (date === todayKey() ? '' : '<br>' + longDate(date)));
+  setTimeout(function () { refresh(true); }, 700);
+}
+
 function bulkDoApply(key, date) {
   var preset = BULK_PRESETS[key];
   if (!preset) { return; }
@@ -457,26 +592,25 @@ function bulkDoApply(key, date) {
     var p = personById(id);
     return p && p.status !== 'resigned' && !leaveOn(p, date);
   });
-  if (!ids.length) { toast('적용할 인원이 없습니다.'); return; }
-  var gs = calcGongsu(preset.in, preset.out);
-  var rows = ids.map(function (id) {
-    return {
-      worker_id: id, work_date: date,
-      check_in: toIso(date, preset.in), check_out: toIso(date, preset.out),
-      in_edited: false, out_edited: false, gongsu: gs
-    };
-  });
-  ids.forEach(function (id) {
-    var p = personById(id);
-    p.attendance = p.attendance || {};
-    p.attendance[date] = { in: preset.in, out: preset.out, inEdited: false, outEdited: false };
-  });
-  bulkSel = {};
-  saveAttendanceBulk(rows, '공수 일괄 적용');
-  closeSheet();
-  render();
-  toast('<b>' + ids.length + '명</b> ' + preset.label + ' 적용 완료' + (date === todayKey() ? '' : '<br>' + longDate(date)));
-  setTimeout(function () { refresh(true); }, 600);
+  bulkPending = { kind: 'att', ids: ids, date: date, in: preset.in, out: preset.out, label: preset.label };
+  bulkApplyNow();
+}
+
+/* 직접 입력칸의 예상 공수 미리보기 */
+function bulkPreview() {
+  var box = $('#bulkPrev');
+  if (!box) { return; }
+  var iv = $('#bulk_in') ? $('#bulk_in').value : '';
+  var ov = $('#bulk_out') ? $('#bulk_out').value : '';
+  if (!iv || !ov) {
+    box.innerHTML = '시작·종료 시간을 넣으면 공수가 자동 계산됩니다.';
+    return;
+  }
+  if (minFromHM(ov) <= minFromHM(iv)) {
+    box.innerHTML = '<b class="bp-bad">종료 시간이 시작 시간보다 빠릅니다.</b>';
+    return;
+  }
+  box.innerHTML = '예상 공수 <b>' + fmtGs(calcGongsu(iv, ov)) + '공수</b> <span>(점심 11:00~13:00 제외)</span>';
 }
 
 /* 내 정보 · 내 한달 공수표 : 날짜별 직접 입력/수정 (미래 날짜 허용) */
@@ -502,9 +636,10 @@ function openMyGsEdit(date) {
     '<div class="att-now" id="mg_prev"></div>' +
     (lv ? '<div class="hint">이 날짜는 휴무 신청(' + esc(lv.reason) + ')이 있어 공수는 0으로 표시됩니다.</div>' : '') +
     '<div class="hint">출근·퇴근을 모두 비우면 그 날짜 기록을 지웁니다.</div>';
-  openSheet('내 한달 공수표 · ' + longDate(d), body,
+  openSheet('공수 입력 · ' + longDate(d), body,
     '<button class="btn btn-ghost" data-act="myGsBack">취소</button>' +
-    '<button class="btn btn-primary" data-act="myGsSave">근태 저장 / 수정</button>');
+    (a && (a.in || a.out) ? '<button class="btn btn-line" data-act="myGsDelete" data-date="' + d + '">삭제</button>' : '') +
+    '<button class="btn btn-primary" data-act="myGsSave">저장</button>');
   setTimeout(mgPreview, 30);
 }
 function mgPreview() {
@@ -576,28 +711,31 @@ var ACTIONS = {
   /* ----- 공통 ----- */
   role: function (el) {
     var r = el.getAttribute('data-role');
+    var went = false;
     if (r === 'worker') {
       state.role = 'worker';
       state.ui.timeEdit = false;
       sessionSetRole('worker');
-      render();
-      return;
-    }
-    if (r === 'manager') {
+      went = true;
+    } else if (r === 'manager') {
       if (!canManage()) { toast('팀장 권한이 없습니다.<br>관리자에게 권한 부여를 요청하세요.'); return; }
       state.role = 'manager';
       state.ui.timeEdit = false;
       sessionSetRole('manager');
-      render();
-      return;
+      went = true;
+    } else if (r === 'admin') {
+      if (!canAdmin()) { toast('관리자 권한이 없습니다.<br>관리자에게 권한 부여를 요청하세요.'); return; }
+      state.role = 'admin';
+      state.ui.timeEdit = false;
+      sessionSetRole('admin');
+      went = true;
     }
-    if (r !== 'admin') { return; }
-    if (!canAdmin()) { toast('관리자 권한이 없습니다.<br>관리자에게 권한 부여를 요청하세요.'); return; }
-    state.role = 'admin';
-    state.ui.timeEdit = false;
-    sessionSetRole('admin');
+    if (!went) { return; }
+    closeSheet();
     render();
+    toast((r === 'admin' ? '관리자' : r === 'manager' ? '팀장' : '기술인') + ' 화면으로 전환했어요');
   },
+  roleMenu: function () { openRoleMenu(); },
   tab: function (el) {
     state.ui[state.role + 'Tab'] = el.getAttribute('data-tab');
     state.ui.timeEdit = false;
@@ -702,6 +840,7 @@ var ACTIONS = {
     var np = {
       id: uuid(), name: f.name, job: f.job || '배관공', birth: f.birth, phone: f.phone,
       price: 0, teamId: null, role: 'worker', admin: false, status: 'active', resign: null,
+      hireDate: ($('#li_hire') ? $('#li_hire').value : '') || todayKey(),
       attendance: {}, leaves: [], certs: defaultCerts(),
       injury: { has: false, date: '', note: '' }, memo: '',
       privacyAgreedAt: new Date().toISOString(), privacyVersion: PRIVACY_VERSION,
@@ -765,6 +904,48 @@ var ACTIONS = {
     var p = (el && el.getAttribute('data-id')) ? personById(el.getAttribute('data-id')) : me();
     openSettings(p || me());
   },
+  /* 설정 시트 메뉴 */
+  myInfoEdit: function () { openMyInfoEdit(me()); },
+  myLeavesOpen: function () { openMyLeavesSheet(me()); },
+  myGsOpen: function () { openMyGsCal(); },
+  myGsToSettings: function () { openSettings(me()); },
+  /* 📋 인원 현황 카드 — 하루씩 이동 · 오늘 복귀 · 한달 보기 */
+  hcDay: function (el) {
+    var d = parseInt(el.getAttribute('data-d'), 10) || 1;
+    state.ui.hcDate = addDays(hcDateKey(), d);
+    render();
+  },
+  hcToday: function () {
+    state.ui.hcDate = todayKey();
+    render();
+  },
+  hcMonth: function (el) {
+    var mk = String((el && el.getAttribute('data-date')) || hcDateKey()).slice(0, 7);
+    state.ui.hcMonth = mk;
+    openHcMonth(mk);
+  },
+  hcMonthMove: function (el) {
+    var d = parseInt(el.getAttribute('data-d'), 10) || 1;
+    state.ui.hcMonth = shiftMonth(state.ui.hcMonth || todayKey().slice(0, 7), d);
+    var box = $('#hcMonthBox');
+    if (box) { box.innerHTML = hcMonthHTML(state.ui.hcMonth); }
+  },
+  hcPick: function (el) {
+    var k = el.getAttribute('data-date');
+    if (!k) { return; }
+    state.ui.hcDate = k;
+    closeSheet();
+    render();
+    toast(mdLabel(k) + ' (' + wd(k) + ') 인원 현황');
+  },
+  copyLeaveList: function (el) {
+    var k = (el && el.getAttribute('data-date')) || todayKey();
+    var text = leaveCopyText(k);
+    copyText(text, function (ok) {
+      toast(ok ? '휴무자 명단을 복사했어요<br><span class="muted">카톡에 붙여넣기 하세요</span>'
+        : '복사가 막혔어요 · 아래 내용을 길게 눌러 복사해 주세요<br><b>' + esc(text).replace(/\n/g, '<br>') + '</b>');
+    });
+  },
   saveMyInfo: function (el) {
     var p = personById(el.getAttribute('data-id'));
     if (!p) { return; }
@@ -776,9 +957,10 @@ var ACTIONS = {
     p.birth = birth;
     p.phone = ($('#mi_phone').value || '').trim() || p.phone;
     p.job = $('#mi_job').value || p.job;
+    if ($('#mi_hire')) { p.hireDate = $('#mi_hire').value || ''; }
     var s = sessionRead();
     if (s && s.personId === p.id) { sessionSave(p, state.role); }
-    patchWorker(p.id, { name: p.name, birth_date: p.birth, phone: p.phone, job_type: p.job }, '내 정보 저장');
+    patchWorker(p.id, { name: p.name, birth_date: p.birth, phone: p.phone, job_type: p.job, hire_date: p.hireDate || null }, '내 정보 저장');
     render();
     openSettings(p);
     toast('내 정보를 저장했어요 · 관리자 인원 목록에도 반영');
@@ -1039,11 +1221,8 @@ var ACTIONS = {
     });
     syncBulkUI();
   },
-  bulkGsApply: function (el) {
+  bulkGsApply: function () {
     if (!canManage()) { toast('관리자·팀장만 공수를 일괄 적용할 수 있습니다.'); return; }
-    var key = el.getAttribute('data-gs');
-    var preset = BULK_PRESETS[key];
-    if (!preset) { return; }
     var date = state.ui.bulkDate || ($('#bulkDate') ? $('#bulkDate').value : '') || todayKey();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { toast('날짜를 선택해 주세요.'); return; }
     if (date > todayKey()) { toast('미래 날짜는 공수를 넣을 수 없습니다.<br>오늘까지만 입력할 수 있어요.'); return; }
@@ -1051,25 +1230,55 @@ var ACTIONS = {
       var p = personById(id);
       return p && p.status !== 'resigned';
     });
-    if (!ids.length) { toast('공수를 넣을 인원을 선택해 주세요.'); return; }
+    if (!ids.length) { toast('공수를 넣을 인원을 선택해 주세요.<br>이름 왼쪽 체크박스를 눌러 주세요.'); return; }
+
+    var val = $('#bulkGsSel') ? $('#bulkGsSel').value : 'p:07:00|17:00';
+
+    /* 휴무(0공수) — leaves 에 등록해 공수표·집계 모두 0으로 */
+    if (val === 'leave') {
+      var hadAtt = ids.filter(function (id) {
+        var a = personById(id).attendance[date];
+        return !!(a && (a.in || a.out));
+      });
+      var msg = '<b>' + ids.length + '명</b>을 ' + longDate(date) + ' <b>휴무(0공수)</b>로 처리합니다.<br>휴무 신청 내역에도 함께 남습니다.';
+      if (hadAtt.length) { msg += '<br>출퇴근 기록이 있는 <b>' + hadAtt.length + '명</b>은 기록을 지우고 휴무로 바뀝니다.'; }
+      bulkPending = { kind: 'leave', ids: ids, date: date, reason: '관리자 일괄 휴무' };
+      confirmSheet('휴무(0공수)로 처리할까요?', msg, '휴무 처리', 'bulkGsDo', '', true);
+      return;
+    }
+
+    var inHM = '', outHM = '', label = '';
+    if (val === 'custom') {
+      inHM = $('#bulk_in') ? $('#bulk_in').value : '';
+      outHM = $('#bulk_out') ? $('#bulk_out').value : '';
+      if (!inHM || !outHM) { toast('시작·종료 시간을 넣어 주세요.'); return; }
+      if (minFromHM(outHM) <= minFromHM(inHM)) { toast('종료 시간이 시작 시간보다 빠릅니다.<br>다시 확인해 주세요.'); return; }
+      label = fmtGs(calcGongsu(inHM, outHM)) + '공수(' + inHM + '~' + outHM + ')';
+    } else {
+      var mm = /^p:(\d{2}:\d{2})\|(\d{2}:\d{2})$/.exec(val);
+      if (!mm) { toast('적용할 시간을 골라 주세요.'); return; }
+      inHM = mm[1]; outHM = mm[2];
+      label = fmtGs(calcGongsu(inHM, outHM)) + '공수(' + inHM + '~' + outHM + ')';
+    }
+
     var leaveIds = ids.filter(function (id) { return !!leaveOn(personById(id), date); });
     var useIds = ids.filter(function (id) { return leaveIds.indexOf(id) < 0; });
-    if (!useIds.length) { toast('선택한 인원이 모두 그 날짜에 휴무입니다.'); return; }
+    if (!useIds.length) { toast('선택한 인원이 모두 그 날짜에 휴무입니다.<br>다른 날짜를 골라 주세요.'); return; }
     var ow = useIds.filter(function (id) {
       var a = personById(id).attendance[date];
       return !!(a && (a.in || a.out));
     });
+    bulkPending = { kind: 'att', ids: useIds, date: date, in: inHM, out: outHM, label: label };
     if (ow.length || leaveIds.length) {
-      var msg = '<b>' + useIds.length + '명</b>에게 ' + longDate(date) + ' <b>' + preset.label + '</b>을 적용합니다.';
-      if (ow.length) { msg += '<br>이미 기록이 있는 <b>' + ow.length + '명</b>은 덮어씁니다.'; }
-      if (leaveIds.length) { msg += '<br>휴무 신청이 있는 <b>' + leaveIds.length + '명</b>은 제외합니다.'; }
-      confirmSheet('공수를 일괄 적용할까요?', msg, '적용', 'bulkGsDo',
-        'data-gs="' + key + '" data-date="' + date + '"', false);
+      var msg2 = '<b>' + useIds.length + '명</b>에게 ' + longDate(date) + ' <b>' + label + '</b>을 적용합니다.';
+      if (ow.length) { msg2 += '<br>이미 기록이 있는 <b>' + ow.length + '명</b>은 덮어씁니다.'; }
+      if (leaveIds.length) { msg2 += '<br>휴무 신청이 있는 <b>' + leaveIds.length + '명</b>은 제외합니다.'; }
+      confirmSheet('공수를 일괄 적용할까요?', msg2, '적용', 'bulkGsDo', '', false);
       return;
     }
-    bulkDoApply(key, date);
+    bulkApplyNow();
   },
-  bulkGsDo: function (el) { bulkDoApply(el.getAttribute('data-gs'), el.getAttribute('data-date')); },
+  bulkGsDo: function () { bulkApplyNow(); },
   openPerson: function (el) { openPerson(el.getAttribute('data-id')); },
   pmonth: function (el) {
     var d = parseInt(el.getAttribute('data-d'), 10);
@@ -1158,9 +1367,11 @@ var ACTIONS = {
       note: $('#pf_injnote') ? $('#pf_injnote').value.trim() : ''
     };
     p.memo = $('#pf_memo') ? $('#pf_memo').value : '';
+    if ($('#pf_hire')) { p.hireDate = $('#pf_hire').value || ''; }
 
     var fields = {
       name: p.name, birth_date: p.birth || null, phone: p.phone || null, job_type: p.job || null,
+      hire_date: p.hireDate || null,
       team_id: p.teamId, certs_json: p.certs,
       injury_has: !!p.injury.has, injury_date: p.injury.date || null,
       injury_note: p.injury.note || null, memo: p.memo || null
@@ -1363,10 +1574,20 @@ var ACTIONS = {
     state.ui.myGsMonth = shiftMonth(myGsMonthKey(), d);
     var box = $('#myGsBox');
     var p = me();
-    if (box && p) { box.innerHTML = myGsTableHTML(p); }
+    if (box && p) { box.innerHTML = myGsCalHTML(p); }
   },
   myGsPick: function (el) { openMyGsEdit(el.getAttribute('data-date')); },
-  myGsBack: function () { openSettings(me()); },
+  myGsBack: function () { openMyGsCal(); },
+  myGsDelete: function (el) {
+    var p = me();
+    if (!p) { return; }
+    var d = el.getAttribute('data-date') || ($('#mg_date') ? $('#mg_date').value : '') || todayKey();
+    delete (p.attendance || {})[d];
+    state.ui.myGsMonth = d.slice(0, 7);
+    saveAttendance(p, d, '내 근태 삭제');
+    openMyGsCal();
+    toast(longDate(d) + ' 공수 기록을 지었습니다');
+  },
   mgPreset: function (el) {
     if ($('#mg_in')) { $('#mg_in').value = el.getAttribute('data-in'); }
     if ($('#mg_out')) { $('#mg_out').value = el.getAttribute('data-out'); }
@@ -1383,7 +1604,7 @@ var ACTIONS = {
     if (err) { toast(err + '<br>다시 확인해 주세요.'); return; }
     saveAttendance(p, d, '내 근태 저장');
     state.ui.myGsMonth = d.slice(0, 7);
-    openSettings(p);
+    openMyGsCal();
     var a = p.attendance[d];
     toast(longDate(d) + ' 근태 저장 완료 · <b>' + fmtGs(a ? gongsuOf(a) : 0) + '공수</b>' +
       (d > todayKey() ? '<br>미래 날짜 · 본인 공수표에만 합산됩니다' : ''));
@@ -1556,6 +1777,23 @@ var ACTIONS = {
     toast('응답을 마감했어요');
   },
   pollDetail: function (el) { openPollDetail(el.getAttribute('data-id')); },
+  pollAdmin: function (el) { openPollAdmin(el.getAttribute('data-id')); },
+  pollSetVote: function (el) {
+    if (!canManage()) { toast('관리자·팀장만 바꿀 수 있습니다.'); return; }
+    var id = el.getAttribute('data-id'), wid = el.getAttribute('data-wid'), v = el.getAttribute('data-v');
+    var poll = state.polls.filter(function (x) { return x.id === id; })[0];
+    if (!poll || !wid || (v !== 'yes' && v !== 'no')) { return; }
+    poll.votes[wid] = v;
+    saveVote(poll.id, wid, v);
+    var sb = $('#sheetBody');
+    var keep = sb ? sb.scrollTop : 0;
+    render();
+    openPollAdmin(poll.id);
+    var sb2 = $('#sheetBody');
+    if (sb2) { sb2.scrollTop = keep; }
+    var wp = personById(wid);
+    toast((wp ? esc(wp.name) : '인원') + ' · <b>' + (v === 'yes' ? '출근' : '미출근') + '</b>으로 바꿨어요');
+  },
 
   /* ----- 현장 자료 PDF / 공지 ----- */
   openPdf: function (el) { openPdf(el.getAttribute('data-id')); },
@@ -1739,6 +1977,12 @@ function onChange(e) {
     syncBulkUI();
   }
   if (el.id === 'bulkDate') { state.ui.bulkDate = el.value || todayKey(); }
+  if (el.id === 'bulkGsSel') {
+    var cust = $('#bulkCustom');
+    if (cust) { cust.classList.toggle('hide', el.value !== 'custom'); }
+    if (el.value === 'custom') { bulkPreview(); }
+  }
+  if (el.id === 'bulk_in' || el.id === 'bulk_out') { bulkPreview(); }
   if (el.id === 'mg_date') {
     var mp = me();
     var md = el.value || todayKey();
