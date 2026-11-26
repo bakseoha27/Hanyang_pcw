@@ -2205,6 +2205,18 @@ var ACTIONS = {
   },
 
   /* ----- 📢 기술인 전체 알림 ----- */
+  pushCompose: function () {
+    if (!isAdminView()) { toast('관리자만 전체 알림을 보낼 수 있습니다.'); return; }
+    openPushCompose();
+  },
+  broadcastSendCustom: async function () {
+    if (!isAdminView()) { toast('관리자만 전체 알림을 보낼 수 있습니다.'); return; }
+    var t = ($('#bc_title') ? $('#bc_title').value : '').trim();
+    var b = ($('#bc_body') ? $('#bc_body').value : '').trim();
+    if (!t) { toast('알림 제목을 입력해 주세요.'); return; }
+    state.ui.pushBroadcast = { kind: 'custom', id: '', title: t, body: b || t };
+    ACTIONS.broadcastSend();
+  },
   noticePush: function (el) {
     if (!isAdminView()) { toast('관리자만 전체 알림을 보낼 수 있습니다.'); return; }
     var id = el.getAttribute('data-id');

@@ -831,8 +831,9 @@ function noticeBannerHTML(who) {
   var canNotice = who === 'admin' && isAdminView();
   var addBtn = canNotice ? '<button class="link-btn" data-act="noticeNew">＋ 새 공지 올리기</button>' : '';
   var pollBtn = (canNotice && !pollOpenNow()) ? '<button class="link-btn" data-act="newPoll">＋ 토요일 조사</button>' : '';
+  var pushBtn = canNotice ? '<button class="link-btn" data-act="pushCompose">📢 전체 알림</button>' : '';
   var pollBlock = noticePollHTML(who);
-  var footExtra = (addBtn || pollBtn) ? '<span class="nf-acts">' + addBtn + pollBtn + '</span>' : '';
+  var footExtra = (addBtn || pollBtn || pushBtn) ? '<span class="nf-acts">' + addBtn + pollBtn + pushBtn + '</span>' : '';
   if (!ns.length) {
     return '<div class="card notice-card">' +
       pollBlock +
@@ -890,6 +891,21 @@ function openNoticeList() {
       '<span class="p-right"><span class="notice-date">자세히 ›</span></span></div>';
   }).join('') : '<div class="empty">등록된 공지가 없습니다.</div>';
   openSheet('공지사항 목록', body, '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>');
+}
+
+/* 전체 알림 — 제목·내용을 직접 적어 보내기 (공지로 등록하지 않아도 됨) */
+function openPushCompose() {
+  if (!isAdminView()) { toast('관리자만 전체 알림을 보낼 수 있습니다.'); return; }
+  state.ui.pushBroadcast = null;
+  var html = '<div class="banner">재직 중인 <b>기술인 전체</b>의 휴대폰에 팝업·소리 알림이 울립니다.</div>' +
+    '<label class="field"><span>제목</span><input id="bc_title" placeholder="예) [공지] 내일 07:00 현장 집결"></label>' +
+    '<label class="field"><span>내용</span><textarea id="bc_body" rows="3" placeholder="전할 내용을 적어 주세요 (앱을 누르면 열립니다)"></textarea></label>' +
+    '<label class="field" style="margin-top:8px"><span>🔐 관리자 암호</span>' +
+    '<input id="bc_code" type="password" value="' + esc(adminCodeGet()) + '" placeholder="관리자 암호를 입력하세요"></label>' +
+    '<div class="hint">보낸 뒤에는 취소할 수 없어요. 내용을 확인하고 눌러 주세요.</div>';
+  openSheet('📢 기술인 전체 알림', html,
+    '<button class="btn btn-ghost" data-act="closeSheet">취소</button>' +
+    '<button class="btn btn-primary" data-act="broadcastSendCustom">전체에게 보내기</button>');
 }
 
 function openAddNotice() {
