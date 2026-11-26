@@ -62,7 +62,7 @@ function renderSync() {
 function topBrandHTML() {
   return '<div class="brand"><div class="brand-mark">한</div><div>' +
     '<div class="brand-title">한양 pcw팀</div>' +
-    '<div class="brand-sub">한양엔지(주) PCW · ' + shortDate(todayKey()) + ' (' + wd(todayKey()) + ')</div>' +
+    '<div class="brand-sub">한양이엔지(주) PCW · ' + shortDate(todayKey()) + ' (' + wd(todayKey()) + ')</div>' +
     '</div></div>';
 }
 
@@ -131,10 +131,11 @@ function loginView() {
       '<br>전화 · 와이파이 상태를 확인하고 다시 시도해 주세요.</div>';
   }
   var agreed = !!(state.ui && state.ui.privacyChecked);
+  var sensitive = !!(state.ui && state.ui.sensitiveChecked);
   return '<div class="login-brand card">' +
     '<div class="lb-mark">한</div>' +
     '<div class="lb-t">한양 pcw팀 로그인</div>' +
-    '<div class="lb-s">한양엔지(주) PCW · 처음이면 입력한 정보로 자동 등록됩니다</div>' +
+    '<div class="lb-s">한양이엔지(주) PCW · 처음이면 입력한 정보로 자동 등록됩니다</div>' +
     '</div>' +
     '<div class="card">' + err +
     '<label class="field"><span>이름</span><input id="li_name" placeholder="예) 김기종" autocomplete="name"></label>' +
@@ -144,9 +145,16 @@ function loginView() {
     '<label class="field hide" id="li_pass_wrap"><span>🔐 관리자 암호</span>' +
     '<input id="li_pass" type="password" autocomplete="current-password" placeholder="관리자 암호를 입력하세요"></label>' +
     '<div class="privacy-box">' +
+    '<div class="privacy-row">' +
     '<label class="privacy-agree"><input type="checkbox" id="li_privacy"' + (agreed ? ' checked' : '') + '>' +
     '<span class="privacy-txt"><b>[필수]</b> 개인정보 수집·이용에 동의합니다</span></label>' +
     '<button type="button" class="privacy-view" data-act="openPrivacy" data-from="login">내용 보기</button>' +
+    '</div>' +
+    '<div class="privacy-row">' +
+    '<label class="privacy-agree"><input type="checkbox" id="li_sensitive"' + (sensitive ? ' checked' : '') + '>' +
+    '<span class="privacy-txt"><b class="opt">[선택]</b> 민감정보(현장 부상 이력) 수집·이용에 동의합니다</span></label>' +
+    '<button type="button" class="privacy-view" data-act="openSensitive" data-from="login">내용 보기</button>' +
+    '</div>' +
     '</div>' +
     '<button class="btn btn-primary block" style="margin-top:12px" data-act="loginSubmit">로그인</button>' +
     '<div class="hint">등록된 <b>이름 · 생년월일 · 전화번호</b>가 같으면 바로 로그인됩니다. 처음이면 기술인으로 자동 등록돼요.</div>' +
@@ -161,10 +169,10 @@ function loginView() {
    ========================================================= */
 function privacyDocHTML() {
   return '<div class="pdoc">' +
-    '<div class="lead">한양엔지(주) PCW팀은 「개인정보 보호법」 제15조에 따라 아래와 같이 개인정보를 수집·이용합니다. 내용을 확인하신 뒤 동의 여부를 결정해 주세요.</div>' +
+    '<div class="lead">한양이엔지(주) PCW팀은 「개인정보 보호법」 제15조에 따라 아래와 같이 개인정보를 수집·이용합니다. 내용을 확인하신 뒤 동의 여부를 결정해 주세요.</div>' +
 
     '<h3>1. 개인정보처리자</h3>' +
-    '<p>· 상호: 한양엔지(주) PCW팀</p>' +
+    '<p>· 상호: 한양이엔지(주) PCW팀</p>' +
     '<p>· 개인정보 관리자: 박서하</p>' +
     '<p>· 문의: 현장 관리자(박서하)에게 직접 연락</p>' +
     '<p>· 보관 장소: 현장 앱 클라우드 데이터베이스(Supabase · 서울 리전)</p>' +
@@ -180,7 +188,7 @@ function privacyDocHTML() {
     '<p>· 출퇴근·공수·휴무·퇴사 정보(사직서 작성·TBM카드 반납 확인 포함)</p>' +
     '<p>· 작업일보</p>' +
     '<p>· 자격 정보(TBM·유도원 등)</p>' +
-    '<p>· 현장 안전·부상 이력(관리자 열람 전용)</p>' +
+    '<p>· 현장 부상 이력 등 민감정보는 이 동의서에 포함하지 않으며, 아래 <b>[선택] 민감정보 수집·이용 동의서</b>로 따로 동의를 받습니다.</p>' +
 
     '<h3>4. 보유 및 이용 기간</h3>' +
     '<p>· 근무 기간 중 보유하며, 퇴사 및 목적 달성 후 지체 없이 파기합니다.</p>' +
@@ -201,6 +209,45 @@ function openPrivacySheet(from) {
     ? '<button class="btn btn-line" data-act="openSettings">내 정보로</button>' : '') +
     '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>';
   openSheet('개인정보 수집·이용 동의서', privacyDocHTML(), footer);
+}
+
+/* =========================================================
+   민감정보(현장 부상 이력) 별도 동의서 — 개인정보 보호법 제23조
+   ========================================================= */
+var SENSITIVE_DOC_VERSION = '2026-11-26-v1';
+function sensitiveDocHTML() {
+  return '<div class="pdoc">' +
+    '<div class="lead">한양이엔지(주) PCW팀은 「개인정보 보호법」 제23조(민감정보의 처리 제한)에 따라 아래 민감정보를 별도로 수집·이용합니다. 이 동의는 <b>선택</b>이며, 동의하지 않아도 앱 로그인과 기본 근태·작업일보 이용에는 제한이 없습니다. (같은 법 제16조 제3항에 따라 다른 동의와 구분하여 받습니다.)</div>' +
+
+    '<h3>1. 근거</h3>' +
+    '<p>· 「개인정보 보호법」 제23조(민감정보의 처리 제한)</p>' +
+
+    '<h3>2. 수집·이용 목적</h3>' +
+    '<p>· 현장 안전관리 및 산업재해·부상 발생 시 응급 대응</p>' +
+    '<p>· 업무 배치 참고</p>' +
+
+    '<h3>3. 수집 항목 <span class="must">(선택)</span></h3>' +
+    '<p>· 현장 부상 이력 및 안전 특이사항(관리자 열람·기록 전용)</p>' +
+
+    '<h3>4. 보유 및 이용 기간</h3>' +
+    '<p>· 현장 투입 종료·퇴사 시 지체 없이 파기</p>' +
+    '<p>· 단, 산업안전보건법·근로기준법 등 법정 보존 필요 시 해당 기간 보관</p>' +
+
+    '<h3>5. 동의 거부 권리 및 불이익</h3>' +
+    '<p>· 민감정보 수집·이용 동의를 거부할 수 있습니다.</p>' +
+    '<p>· 거부하더라도 앱 로그인 및 기본 근태·작업일보 이용에는 제한이 없습니다.</p>' +
+
+    '<h3>6. 동의 기록</h3>' +
+    '<p>· 동의한 경우에만 동의 일시가 앱 데이터베이스에 자동으로 기록됩니다. (동의서 버전 ' + esc(SENSITIVE_DOC_VERSION) + ')</p>' +
+    '<div class="meta">시행일 2026년 11월 26일 · 이 동의서는 「내 정보」에서 언제든 다시 볼 수 있습니다.</div>' +
+    '</div>';
+}
+
+function openSensitiveSheet(from) {
+  var footer = (from === 'settings'
+    ? '<button class="btn btn-line" data-act="openSettings">내 정보로</button>' : '') +
+    '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>';
+  openSheet('민감정보 수집·이용 동의서', sensitiveDocHTML(), footer);
 }
 
 function readLoginForm() {
@@ -303,7 +350,11 @@ function openSettings(p) {
       : '기록 없음 (다음 로그인 시 기록)') + '</b></div>' +
     '<div class="kv"><span>동의서 버전</span><b>' + esc(p.privacyVersion || PRIVACY_VERSION) + '</b></div>' +
     '<button class="btn btn-line blue sm block" style="margin-top:9px" data-act="openPrivacy" data-from="settings">개인정보 수집·이용 동의서 보기</button>' +
-    '<div class="hint">로그인할 때 동의 일시가 자동으로 기록됩니다.</div>' +
+    '<div class="kv" style="margin-top:11px"><span>민감정보 동의</span><b>' + (p.sensitiveAgreedAt
+      ? '동의함(' + kstDate(p.sensitiveAgreedAt) + ' ' + kstHM(p.sensitiveAgreedAt) + ')'
+      : '미동의') + '</b></div>' +
+    '<button class="btn btn-line blue sm block" style="margin-top:6px" data-act="openSensitive" data-from="settings">민감정보 동의서 보기</button>' +
+    '<div class="hint">로그인할 때 동의 일시가 자동으로 기록됩니다. 민감정보(현장 부상 이력)는 <b>[선택]</b> 동의로 따로 받습니다.</div>' +
     '</div>' +
 
     passSect +
@@ -543,7 +594,7 @@ function workerHome(p) {
   return noticeBannerHTML('worker') + schedSummaryHTML() +
     '<div class="hello"><span class="av lg">' + esc(p.name.slice(0, 1)) + '</span><div>' +
     '<div class="h-name">' + esc(p.name) + ' 님</div>' +
-    '<div class="muted">' + teamLabel(p.teamId) + ' · ' + esc(p.job) + ' · 한양엔지(주) PCW</div></div></div>' +
+    '<div class="muted">' + teamLabel(p.teamId) + ' · ' + esc(p.job) + ' · 한양이엔지(주) PCW</div></div></div>' +
     attCard + pollCard + leaveCard + pdfQuickHTML() + resignCard +
     '<div class="foot-note">한양 pcw팀 · Supabase 실시간 저장</div>';
 }
@@ -1286,7 +1337,7 @@ function composeDailyDigest(date) {
   var teams = state.teams;
   var subs = teams.filter(function (t) { return !!findReport(t.id, date); }).length;
   var lines = [];
-  lines.push('[한양엔지(주) PCW 작업일보] ' + longDate(date));
+  lines.push('[한양이엔지(주) PCW 작업일보] ' + longDate(date));
   lines.push('제출 ' + subs + '조 / 미제출 ' + (teams.length - subs) + '조');
   lines.push('');
   teams.forEach(function (t) {

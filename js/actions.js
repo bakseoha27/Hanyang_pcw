@@ -325,6 +325,9 @@ var ACTIONS = {
       toast('개인정보 수집·이용 동의에 체크해야 로그인할 수 있습니다.');
       return;
     }
+    /* [선택] 민감정보 동의 — 선택 사항이라 미체크여도 로그인 진행 */
+    var sensEl = $('#li_sensitive');
+    var sensitiveChecked = !!(sensEl && sensEl.checked);
     var found = state.people.filter(function (p) {
       return p.name === f.name && p.birth === f.birth && phoneDigits(p.phone) === f.pd;
     })[0];
@@ -343,6 +346,7 @@ var ACTIONS = {
       if (!v.pass) { toast('관리자 암호가 올바르지 않습니다.'); return; }
       state.auth = { personId: found.id };
       markPrivacyAgree(found);
+      if (sensitiveChecked) { markSensitiveAgree(found); }
       sessionSave(found, 'admin');
       state.role = 'admin';
       state.ui.adminTab = 'dash';
@@ -363,6 +367,7 @@ var ACTIONS = {
       }
       state.auth = { personId: found.id };
       markPrivacyAgree(found);
+      if (sensitiveChecked) { markSensitiveAgree(found); }
       sessionSave(found, 'worker');
       state.role = 'worker';
       state.ui.workerTab = 'home';
@@ -380,7 +385,8 @@ var ACTIONS = {
       price: 0, teamId: null, role: 'worker', admin: false, status: 'active', resign: null,
       attendance: {}, leaves: [], certs: defaultCerts(),
       injury: { has: false, date: '', note: '' }, memo: '',
-      privacyAgreedAt: new Date().toISOString(), privacyVersion: PRIVACY_VERSION
+      privacyAgreedAt: new Date().toISOString(), privacyVersion: PRIVACY_VERSION,
+      sensitiveAgreedAt: sensitiveChecked ? new Date().toISOString() : ''
     };
     state.people.push(np);
     state.auth = { personId: np.id };
@@ -393,6 +399,9 @@ var ACTIONS = {
   },
   openPrivacy: function (el) {
     openPrivacySheet(el ? el.getAttribute('data-from') : '');
+  },
+  openSensitive: function (el) {
+    openSensitiveSheet(el ? el.getAttribute('data-from') : '');
   },
   changeAdminPass: async function () {
     var p = me();
@@ -1200,6 +1209,9 @@ function onChange(e) {
   var el = e.target;
   if (el.id === 'li_privacy') {
     state.ui.privacyChecked = !!el.checked;
+  }
+  if (el.id === 'li_sensitive') {
+    state.ui.sensitiveChecked = !!el.checked;
   }
   if (el.id === 'li_job') {
     toggleLoginPass(el.value === LOGIN_ADMIN_LABEL);

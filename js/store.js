@@ -228,7 +228,8 @@ function mapWorker(w) {
     injury: { has: !!w.injury_has, date: w.injury_date || '', note: w.injury_note || '' },
     memo: w.memo || '',
     privacyAgreedAt: w.privacy_agreed_at || '',
-    privacyVersion: w.privacy_version || ''
+    privacyVersion: w.privacy_version || '',
+    sensitiveAgreedAt: w.sensitive_agreed_at || ''
   };
 }
 
@@ -518,6 +519,7 @@ function logOut() {
   state.role = 'worker';
   state.draft = null;
   state.ui.privacyChecked = false;
+  state.ui.sensitiveChecked = false;
   state.ui.schedSheet = false;
   state.ui.schedBackToCal = false;
   closeSheet();
@@ -649,6 +651,14 @@ function markPrivacyAgree(p) {
   patchWorker(p.id, { privacy_agreed_at: at, privacy_version: PRIVACY_VERSION }, '개인정보 동의 저장');
   return at;
 }
+/* [선택] 민감정보(현장 부상 이력) 동의 기록 : workers.sensitive_agreed_at */
+function markSensitiveAgree(p) {
+  if (!p) { return ''; }
+  var at = new Date().toISOString();
+  p.sensitiveAgreedAt = at;
+  patchWorker(p.id, { sensitive_agreed_at: at }, '민감정보 동의 저장');
+  return at;
+}
 function insertWorker(p, label) {
   return apiWrite({
     m: 'POST', path: '/rest/v1/workers', prefer: 'return=minimal', label: label || '신규 인원 등록',
@@ -658,7 +668,8 @@ function insertWorker(p, label) {
       is_admin: !!p.admin, daily_rate: p.price || null, certs_json: p.certs || [],
       injury_has: !!p.injury.has, injury_date: p.injury.date || null, injury_note: p.injury.note || null,
       memo: p.memo || null, status: p.status || 'active',
-      privacy_agreed_at: p.privacyAgreedAt || null, privacy_version: p.privacyVersion || null
+      privacy_agreed_at: p.privacyAgreedAt || null, privacy_version: p.privacyVersion || null,
+      sensitive_agreed_at: p.sensitiveAgreedAt || null
     }
   });
 }

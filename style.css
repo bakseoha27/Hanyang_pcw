@@ -602,12 +602,15 @@ a.btn{text-decoration:none;}
 .sched-sum-go{flex:0 0 auto;font-size:11.5px;font-weight:900;color:var(--blue);letter-spacing:-.2px;}
 
 /* ---------- 개인정보 수집·이용 동의 ---------- */
-.privacy-box{margin-top:12px;display:flex;align-items:center;gap:8px;
+.privacy-box{margin-top:12px;display:flex;flex-direction:column;gap:9px;
   background:#F7FAFF;border:1.5px solid #DCE7FF;border-radius:14px;padding:11px 12px;}
+.privacy-row{display:flex;align-items:center;gap:8px;}
+.privacy-row + .privacy-row{padding-top:9px;border-top:1px dashed #D5E2FF;}
 .privacy-agree{flex:1 1 auto;min-width:0;display:flex;align-items:flex-start;gap:8px;cursor:pointer;}
 .privacy-agree input{flex:0 0 auto;width:18px;height:18px;margin:1px 0 0;accent-color:var(--blue);}
 .privacy-txt{font-size:12.5px;font-weight:700;color:#344054;letter-spacing:-.25px;line-height:1.4;}
 .privacy-txt b{color:var(--blue);font-weight:900;}
+.privacy-txt b.opt{color:var(--gray);}
 .privacy-view{flex:0 0 auto;font-size:11.5px;font-weight:900;color:var(--blue);background:#fff;
   border:1.5px solid #C7D7FE;border-radius:9px;padding:6px 9px;letter-spacing:-.2px;}
 .privacy-view:active{background:#EEF4FF;}

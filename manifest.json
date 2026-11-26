@@ -1,7 +1,7 @@
 {
   "name": "한양 pcw팀",
   "short_name": "한양 pcw팀",
-  "description": "한양 pcw팀 · 한양엔지(주) PCW 현장 앱 · 출퇴근 · 휴무 · 작업일보 · 현장자료",
+  "description": "한양 pcw팀 · 한양이엔지(주) PCW 현장 앱 · 출퇴근 · 휴무 · 작업일보 · 현장자료",
   "lang": "ko",
   "dir": "ltr",
   "start_url": "./index.html",
