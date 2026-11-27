@@ -3,6 +3,8 @@
    · 브라우저에는 anon 키만 있고, 실제 조회·다운로드는
      Edge Function(onboarding-admin)이 서비스롤 키로 처리합니다.
    · v9 (2026-11-27): PC 최적화 · [보류] 탭 분리 · [선택한 인원 처리] 드롭다운
+   · v10 (2026-11-27): 한양교육일자/홍채등록일자 분리 · 상태·단가 바로 수정 ·
+     단가 변경 이력 · 취합완료 배지 숨김 · P5 PH1 명단 엑셀
    ========================================================= */
 (function () {
   'use strict';
@@ -13,6 +15,7 @@
     auth: null,
     rows: [],
     vendors: [],
+    irisMiss: [],
     sel: {},
     q: '',
     tab: 'active',
@@ -140,6 +143,47 @@
     if (!s) { return ''; }
     return isNum(s) ? Number(String(s).replace(/,/g, '')).toLocaleString('ko-KR') : s;
   }
+  // 단가 원문(숫자만) — 인라인 수정칸 초기값
+  function wageRaw(v) {
+    var s = String(v == null ? '' : v).trim();
+    if (!s) { return ''; }
+    return isNum(s) ? String(Number(String(s).replace(/,/g, '').replace(/[^\d.-]/g, ''))) : s;
+  }
+  // '150000' → '150,000원' / '18' → '18만원' (만원 단위로 적은 값) / 비면 '미기재'
+  function wonText(v, empty) {
+    var s = String(v == null ? '' : v).trim();
+    if (!s) { return empty || '미기재'; }
+    var n = Number(String(s).replace(/[,\s]/g, ''));
+    if (!isFinite(n)) { return s; }
+    if (n > 0 && n < 1000) { return n.toLocaleString('ko-KR') + '만원'; }
+    return n.toLocaleString('ko-KR') + '원';
+  }
+  function wageAtText(iso) {
+    if (!iso) { return ''; }
+    var d = new Date(iso);
+    if (isNaN(d)) { return String(iso); }
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  function wageHistoryOf(r) {
+    return Array.isArray(r && r.wage_history) ? r.wage_history : [];
+  }
+  // 2026-12-07 → 261207
+  function ymd6(v) {
+    var s = String(v || '').replace(/\D/g, '');
+    if (s.length === 8) { return s.slice(2); }
+    return s.length === 6 ? s : '';
+  }
+  // 2026-12-07 → 26.12.07
+  function dotDate(v) {
+    var s = ymd6(v);
+    return s ? s.slice(0, 2) + '.' + s.slice(2, 4) + '.' + s.slice(4, 6) : '';
+  }
+  // 2026-12-07 → 12.07
+  function mdDot(v) {
+    var s = ymd6(v);
+    return s ? s.slice(2, 4) + '.' + s.slice(4, 6) : '';
+  }
 
   /* 직종 — 미정 / 보통인부 · 배관공 · 용접공 · 품질관리자 / 직접입력 (v7) */
   var JOB_LIST = ['보통인부', '배관공', '용접공', '품질관리자'];
@@ -161,6 +205,35 @@
   function jobText(r) {
     var c = String((r && r.job_role) || '').trim();
     return c;
+  }
+
+  /* P5 PH1 자격 (v10) — 상세에서 켜고 끄면 보유 자격(certs)에 저장되고,
+     [📋 P5 PH1 명단] 엑셀 2번째 시트(자격자 명단)로 나간다. */
+  var P5_QUALS = [
+    { key: 'tbm', label: 'TBM 리더', icon: '🎯', cert: 'TBM 리더' },
+    { key: 'drive', label: 'TL 운전원', icon: '🚚', cert: 'TL 운전원' },
+    { key: 'guide', label: 'TL 유도원', icon: '🚩', cert: 'TL 유도원' }
+  ];
+  function qualList(r) {
+    var certs = Array.isArray(r && r.certs) ? r.certs.map(function (c) { return String(c || ''); }) : [];
+    var out = [];
+    var add = function (k) { if (out.indexOf(k) < 0) { out.push(k); } };
+    certs.forEach(function (c) {
+      var s = c.replace(/\s+/g, '');
+      if (!s) { return; }
+      if (/TBM/i.test(s)) { add('tbm'); }
+      else if (/유도|신호수/.test(s)) { add('guide'); }
+      else if (/TL|운전|굴절/i.test(s)) { add('drive'); }
+    });
+    return { keys: out, certs: certs };
+  }
+  function qualOf(r) { return qualList(r).keys; }
+  function certIsQual(c, key) {
+    var s = String(c || '').replace(/\s+/g, '');
+    if (!s) { return false; }
+    if (key === 'tbm') { return /TBM/i.test(s); }
+    if (key === 'guide') { return /유도|신호수/.test(s) && !/TBM/i.test(s); }
+    return /TL|운전|굴절/i.test(s) && !/유도|신호수/.test(s) && !/TBM/i.test(s);
   }
 
   function filesOf(row) {
@@ -234,6 +307,7 @@
       var d = await call('list');
       S.rows = d.rows || [];
       S.vendors = Array.isArray(d.vendors) ? d.vendors : [];
+      S.irisMiss = Array.isArray(d.unregistered_iris) ? d.unregistered_iris : [];
       try { sessionStorage.setItem(AUTH_KEY, JSON.stringify(S.auth)); } catch (e) {}
       showAdmin();
       toast('환영합니다, ' + name + ' 님');
@@ -268,6 +342,7 @@
       var d = await call('list');
       S.rows = d.rows || [];
       S.vendors = Array.isArray(d.vendors) ? d.vendors : [];
+      S.irisMiss = Array.isArray(d.unregistered_iris) ? d.unregistered_iris : [];
       var keep = S.sel;
       S.sel = {};
       S.rows.forEach(function (r) { if (keep[r.id]) { S.sel[r.id] = true; } });
@@ -351,6 +426,38 @@
       : '전체 ' + rows.length + '명 · 칩을 눌러 걸러 볼 수 있습니다.';
   }
 
+  /* ⚠️ 홍채등록일 지남 · 앱(한양 pcw팀) 미가입 (v10) */
+  var IRIS_OPEN = false;
+  function renderIris() {
+    var panel = $('#irisPanel');
+    if (!panel) { return; }
+    var list = Array.isArray(S.irisMiss) ? S.irisMiss : [];
+    panel.classList.toggle('hide', list.length === 0);
+    if (!list.length) {
+      IRIS_OPEN = false;
+      $('#irisCount').textContent = '0';
+      if ($('#irisList')) { $('#irisList').classList.add('hide'); $('#irisList').innerHTML = ''; }
+      return;
+    }
+    $('#irisCount').textContent = list.length;
+    var today = todayISO();
+    var t0 = new Date(today + 'T00:00:00').getTime();
+    $('#irisList').innerHTML = list.map(function (x) {
+      var d0 = new Date(String(x.iris_date) + 'T00:00:00').getTime();
+      var late = isNaN(d0) ? 0 : Math.round((t0 - d0) / 86400000);
+      var st = x.status === 'hired' ? 'working' : 'plan';
+      return '<button type="button" class="iriitem" data-iri-detail="' + esc(x.id) + '">'
+        + '<b>' + esc(x.name) + '</b>'
+        + '<span class="tag st ' + st + '">' + esc(STATE_LABEL[st]) + '</span>'
+        + (x.outsource_company ? '<span class="tag vendor">' + esc(x.outsource_company) + '</span>' : '')
+        + '<span class="irl">홍채 ' + esc(x.iris_date) + (late > 0 ? ' · <b>' + late + '일 지남</b>' : ' · 오늘') + '</span>'
+        + '<span class="go">상세 ›</span>'
+        + '</button>';
+    }).join('');
+    $('#irisList').classList.toggle('hide', !IRIS_OPEN);
+    $('#irisArrow').textContent = IRIS_OPEN ? '▴' : '▾';
+  }
+
   function render() {
     var rows = filtered();
     var list = $('#list');
@@ -375,6 +482,7 @@
       : (S.tab === 'hold' ? '입사보류 인원이 없습니다.'
         : (S.tab === 'all' ? '등록된 인원이 없습니다.' : '입사예정인 인원이 없습니다.'));
     renderFilters();
+    renderIris();
 
     if (!rows.length) {
       list.innerHTML = '';
@@ -391,8 +499,9 @@
       var miss = missingOf(r);
       var tags = '';
       var st = stateOf(r);
-      tags += '<span class="tag st ' + st + '">' + esc(STATE_LABEL[st]) + '</span>';
-      if (isArchived(r)) { tags += '<span class="tag hired">취합완료</span>'; }
+      // 상태 배지 = 클릭하면 5가지(근무중·입사예정·입사보류·입사취소·퇴사) 드롭다운 (v10)
+      tags += '<button type="button" class="tag st ' + st + ' stbtn" data-st-edit="' + r.id + '" title="상태 바꾸기">'
+        + esc(STATE_LABEL[st]) + ' ▾</button>';
       if (miss.length) { tags += '<span class="tag miss" title="미제출: ' + esc(miss.join(', ')) + '">미비 ' + miss.length + '</span>'; }
       var vn = vendorOf(r);
       var out = '<button type="button" class="tag vendor vbtn' + (vn === '외주' ? ' out' : '') + (vn ? '' : ' none')
@@ -403,13 +512,15 @@
         + '<td>' + esc(birthText(r)) + '</td>'
         + '<td>' + esc(fmtPhone(r.phone)) + '</td>'
         + '<td class="c-date"><button type="button" class="dbtn' + (r.hire_date ? '' : ' none')
-        + '" data-hire-edit="' + r.id + '" title="입사일자 바로 고치기">' + esc(r.hire_date || '—') + '</button></td>'
+        + '" data-hire-edit="' + r.id + '" title="한양교육일자 바로 고치기">' + esc(r.hire_date || '—') + '</button></td>'
+        + '<td class="c-date"><button type="button" class="dbtn iris' + (r.iris_date ? '' : ' none')
+        + '" data-iris-edit="' + r.id + '" title="홍채등록일자 바로 고치기">' + esc(r.iris_date || '—') + '</button></td>'
         + '<td>' + esc(r.resign_date || '') + '</td>'
-        + '<td class="num c-wage">' + esc(wageNum(r.daily_wage)) + '</td>'
+        + '<td class="num c-wage"><button type="button" class="wbtn' + (r.daily_wage ? '' : ' none')
+        + '" data-wage-edit="' + r.id + '" title="단가 바로 고치기">' + esc(wageNum(r.daily_wage) || '—') + '</button></td>'
         + '<td class="c-gender">' + esc(genderOf(r)) + '</td>'
         + '<td class="c-act">'
         + '<button type="button" data-detail="' + r.id + '">상세</button>'
-        + '<button type="button" data-status="' + r.id + '">' + (r.status === 'hired' ? '확정취소' : '확정') + '</button>'
         + '<button type="button" class="del" data-del="' + r.id + '">삭제</button>'
         + '</td>'
         + '</tr>';
@@ -583,10 +694,140 @@
       r.hire_date = v;
       render();
       if ($('#detailModal').classList.contains('open') && S.detailId === id) { openDetail(id); }
-      toast(v ? r.name + ' 님 입사일자를 ' + v + '로 저장했습니다.' : r.name + ' 님 입사일자를 지웠습니다.', 3000);
+      toast(v ? r.name + ' 님 한양교육일자를 ' + v + '로 저장했습니다.' : r.name + ' 님 한양교육일자를 지웠습니다.', 3000);
     } catch (e) {
       render();
-      toast(e.message || '입사일자를 저장하지 못했습니다.', 3200);
+      toast(e.message || '한양교육일자를 저장하지 못했습니다.', 3200);
+    }
+  }
+
+  /* 목록에서 홍채등록일자 바로 고치기 (v10) */
+  function openIrisEditor(id) {
+    var r = rowById(id);
+    if (!r) { return; }
+    var cell = $('[data-iris-edit="' + id + '"]');
+    if (!cell || cell.tagName === 'INPUT') { return; }
+    cell.outerHTML = '<span class="dinline"><input type="date" class="dsel" data-iris-sel="' + id
+      + '" value="' + esc(r.iris_date || '') + '" title="홍채등록일자 선택">'
+      + '<button type="button" class="dclear" data-iris-clear="' + id + '" title="홍채등록일자 지우기">✕</button></span>';
+    var inp = $('[data-iris-sel="' + id + '"]');
+    if (inp) {
+      inp.focus();
+      try { inp.showPicker(); } catch (e) { /* 일부 브라우저는 showPicker 를 막아 둔다 */ }
+    }
+  }
+  async function saveIris(id, val) {
+    var r = rowById(id);
+    if (!r) { return; }
+    var v = String(val || '').trim();
+    if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) { toast('날짜를 다시 골라 주세요.'); return; }
+    if (v === String(r.iris_date || '')) { render(); return; }
+    try {
+      await call('update_meta', { id: id, meta: { iris_date: v } });
+      r.iris_date = v;
+      await refresh(true);
+      if ($('#detailModal').classList.contains('open') && S.detailId === id) { openDetail(id); }
+      toast(v ? r.name + ' 님 홍채등록일자를 ' + v + '로 저장했습니다.' : r.name + ' 님 홍채등록일자를 지웠습니다.', 3000);
+    } catch (e) {
+      render();
+      toast(e.message || '홍채등록일자를 저장하지 못했습니다.', 3200);
+    }
+  }
+
+  /* ---------------------------------------------------------
+     목록에서 상태 배지 클릭 → 근무중 / 입사예정 / 입사보류 / 입사취소 / 퇴사 (v10)
+     --------------------------------------------------------- */
+  var ST_STATES = ['working', 'plan', 'hold', 'cancel', 'resigned'];
+  var ST_TEXT = { working: '근무중', plan: '입사예정', hold: '입사보류', cancel: '입사취소', resigned: '퇴사' };
+
+  function openStateEditor(id) {
+    var r = rowById(id);
+    if (!r) { return; }
+    var cell = $('[data-st-edit="' + id + '"]');
+    if (!cell || cell.tagName === 'SELECT') { return; }
+    var cur = stateOf(r);
+    var h = '<select class="stsel2 st-' + cur + '" data-st-sel="' + id + '" title="상태 바꾸기">'
+      + ST_STATES.map(function (k) {
+        return '<option value="' + k + '"' + (k === cur ? ' selected' : '') + '>' + ST_TEXT[k] + '</option>';
+      }).join('')
+      + '</select>';
+    cell.outerHTML = h;
+    var sel = $('[data-st-sel="' + id + '"]');
+    if (sel) { sel.value = cur; sel.focus(); }
+  }
+
+  async function applyState(id, target) {
+    var r = rowById(id);
+    if (!r) { return; }
+    var cur = stateOf(r);
+    if (!target || target === cur) { render(); return; }
+
+    if (target === 'cancel') {
+      if (!confirm('정말 입사취소(삭제)하시겠습니까?')) { render(); return; }
+      await deleteRows([r], '정말 입사취소(삭제)하시겠습니까?');
+      return;
+    }
+
+    try {
+      if (target === 'resigned') {
+        var d = await call('set_status', { id: id, status: 'resigned' });
+        r.status = 'resigned';
+        var p = (d && d.patch) || {};
+        if ('resign_date' in p) { r.resign_date = p.resign_date || ''; }
+        if ('resigned_at' in p) { r.resigned_at = p.resigned_at || ''; }
+      } else {
+        var st = target === 'working' ? 'hired' : (target === 'hold' ? 'hold' : 'submitted');
+        await call('set_status', { id: id, status: st });
+        r.status = st;
+        r.resigned_at = '';
+        // 퇴사일자가 남아 있으면 계속 퇴사로 보이므로 같이 지운다
+        if (String(r.resign_date || '').trim()) {
+          await call('update_meta', { id: id, meta: { resign_date: '' } });
+          r.resign_date = '';
+        }
+      }
+      await refresh(true);
+      if ($('#detailModal').classList.contains('open') && S.detailId === id) { openDetail(id); }
+      toast(r.name + ' 님 상태를 ' + ST_TEXT[target] + '(으)로 바꿨습니다.', 3000);
+    } catch (e) {
+      render();
+      toast(e.message || '상태를 바꾸지 못했습니다.', 3200);
+    }
+  }
+
+  /* 목록에서 단가 클릭 → 인라인 수정 + 확인창 → update_meta (서버가 이력 기록) (v10) */
+  function openWageEditor(id) {
+    var r = rowById(id);
+    if (!r) { return; }
+    var cell = $('[data-wage-edit="' + id + '"]');
+    if (!cell || cell.tagName === 'INPUT') { return; }
+    cell.outerHTML = '<span class="winline">'
+      + '<input type="text" inputmode="numeric" class="wsel" data-wage-sel="' + id + '" value="' + esc(wageRaw(r.daily_wage))
+      + '" title="단가 수정 (엔터로 저장)">'
+      + '<button type="button" class="wok" data-wage-save="' + id + '" title="저장">✓</button>'
+      + '<button type="button" class="wxx" data-wage-cancel="' + id + '" title="취소">✕</button></span>';
+    var inp = $('[data-wage-sel="' + id + '"]');
+    if (inp) { inp.focus(); inp.select(); }
+  }
+  async function saveWage(id, val) {
+    var r = rowById(id);
+    if (!r) { return; }
+    var v = String(val == null ? '' : val).replace(/[,\s원]/g, '').trim();
+    if (v && !/^\d+$/.test(v)) { toast('단가는 숫자로 적어 주세요. (예: 200000)', 3200); render(); return; }
+    var prev = String(r.daily_wage == null ? '' : r.daily_wage).replace(/[,\s원]/g, '').trim();
+    if (v === prev) { render(); return; }
+    var ask = '정말로 수정하시겠습니까?\n이전 단가: ' + wonText(prev) + ' → 변경 후 단가: ' + wonText(v);
+    if (!confirm(ask)) { render(); return; }
+    try {
+      var d = await call('update_meta', { id: id, meta: { daily_wage: v } });
+      r.daily_wage = v;
+      if (d && Array.isArray(d.wage_history)) { r.wage_history = d.wage_history; }
+      render();
+      if ($('#detailModal').classList.contains('open') && S.detailId === id) { openDetail(id); }
+      toast(r.name + ' 님 단가를 ' + wonText(v) + '로 바꿨습니다.', 3000);
+    } catch (e) {
+      render();
+      toast(e.message || '단가를 저장하지 못했습니다.', 3200);
     }
   }
 
@@ -691,8 +932,11 @@
       ['보안경', r.glasses_type],
       ['보유 자격', (Array.isArray(r.certs) ? r.certs.join(', ') : '')],
       ['소개자', r.referrer],
-      ['입사일자', r.hire_date],
+      ['한양교육일자', r.hire_date],
+      ['홍채등록일자', r.iris_date],
       ['퇴사일자', r.resign_date],
+      ['근로자번호', r.worker_no],
+      ['리더팀장', r.leader_name],
       ['성별', genderOf(r)],
       ['건강검진', examText(r, map)],
       ['제출일', dstr(r.created_at)],
@@ -717,6 +961,7 @@
         var lbl = k === 'working' ? '입사확정(근무중)' : (k === 'hold' ? '⏸️ 입사보류' : STATE_LABEL[k]);
         return '<button type="button" data-setstate="' + k + '"' + (curSt === k ? ' class="on"' : '') + '>' + esc(lbl) + '</button>';
       }).join('')
+      + '<button type="button" class="stcancel" data-stcancel="1">🗑️ 입사취소</button>'
       + '</div></div>';
 
     var genOpt = ['', '여', '남'].map(function (g) {
@@ -732,15 +977,26 @@
     h += '<div class="metaform">'
       + '<div class="field"><label>업체구분</label><select data-meta="outsource_company">' + venOpt + '</select></div>'
       + '<div class="field"><label>성별</label><select data-meta="gender">' + genOpt + '</select></div>'
-      + '<div class="field"><label>입사일자</label><input type="date" data-meta="hire_date" value="' + esc(r.hire_date || '') + '"></div>'
+      + '<div class="field"><label>한양교육일자</label><input type="date" data-meta="hire_date" value="' + esc(r.hire_date || '') + '"></div>'
+      + '<div class="field"><label>홍채등록일자</label><input type="date" data-meta="iris_date" value="' + esc(r.iris_date || '') + '"></div>'
       + '<div class="field"><label>퇴사일자</label><input type="date" data-meta="resign_date" value="' + esc(r.resign_date || '') + '">'
       + '<button type="button" class="btn sm gray" data-resign="1" style="width:100%;height:32px;font-size:11.5px;margin-top:4px;border-radius:8px">오늘 퇴사 처리</button></div>'
-      + '<div class="field"><label>단가</label><input type="text" data-meta="daily_wage" value="' + esc(r.daily_wage || '') + '" placeholder="예) 180000 / 미기재"></div>'
+      + '<div class="field"><label>단가</label><input type="text" data-meta="daily_wage" value="' + esc(r.daily_wage || '') + '" placeholder="예) 180000 / 미기재" inputmode="numeric"></div>'
       + '<div class="field"><label>직종</label>'
       + '<select data-meta="job_role" data-jobsel>' + jobOptions(jobText(r)) + '</select>'
       + '<input type="text" data-jobcustom value="' + esc(jobSplit(jobText(r)).custom) + '" placeholder="직종 직접 입력" maxlength="20"'
       + (jobSplit(jobText(r)).sel === '__custom' ? '' : ' style="display:none"') + '></div>'
+      + '<div class="field"><label>근로자번호 <span style="color:#98A2B3;font-weight:700">P5</span></label>'
+      + '<input type="text" data-meta="worker_no" value="' + esc(r.worker_no || '') + '" placeholder="예) 25165593" inputmode="numeric"></div>'
+      + '<div class="field"><label>리더팀장 <span style="color:#98A2B3;font-weight:700">P5</span></label>'
+      + '<input type="text" data-meta="leader_name" value="' + esc(r.leader_name || '') + '" placeholder="예) 황준태"></div>'
       + '</div>'
+      + '<div class="p5qbox"><div class="qh"><b>🧰 P5 자격</b><span>P5 PH1 명단 2번째 시트(자격자 명단)에 들어갑니다</span></div>'
+      + '<div class="qchips">' + P5_QUALS.map(function (q) {
+        var on = qualOf(r).indexOf(q.key) >= 0;
+        return '<button type="button" class="qchip' + (on ? ' on' : '') + '" data-qual="' + q.key + '">'
+          + esc(q.icon + ' ' + q.label) + '</button>';
+      }).join('') + '</div></div>'
       + '<button type="button" class="btn sm gray" data-metasave style="width:auto;padding:0 16px;height:38px;margin:2px 0 12px">기본 정보 저장</button>';
 
     /* 특이사항 — 적은 관리자 이름이 자동으로 붙는다 */
@@ -758,6 +1014,21 @@
         }).join('') + '</div>'
         : '<div class="nempty">아직 적어 둔 특이사항이 없습니다.</div>')
       + '<div class="nadd"><input type="text" id="noteInput" maxlength="300" placeholder="예) 12/1 첫 출근, 안전교육 이수"><button type="button" data-noteadd="1">추가</button></div>'
+      + '</div>';
+
+    /* 💰 단가 변경 이력 — 서버가 update_meta 때마다 남긴다 (v10) */
+    var wh = wageHistoryOf(r);
+    h += '<div class="wagebox">'
+      + '<div class="wh"><b>💰 단가 변경 이력</b><span>'
+      + (wh.length ? wh.length + '건' : '아직 변경 없음') + '</span></div>'
+      + (wh.length
+        ? '<div class="wlist">' + wh.slice().reverse().map(function (w) {
+          var at = wageAtText((w && w.at) || '');
+          return '<div class="witem"><span class="wdt">' + esc(at) + '</span>'
+            + '<span class="wtx">' + esc(wonText(w && w.prev, '(빈값)')) + ' → <b>' + esc(wonText(w && w.next, '(빈값)')) + '</b></span>'
+            + '<span class="wby">' + esc((w && w.by) || '') + '</span></div>';
+        }).join('') + '</div>'
+        : '<div class="wempty">단가를 바꾸면 날짜·이전값·바꾼 사람이 여기에 남습니다.</div>')
       + '</div>';
 
     h += '<div class="files">';
@@ -851,8 +1122,9 @@
     });
     meta.job_role = jobPick('#detailBody');
     try {
-      await call('update_meta', { id: id, meta: meta });
+      var d = await call('update_meta', { id: id, meta: meta });
       Object.keys(meta).forEach(function (k) { r[k] = meta[k]; });
+      if (d && 'wage_history' in d) { r.wage_history = Array.isArray(d.wage_history) ? d.wage_history : wageHistoryOf(r); }
       if ('outsource_company' in meta) {
         var v = String(meta.outsource_company || '').trim();
         r.is_outsource = !!v;
@@ -895,8 +1167,8 @@
     return Math.max(1, Math.round(v / 1024)) + 'KB';
   }
   function basePath() {
-    var tag = document.querySelector('script[src*="js/admin.v8.js"]');
-    return (tag && tag.src) ? tag.src.replace(/js\/admin\.v8\.js.*$/, '') : '';
+    var tag = document.querySelector('script[src*="js/admin.v10.js"]');
+    return (tag && tag.src) ? tag.src.replace(/js\/admin\.v10\.js.*$/, '') : './';
   }
 
   async function openView(id, idx) {
@@ -1164,7 +1436,7 @@
   }
 
   function openAdd() {
-    ['m_name', 'm_rrn', 'm_birth', 'm_phone', 'm_hire', 'm_resign', 'm_wage', 'm_referrer', 'm_note', 'm_job_custom'].forEach(function (k) {
+    ['m_name', 'm_rrn', 'm_birth', 'm_phone', 'm_hire', 'm_iris', 'm_resign', 'm_wage', 'm_worker_no', 'm_leader', 'm_referrer', 'm_note', 'm_job_custom'].forEach(function (k) {
       var el = $('#' + k); if (el) { el.value = ''; }
     });
     $('#m_gender').value = '';
@@ -1186,7 +1458,10 @@
       gender: $('#m_gender').value,
       phone: $('#m_phone').value,
       hire_date: $('#m_hire').value,
+      iris_date: $('#m_iris').value,
       resign_date: $('#m_resign').value,
+      worker_no: $('#m_worker_no').value,
+      leader_name: $('#m_leader').value,
       status: $('#m_status').value,
       daily_wage: $('#m_wage').value,
       job_role: jobPick('#addModal'),
@@ -1208,6 +1483,30 @@
       toast(e.message || '추가하지 못했습니다.', 3600);
     } finally {
       btn.disabled = false; btn.textContent = '등록';
+    }
+  }
+
+  /* P5 자격 켜기/끄기 — 보유 자격(certs)에 저장 (v10) */
+  async function toggleQual(id, key) {
+    var r = rowById(id);
+    if (!r) { return; }
+    var q = P5_QUALS.filter(function (x) { return x.key === key; })[0];
+    if (!q) { return; }
+    var list = qualList(r).certs.slice();
+    var on = qualOf(r).indexOf(key) >= 0;
+    if (on) {
+      list = list.filter(function (c) { return !certIsQual(c, key); });
+    } else if (list.indexOf(q.cert) < 0) {
+      list.push(q.cert);
+    }
+    try {
+      await call('update_meta', { id: id, meta: { certs: list } });
+      r.certs = list;
+      render();
+      openDetail(id);
+      toast(r.name + ' 님 ' + q.label + (on ? ' 자격을 껐습니다.' : ' 자격을 켰습니다. (P5 명단 2번째 시트에 들어갑니다)'), 3200);
+    } catch (e) {
+      toast(e.message || '자격을 저장하지 못했습니다.', 3200);
     }
   }
 
@@ -1385,9 +1684,201 @@
     toast(rows.length + '명 엑셀을 만들었습니다.');
   }
 
+  /* =========================================================
+     P5 PH1 명단 엑셀 (v10) — 서하 님이 보내 준 실제 양식
+       · 1시트 : P5 PH1 근로자 명단 (근무중) + 아래 P5 PH1 퇴사자 명단 (퇴사)
+       · 2시트 : TBM리더 및 TL 운전 및 유도 (자격자)
+     ========================================================= */
+  var P5_HEAD = ['성명', '성별', '생년월일', '근로자번호', '직종', '홍채 등록일자', '리더팀장', '특이사항'];
+  var P5_HEAD_OUT = ['성명', '성별', '생년월일', '근로자번호', '직종', '신규홍채 등록일자', '리더팀장', '특이사항'];
+  var P5_JOBS = ['공사관리자', '품질관리자', '배관공', '용접공', '보통인부'];
+
+  function p5Birth(r) {
+    var b6 = String(r.birth6 || '').replace(/\D/g, '');
+    if (b6.length >= 6) { return b6.slice(0, 6); }
+    var bt = birthText(r).replace(/\D/g, '');
+    return bt.length === 8 ? bt.slice(2) : '';
+  }
+  // 특이사항 — 한양교육일자/홍채일자 + 관리자 메모 (예: '260904 한양교육/ 0914 홍채 등록예정')
+  function p5Note(r) {
+    var parts = [];
+    var hire = ymd6(r.hire_date);
+    var iris = ymd6(r.iris_date);
+    if (hire) { parts.push(hire + ' 한양교육'); }
+    if (iris) { parts.push(iris.slice(2) + ' 홍채 등록' + (String(r.iris_date) >= todayISO() ? '예정' : '')); }
+    if (isResigned(r) && r.resign_date) { parts.push(dotDate(r.resign_date) + ' 퇴사'); }
+    var head = parts.join('/ ');
+    var notes = notesText(r);
+    return [head, notes].filter(Boolean).join('\n');
+  }
+
+  async function exportP5() {
+    if (!window.ExcelJS) { toast('엑셀 라이브러리를 불러오지 못했어요. 새로고침 후 다시 시도해 주세요.', 3600); return; }
+    var workers = S.rows.filter(function (r) { return stateOf(r) === 'working'; });
+    var resigned = S.rows.filter(function (r) { return stateOf(r) === 'resigned'; });
+    if (!workers.length && !resigned.length) {
+      toast('근무중·퇴사 인원이 없습니다. 상태를 먼저 바꿔 주세요.', 3600);
+      return;
+    }
+
+    var wb = new ExcelJS.Workbook();
+    wb.creator = '한양 pcw팀';
+    wb.created = new Date();
+
+    var thin = { style: 'thin', color: { argb: 'FFBFBFBF' } };
+    var border = { top: thin, left: thin, bottom: thin, right: thin };
+    var headFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F4F8' } };
+    var titleFont = { name: '맑은 고딕', size: 16, bold: true, color: { argb: 'FF14213D' } };
+    var subFont = { name: '맑은 고딕', size: 12, bold: true, color: { argb: 'FF14213D' } };
+    var headFont = { name: '맑은 고딕', size: 10.5, bold: true };
+    var bodyFont = { name: '맑은 고딕', size: 10.5 };
+
+    /* ---------------- 1시트 ---------------- */
+    var ws = wb.addWorksheet('P5 PH1 근로자 명단', {
+      views: [{ state: 'frozen', ySplit: 7 }],
+      pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
+    });
+    ws.columns = [
+      { width: 3.5 }, { width: 13.4 }, { width: 8.5 }, { width: 11.6 }, { width: 12.6 },
+      { width: 13.0, style: { numFmt: '@' } }, { width: 17.2 }, { width: 16.0 }, { width: 52.7 }
+    ];
+
+    function put(row, col, val, opt) {
+      var cell = ws.getCell(row, col);
+      cell.value = (val === '' || val === null || val === undefined) ? null : val;
+      if (opt && opt.font) { cell.font = opt.font; }
+      if (opt && opt.fill) { cell.fill = opt.fill; }
+      if (opt && opt.align) { cell.alignment = { horizontal: opt.align, vertical: 'middle', wrapText: !!opt.wrap }; }
+      if (opt && opt.border) { cell.border = opt.border; }
+      return cell;
+    }
+
+    // 상단 수정일
+    put(1, 8, '수정일:', { font: { name: '맑은 고딕', size: 10, bold: true }, align: 'right' });
+    put(1, 9, todayISO(), { font: { name: '맑은 고딕', size: 10 }, align: 'center' });
+
+    // 제목 (B5:I6 병합)
+    ws.mergeCells(5, 2, 6, 9);
+    put(5, 2, 'P5 PH1 근로자 명단', { font: titleFont, align: 'center' });
+    ws.getRow(5).height = 22;
+    ws.getRow(6).height = 10;
+
+    // 머리글
+    var hrow = 7;
+    P5_HEAD.forEach(function (t, i) {
+      put(hrow, 2 + i, t, { font: headFont, fill: headFill, align: 'center', wrap: true, border: border });
+    });
+    ws.getRow(hrow).height = 24;
+
+    // 근무중 인원
+    var r0 = hrow + 1;
+    workers.forEach(function (r, i) {
+      var row = r0 + i;
+      put(row, 2, r.name || '', { font: bodyFont, align: 'center', border: border });
+      put(row, 3, genderOf(r), { font: bodyFont, align: 'center', border: border });
+      put(row, 4, p5Birth(r), { font: bodyFont, align: 'center', border: border });
+      put(row, 5, String(r.worker_no || ''), { font: bodyFont, align: 'center', border: border });
+      put(row, 6, r.job_role || '', { font: bodyFont, align: 'center', border: border });
+      put(row, 7, dotDate(r.iris_date), { font: bodyFont, align: 'center', border: border });
+      put(row, 8, r.leader_name || '', { font: bodyFont, align: 'center', border: border });
+      put(row, 9, p5Note(r), { font: bodyFont, align: 'left', wrap: true, border: border });
+      ws.getRow(row).height = String(p5Note(r)).length > 30 ? 28 : 18;
+    });
+    var lastData = r0 + Math.max(workers.length, 1) - 1;
+
+    // 직종별 인원 · 현장 총원
+    var cntRow = lastData + 2;
+    var countOf = function (job) {
+      return workers.filter(function (r) { return String(r.job_role || '').trim() === job; }).length;
+    };
+    P5_JOBS.forEach(function (job, i) {
+      var row = cntRow + i;
+      put(row, 2, job, { font: bodyFont, fill: headFill, align: 'center', border: border });
+      ws.mergeCells(row, 3, row, 5);
+      put(row, 3, countOf(job), { font: bodyFont, align: 'center', border: border });
+      ws.getCell(row, 4).border = border;
+      ws.getCell(row, 5).border = border;
+    });
+    var totRow = cntRow + P5_JOBS.length;
+    put(totRow, 2, '현장 총원', { font: { name: '맑은 고딕', size: 10.5, bold: true }, fill: headFill, align: 'center', border: border });
+    ws.mergeCells(totRow, 3, totRow, 5);
+    put(totRow, 3, workers.length, { font: { name: '맑은 고딕', size: 10.5, bold: true }, align: 'center', border: border });
+    ws.getCell(totRow, 4).border = border;
+    ws.getCell(totRow, 5).border = border;
+
+    // 퇴사자 명단 (아래)
+    var t1 = totRow + 3;
+    ws.mergeCells(t1, 2, t1 + 1, 9);
+    put(t1, 2, 'P5 PH1 퇴사자 명단', { font: subFont, align: 'center' });
+    ws.getRow(t1).height = 20;
+    var th = t1 + 3;
+    P5_HEAD_OUT.forEach(function (t, i) {
+      put(th, 2 + i, t, { font: headFont, fill: headFill, align: 'center', wrap: true, border: border });
+    });
+    ws.getRow(th).height = 24;
+    resigned.forEach(function (r, i) {
+      var row = th + 1 + i;
+      put(row, 2, r.name || '', { font: bodyFont, align: 'center', border: border });
+      put(row, 3, genderOf(r), { font: bodyFont, align: 'center', border: border });
+      put(row, 4, p5Birth(r), { font: bodyFont, align: 'center', border: border });
+      put(row, 5, String(r.worker_no || ''), { font: bodyFont, align: 'center', border: border });
+      put(row, 6, r.job_role || '', { font: bodyFont, align: 'center', border: border });
+      put(row, 7, dotDate(r.iris_date), { font: bodyFont, align: 'center', border: border });
+      put(row, 8, r.leader_name || '', { font: bodyFont, align: 'center', border: border });
+      put(row, 9, p5Note(r), { font: bodyFont, align: 'left', wrap: true, border: border });
+      ws.getRow(row).height = String(p5Note(r)).length > 30 ? 28 : 18;
+    });
+
+    /* ---------------- 2시트 — TBM리더 및 TL 운전 및 유도 ---------------- */
+    var ws2 = wb.addWorksheet('TBM리더 및 TL 운전 및 유도', {
+      pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
+    });
+    ws2.columns = [{ width: 3.0 }, { width: 14.1 }, { width: 14.6 }, { width: 14.6 }, { width: 3.0 }];
+    var put2 = function (row, col, val, opt) {
+      var cell = ws2.getCell(row, col);
+      cell.value = (val === '' || val === null || val === undefined) ? null : val;
+      if (opt && opt.font) { cell.font = opt.font; }
+      if (opt && opt.fill) { cell.fill = opt.fill; }
+      if (opt && opt.align) { cell.alignment = { horizontal: opt.align, vertical: 'middle', wrapText: !!opt.wrap }; }
+      if (opt && opt.border) { cell.border = opt.border; }
+      return cell;
+    };
+    put2(2, 2, todayISO(), { font: { name: '맑은 고딕', size: 10 }, align: 'center' });
+    ws2.mergeCells(4, 2, 5, 5);
+    put2(4, 2, '각 종 자격자 명단', { font: subFont, align: 'center' });
+    put2(7, 3, 'P5 PH1(일반배관)', { font: headFont, align: 'center' });
+    ['NO', 'TBM 리더', 'TL 운전원', 'TL 유도원'].forEach(function (t, i) {
+      put2(8, 2 + i, t, { font: headFont, fill: headFill, align: 'center', border: border });
+    });
+    var tbm = [], drive = [], guide = [];
+    workers.forEach(function (r) {
+      var q = qualOf(r);
+      if (q.indexOf('tbm') >= 0) { tbm.push(r.name); }
+      if (q.indexOf('drive') >= 0) { drive.push(r.name); }
+      if (q.indexOf('guide') >= 0) { guide.push(r.name); }
+    });
+    var qn = Math.max(tbm.length, drive.length, guide.length);
+    for (var i = 0; i < qn; i++) {
+      var row = 9 + i;
+      put2(row, 2, i + 1, { font: bodyFont, align: 'center', border: border });
+      put2(row, 3, tbm[i] || '', { font: bodyFont, align: 'center', border: border });
+      put2(row, 4, drive[i] || '', { font: bodyFont, align: 'center', border: border });
+      put2(row, 5, guide[i] || '', { font: bodyFont, align: 'center', border: border });
+    }
+    var sumRow = 9 + Math.max(qn, 1);
+    put2(sumRow, 2, '계', { font: { name: '맑은 고딕', size: 10.5, bold: true }, fill: headFill, align: 'center', border: border });
+    put2(sumRow, 3, tbm.length, { font: bodyFont, align: 'center', border: border });
+    put2(sumRow, 4, drive.length, { font: bodyFont, align: 'center', border: border });
+    put2(sumRow, 5, guide.length, { font: bodyFont, align: 'center', border: border });
+
+    var buf = await wb.xlsx.writeBuffer();
+    saveFile(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+      'P5_PH1_근로자_퇴사자_명단_' + todayStr() + '.xlsx');
+    toast('근무중 ' + workers.length + '명 · 퇴사 ' + resigned.length + '명 P5 PH1 명단 엑셀을 만들었습니다.', 3600);
+  }
+
   /* ---------------- ZIP ---------------- */
-  async function exportZip(rows) {
-    if (!rows.length) { toast('내보낼 인원이 없습니다.'); return; }
+  async function exportZip(rows) {    if (!rows.length) { toast('내보낼 인원이 없습니다.'); return; }
     if (!window.JSZip) { toast('압축 라이브러리를 불러오지 못했어요.', 3200); return; }
     var zip = new JSZip();
     var items = [];
@@ -1463,12 +1954,16 @@
       if (next === 'resigned') {
         var td = todayISO();
         if (!confirm(r.name + ' 님을 퇴사 처리할까요?\n\n· 퇴사일자를 오늘(' + td + ')로 저장합니다.')) { return; }
-        await call('update_meta', { id: id, meta: { resign_date: td } });
-        r.resign_date = td;
+        var d2 = await call('set_status', { id: id, status: 'resigned' });
+        var p2 = (d2 && d2.patch) || {};
+        r.status = 'resigned';
+        r.resign_date = ('resign_date' in p2) ? (p2.resign_date || '') : (r.resign_date || td);
+        if ('resigned_at' in p2) { r.resigned_at = p2.resigned_at || ''; }
       } else {
         var status = next === 'working' ? 'hired' : (next === 'hold' ? 'hold' : 'submitted');
         await call('set_status', { id: id, status: status });
         r.status = status;
+        r.resigned_at = '';
         // 퇴사일자가 남아 있으면 목록에서는 계속 퇴사로 보이므로 같이 지운다
         if (String(r.resign_date || '').trim()) {
           await call('update_meta', { id: id, meta: { resign_date: '' } });
@@ -1501,19 +1996,25 @@
     }
   }
 
-  async function deleteRows(rows) {
+  async function deleteRows(rows, askText) {
     if (!rows.length) { return; }
     var names = rows.map(function (r) { return r.name; }).join(', ');
-    var ask = '입사 취소 처리합니다.\n\n대상: ' + names + '\n\n· 제출된 서류 파일과 제출 기록이 모두 영구 삭제됩니다.\n· 되돌릴 수 없습니다.\n\n계속할까요?';
-    if (!confirm(ask)) { return; }
-    if (!confirm('마지막 확인입니다. ' + rows.length + '명의 서류를 정말 영구 삭제할까요?')) { return; }
+    if (askText) {
+      if (!confirm(askText + '\n\n대상: ' + names + '\n· 제출된 서류 파일과 기록이 함께 영구 삭제됩니다.')) { render(); return; }
+    } else {
+      var ask = '입사 취소 처리합니다.\n\n대상: ' + names + '\n\n· 제출된 서류 파일과 제출 기록이 모두 영구 삭제됩니다.\n· 되돌릴 수 없습니다.\n\n계속할까요?';
+      if (!confirm(ask)) { return; }
+      if (!confirm('마지막 확인입니다. ' + rows.length + '명의 서류를 정말 영구 삭제할까요?')) { return; }
+    }
     try {
       var d = await call('delete_cancel', { ids: rows.map(function (r) { return r.id; }) });
       var doneIds = {};
       (d.results || []).forEach(function (x) { if (x.deleted) { doneIds[x.id] = true; } });
       S.rows = S.rows.filter(function (r) { return !doneIds[r.id]; });
+      S.irisMiss = (S.irisMiss || []).filter(function (x) { return !doneIds[x.id]; });
       S.sel = {};
       render();
+      if ($('#detailModal').classList.contains('open') && doneIds[S.detailId]) { closeModal('detailModal'); S.detailId = null; }
       toast(Object.keys(doneIds).length + '명의 서류와 기록을 삭제했습니다.');
     } catch (e) {
       toast(e.message || '삭제하지 못했습니다.', 3600);
@@ -1576,6 +2077,40 @@
       saveHire(hc.getAttribute('data-hire-clear'), '');
       return;
     }
+    var ie = t.closest('[data-iris-edit]');
+    if (ie) {
+      e.stopPropagation(); e.preventDefault();
+      openIrisEditor(ie.getAttribute('data-iris-edit'));
+      return;
+    }
+    var ic = t.closest('[data-iris-clear]');
+    if (ic) {
+      e.stopPropagation(); e.preventDefault();
+      saveIris(ic.getAttribute('data-iris-clear'), '');
+      return;
+    }
+    var se = t.closest('[data-st-edit]');
+    if (se) {
+      e.stopPropagation(); e.preventDefault();
+      openStateEditor(se.getAttribute('data-st-edit'));
+      return;
+    }
+    var we = t.closest('[data-wage-edit]');
+    if (we) {
+      e.stopPropagation(); e.preventDefault();
+      openWageEditor(we.getAttribute('data-wage-edit'));
+      return;
+    }
+    var ws = t.closest('[data-wage-save]');
+    if (ws) {
+      e.stopPropagation(); e.preventDefault();
+      var wid = ws.getAttribute('data-wage-save');
+      var win = $('[data-wage-sel="' + wid + '"]');
+      saveWage(wid, win ? win.value : '');
+      return;
+    }
+    var wx = t.closest('[data-wage-cancel]');
+    if (wx) { e.stopPropagation(); e.preventDefault(); render(); return; }
     var chk = t.closest('[data-check]');
     if (chk) {
       e.stopPropagation();
@@ -1607,25 +2142,42 @@
     if (vs) { saveVendor(vs, t.value); return; }
     var hs = t.getAttribute('data-hire-sel');
     if (hs) { saveHire(hs, t.value); return; }
+    var is = t.getAttribute('data-iris-sel');
+    if (is) { saveIris(is, t.value); return; }
+    var ss = t.getAttribute('data-st-sel');
+    if (ss) { applyState(ss, t.value); return; }
   });
   $('#list').addEventListener('keydown', function (e) {
     var t = e.target;
     if (!t || !t.getAttribute) { return; }
     var vs = t.getAttribute('data-vendor-sel');
     var hs = t.getAttribute('data-hire-sel');
-    if (!vs && !hs) { return; }
+    var is = t.getAttribute('data-iris-sel');
+    var ss = t.getAttribute('data-st-sel');
+    var ws = t.getAttribute('data-wage-sel');
+    if (!vs && !hs && !is && !ss && !ws) { return; }
     if (e.key === 'Escape') { e.preventDefault(); render(); }
-    else if (e.key === 'Enter') { e.preventDefault(); if (vs) { saveVendor(vs, t.value); } else { saveHire(hs, t.value); } }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (vs) { saveVendor(vs, t.value); }
+      else if (hs) { saveHire(hs, t.value); }
+      else if (is) { saveIris(is, t.value); }
+      else if (ss) { applyState(ss, t.value); }
+      else { saveWage(ws, t.value); }
+    }
   });
   /* 그냥 닫으면 저장하지 않고 원래 값으로 돌린다 */
   $('#list').addEventListener('blur', function (e) {
     var t = e.target;
     if (!t || !t.getAttribute) { return; }
-    if (!t.getAttribute('data-vendor-sel') && !t.getAttribute('data-hire-sel')) { return; }
+    if (!t.getAttribute('data-vendor-sel') && !t.getAttribute('data-hire-sel')
+      && !t.getAttribute('data-iris-sel') && !t.getAttribute('data-st-sel') && !t.getAttribute('data-wage-sel')) { return; }
     setTimeout(function () {
       var a = document.activeElement;
-      if (a && (a.getAttribute('data-vendor-sel') || a.getAttribute('data-hire-sel') || (a.closest && a.closest('.dinline')))) { return; }
-      if (document.querySelector('[data-vendor-sel],[data-hire-sel]')) { render(); }
+      if (a && (a.getAttribute('data-vendor-sel') || a.getAttribute('data-hire-sel') || a.getAttribute('data-iris-sel')
+        || a.getAttribute('data-st-sel') || a.getAttribute('data-wage-sel')
+        || (a.closest && a.closest('.dinline,.winline')))) { return; }
+      if (document.querySelector('[data-vendor-sel],[data-hire-sel],[data-iris-sel],[data-st-sel],[data-wage-sel]')) { render(); }
     }, 220);
   }, true);
 
@@ -1633,6 +2185,9 @@
     var rows = targets();
     toast(rows.length + '명 엑셀을 만드는 중…', 3000);
     exportExcel(rows).catch(function (e) { toast((e && e.message) || '엑셀을 만들지 못했습니다.', 3600); });
+  });
+  $('#btnP5').addEventListener('click', function () {
+    exportP5().catch(function (e) { toast((e && e.message) || 'P5 PH1 명단 엑셀을 만들지 못했습니다.', 3600); });
   });
   $('#btnZip').addEventListener('click', function () {
     var rows = targets();
@@ -1657,6 +2212,11 @@
     render();
   });
   $('#btnAddVendor').addEventListener('click', addVendor);
+  $('#irisToggle').addEventListener('click', function () { IRIS_OPEN = !IRIS_OPEN; renderIris(); });
+  $('#irisPanel').addEventListener('click', function (e) {
+    var it = e.target.closest('[data-iri-detail]');
+    if (it) { e.preventDefault(); openDetail(it.getAttribute('data-iri-detail')); }
+  });
   $('#btnAdd').addEventListener('click', openAdd);
   $('#m_save').addEventListener('click', saveAdd);
   $('#m_job').addEventListener('change', function () { jobCustomToggle('#addModal'); });
@@ -1670,6 +2230,10 @@
     if (ms) { e.preventDefault(); saveMeta(S.detailId); return; }
     var ss = e.target.closest('[data-setstate]');
     if (ss) { e.preventDefault(); setState(S.detailId, ss.getAttribute('data-setstate')); return; }
+    var qb = e.target.closest('[data-qual]');
+    if (qb) { e.preventDefault(); toggleQual(S.detailId, qb.getAttribute('data-qual')); return; }
+    var sc = e.target.closest('[data-stcancel]');
+    if (sc) { e.preventDefault(); applyState(S.detailId, 'cancel'); return; }
     var rs = e.target.closest('[data-resign]');
     if (rs) {
       e.preventDefault();
@@ -1819,6 +2383,7 @@
       call('list').then(function (d) {
         S.rows = d.rows || [];
         S.vendors = Array.isArray(d.vendors) ? d.vendors : [];
+        S.irisMiss = Array.isArray(d.unregistered_iris) ? d.unregistered_iris : [];
         showAdmin();
       }).catch(function () {
         S.auth = null;

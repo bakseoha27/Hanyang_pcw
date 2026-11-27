@@ -7,7 +7,7 @@
 <title>신규입사자 서류 관리 · 한양 pcw팀</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="../icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="css/app.v9.css">
+<link rel="stylesheet" href="css/app.v10.css">
 <style>
   body{background:#EEF2F8;}
   .login-wrap{max-width:430px;margin:0 auto;padding:26px 16px 40px;min-height:100vh;}
@@ -93,11 +93,26 @@
         </div>
         <div class="toolbar">
           <button class="btn grow" id="btnExcel">📊 엑셀 취합 다운로드</button>
+          <button class="btn grow green"
+            id="btnP5">📋 P5 PH1 명단 엑셀</button>
           <button class="btn grow green" id="btnZip">📦 서류 ZIP 다운로드</button>
           <button class="btn grow gray" id="btnRefresh">🔄 새로고침</button>
           <button class="btn grow green" id="btnAdd">➕ 신규자 직접 추가</button>
         </div>
       </div>
+    </div>
+
+    <!-- ⚠️ 홍채등록일 지남 · 앱(한양 pcw팀) 미가입 -->
+    <div class="panel hide" id="irisPanel">
+      <button type="button" class="irisalert" id="irisToggle" aria-expanded="false">
+        <span class="ic">⚠️</span>
+        <span class="tx">
+          <b>홍채등록일 지남 · 앱 미가입 <u id="irisCount">0</u>명</b>
+          <small>홍채등록일이 지났는데 <b>한양 pcw팀</b> 앱에 아직 없는 사람입니다. 눌러서 명단 보기</small>
+        </span>
+        <span class="ar" id="irisArrow">▾</span>
+      </button>
+      <div class="irilist hide" id="irisList"></div>
     </div>
 
     <div class="panel">
@@ -127,7 +142,8 @@
                 <th class="c-name">이름</th>
                 <th>생년월일</th>
                 <th>연락처</th>
-                <th>입사일자</th>
+                <th>한양교육일자</th>
+                <th>홍채등록일자</th>
                 <th>퇴사일자</th>
                 <th class="c-wage">단가</th>
                 <th class="c-gender">성별</th>
@@ -204,12 +220,22 @@
       </div>
       <div class="grid2">
         <div class="field">
-          <label for="m_hire">입사일자</label>
+          <label for="m_hire">한양교육일자</label>
           <input type="date" id="m_hire">
         </div>
         <div class="field">
+          <label for="m_iris">홍채등록일자</label>
+          <input type="date" id="m_iris">
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="field">
           <label for="m_resign">퇴사일자</label>
           <input type="date" id="m_resign">
+        </div>
+        <div class="field">
+          <label for="m_worker_no">근로자번호<span class="opt">P5 명단</span></label>
+          <input type="text" id="m_worker_no" inputmode="numeric" placeholder="예) 25165593" autocomplete="off">
         </div>
       </div>
       <div class="field">
@@ -226,9 +252,13 @@
           <input type="text" id="m_wage" placeholder="예) 180000 / 미기재" autocomplete="off">
         </div>
         <div class="field">
-          <label for="m_referrer">소개자</label>
-          <input type="text" id="m_referrer" placeholder="없으면 비워 두세요" autocomplete="off">
+          <label for="m_leader">리더팀장<span class="opt">P5 명단</span></label>
+          <input type="text" id="m_leader" placeholder="예) 황준태" autocomplete="off">
         </div>
+      </div>
+      <div class="field">
+        <label for="m_referrer">소개자</label>
+        <input type="text" id="m_referrer" placeholder="없으면 비워 두세요" autocomplete="off">
       </div>
       <div class="field">
         <label for="m_job">직종</label>
@@ -252,7 +282,7 @@
 <script src="vendor/jszip.min.js"></script>
 <script src="vendor/pdfjs/pdf.min.js"></script>
 <script src="js/exam.js"></script>
-<script src="js/config.v9.js"></script>
-<script src="js/admin.v9.js"></script>
+<script src="js/config.v10.js"></script>
+<script src="js/admin.v10.js"></script>
 </body>
 </html>
