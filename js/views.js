@@ -934,14 +934,15 @@ function openNoticeDetail(id) {
 
 function openNoticeList() {
   var ns = noticeSorted();
-  var body = ns.length ? ns.map(function (n) {
+  var rows = ns.length ? ns.map(function (n) {
     return '<div class="p-row" data-act="openNotice" data-id="' + esc(n.id) + '">' +
       '<span class="av' + (n.pinned ? '' : ' green') + '">' + (n.pinned ? '📌' : '📢') + '</span>' +
       '<span class="p-main"><span class="p-name">' + esc(n.title) + '</span>' +
       '<span class="p-sub">' + shortDate(n.date) + ' (' + wd(n.date) + ') · ' + esc(n.author || '관리자') + '</span></span>' +
       '<span class="p-right"><span class="notice-date">자세히 ›</span></span></div>';
   }).join('') : '<div class="empty">등록된 공지가 없습니다.</div>';
-  openSheet('공지사항 목록', body, '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>');
+  openSheet('공지사항 목록', '<div class="pick-grid">' + rows + '</div>',
+    '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>', { wide: true });
 }
 
 /* 전체 알림 — 제목·내용을 직접 적어 보내기 (공지로 등록하지 않아도 됨) */
@@ -2269,7 +2270,8 @@ function openDigest(date) {
     '<div class="hint">이 내용이 그대로 복사됩니다. 메신저 · 문자에 붙여넣어 공유하세요.</div>';
   openSheet('전체 일보 취합', body,
     '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>' +
-    '<button class="btn btn-primary" data-act="digestCopy" data-date="' + date + '">전체 복사</button>');
+    '<button class="btn btn-primary" data-act="digestCopy" data-date="' + date + '">전체 복사</button>',
+    { wide: true });
 }
 
 /* ---------------- 인원 상세 시트 ---------------- */

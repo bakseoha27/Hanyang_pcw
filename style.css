@@ -1169,3 +1169,11 @@ a.btn{text-decoration:none;}
   #screen.screen-admin .rep-sum{max-width:640px;margin:12px auto 0;}
   #screen.screen-admin .digest-btn{max-width:420px;}
 }
+
+/* ---------- PC : 공지사항 목록 · 일보 취합은 넓은 다이얼로그(2열) ---------- */
+.pick-grid{display:block;}
+@media (min-width:900px){
+  #sheetWrap .sheet.wide{width:min(780px,calc(100% - 48px));max-width:780px;}
+  .pick-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 18px;align-items:start;}
+  .pick-grid .p-row{border-bottom:1px solid #F1F3F8;}
+}

@@ -37,8 +37,9 @@ function openSheet(title, body, footer, opts) {
     (footer ? '<div class="btn-row">' + footer + '</div>' : '');
   var wrap = $('#sheetWrap');
   var alarm = !!(opts && opts.alarm);
+  var wide = !!(opts && opts.wide);
   var sh = wrap ? wrap.querySelector('.sheet') : null;
-  if (sh) { sh.classList.toggle('alarm', alarm); }
+  if (sh) { sh.classList.toggle('alarm', alarm); sh.classList.toggle('wide', wide); }
   if (wrap) { wrap.classList.toggle('alarm-open', alarm); }
   wrap.classList.add('open');
   document.body.style.overflow = 'hidden';
