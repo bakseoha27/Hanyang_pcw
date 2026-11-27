@@ -225,13 +225,32 @@
         <p class="sub">카카오톡에서 검진 결과 PDF를 찾는 방법이 어려우시면 <button type="button" class="linkbtn" data-guide>❓ 카톡에서 검진 PDF 찾는 법</button> 을 눌러 주세요.</p>
       </div>
 
-      <div class="field">
-        <label>소견서<span class="opt">D2 판정을 받은 경우만</span></label>
+      <div class="d2box hide" id="d2Box">
+        <b>⚠️ D2 판정이 확인되었습니다</b>
+        <p>소견서(필수)와 복용 중인 약봉투 사진(없으면 패스)을 첨부해 주세요!</p>
+        <div class="d2acts">
+          <button type="button" class="btn sm" data-jump="opinion">소견서 올리기</button>
+          <button type="button" class="btn sm ghost" data-jump="medicine">약봉투 올리기</button>
+        </div>
+      </div>
+
+      <div class="field" id="field-opinion">
+        <label>소견서<span class="req hide" id="opinionReq">*</span><span class="opt" id="opinionOpt">D2 판정을 받은 경우 필수</span></label>
         <div class="file" data-file="opinion">
           <div class="thumb" data-thumb>🗒️</div>
-          <div class="meta"><b>성명 소견서.pdf</b><small data-name>선택 안 됨 · PDF만 (없으면 넘어가세요)</small></div>
+          <div class="meta"><b>성명 소견서.pdf</b><small data-name>선택 안 됨 · PDF만 (D2가 아니면 넘어가세요)</small></div>
           <button type="button" class="pick" data-pick>선택</button>
           <input type="file" accept="application/pdf">
+        </div>
+      </div>
+
+      <div class="field" id="field-medicine">
+        <label>복용 중인 약봉투 사진<span class="opt">D2 판정 시 · 없으면 넘어가세요</span></label>
+        <div class="file" data-file="medicine">
+          <div class="thumb" data-thumb>💊</div>
+          <div class="meta"><b>성명 약봉투</b><small data-name>선택 안 됨 · 사진 또는 PDF (선택)</small></div>
+          <button type="button" class="pick" data-pick>선택</button>
+          <input type="file" accept="image/*,application/pdf">
         </div>
       </div>
 
@@ -338,7 +357,7 @@
 
 <div id="toast"></div>
 
-<script src="js/config.js"></script>
+<script src="js/config.v2.js"></script>
 <script src="js/guide.js"></script>
 <script src="vendor/pdfjs/pdf.min.js"></script>
 <script src="js/exam.js"></script>

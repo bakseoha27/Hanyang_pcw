@@ -241,11 +241,13 @@
   function examText(row, map) {
     var arr = map.health || [];
     if (!arr.length) { return (row.health_exam_date || '') + (row.health_exam_type ? ' ' + row.health_exam_type : ''); }
-    return arr.map(function (f) {
+    var txt = arr.map(function (f) {
       var d = f.exam_date || '';
       var t = f.exam_type || '';
-      return d || t ? (d + ' ' + t ).trim() : '';
+      return d || t ? (d + ' ' + t).trim() : '';
     }).filter(Boolean).join(' / ');
+    var d2 = arr.some(function (f) { return !!f.d2; });
+    return txt + (d2 ? ' (D2)' : '');
   }
 
   function editForm(r, idx, f) {
@@ -284,6 +286,7 @@
       type: f.type, path: f.path, name: nm, size: f.size, mime: f.mime
     };
     if (f.type === 'health') {
+      next.d2 = !!f.d2;
       var dEl = form.querySelector('[data-fdate]');
       var tEl = form.querySelector('[data-ftype]');
       next.exam_date = dEl ? dEl.value : (f.exam_date || '');
@@ -435,6 +438,7 @@
     { key: 'd_photo',       w: 9.0,  t: '증명사진',         a: 'center' },
     { key: 'd_health',      w: 9.0,  t: '건강검진',         a: 'center' },
     { key: 'd_opinion',     w: 8.0,  t: '소견서',          a: 'center' },
+    { key: 'd_medicine',    w: 8.0,  t: '약봉투',          a: 'center' },
     { key: 'd_career',      w: 10.0, t: '경력증명서',       a: 'center' },
     { key: 'exam',          w: 12.0, t: '검진일 / 종류',    a: 'center' },
     { key: 'created',       w: 17.0, t: '제출일',          a: 'center' },
@@ -469,7 +473,7 @@
       glasses_type: r.glasses_type || '',
       certs: Array.isArray(r.certs) ? r.certs.join(', ') : '',
       d_idcard: yn('idcard'), d_edu: yn('edu'), d_bank: yn('bank'), d_photo: yn('photo'),
-      d_health: yn('health'), d_opinion: yn('opinion'), d_career: yn('career'),
+      d_health: yn('health'), d_opinion: yn('opinion'), d_medicine: yn('medicine'), d_career: yn('career'),
       exam: examText(r, map),
       created: dstr(r.created_at),
       status: r.status === 'hired' ? '입사확정' : '제출',

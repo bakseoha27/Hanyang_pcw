@@ -114,6 +114,17 @@ main{padding:14px 14px 0;}
 .hedit .field input,.hedit .field select{padding:9px 10px;font-size:14px;}
 .hfix{display:inline-block;margin-top:7px;font-size:11.5px;font-weight:900;color:var(--blue);text-decoration:underline;text-underline-offset:2px;}
 .addh{margin-bottom:6px;}
+
+/* D2 판정 안내 · 1년 지난 검진 */
+.d2box{margin:0 0 13px;padding:13px 14px;border-radius:14px;background:#FFF1F0;border:2px solid #FDA29B;box-shadow:0 6px 18px -12px rgba(240,68,56,.8);}
+.d2box b{display:block;font-size:14px;font-weight:900;color:#B42318;letter-spacing:-.3px;}
+.d2box p{margin:6px 0 10px;font-size:12.5px;font-weight:700;color:#912018;line-height:1.55;}
+.d2box .d2acts{display:flex;gap:8px;}
+.d2box .d2acts .btn{height:40px;font-size:13px;border-radius:11px;}
+.field.d2need .file{border-color:#F04438;border-style:solid;background:#FFF7F6;box-shadow:0 0 0 3px rgba(240,68,56,.10);}
+.field.d2need > label{color:#B42318;}
+.hfile.bad{border-color:#FDA29B;background:#FFF7F6;}
+.hfile.bad .hstat{color:#912018;font-weight:900;}
 .note{margin:8px 0 12px;padding:10px 12px;border-radius:12px;background:#FFF8EC;color:#93370D;font-size:12.5px;line-height:1.5;}
 .note.blue{background:var(--blue-soft);color:#1D4ED8;}
 .note b{font-weight:900;}

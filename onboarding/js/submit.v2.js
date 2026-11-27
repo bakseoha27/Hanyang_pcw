@@ -373,6 +373,54 @@
     return null;
   }
 
+  /* 검진일 유효기간 — 오늘 기준 1년 전 같은 날짜까지 유효 */
+  function ymdLocal(d) {
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+  function oneYearAgo() {
+    var d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setFullYear(d.getFullYear() - 1);
+    return ymdLocal(d);
+  }
+  function expired(h) { return !!(h && h.date && h.date < oneYearAgo()); }
+  function d2needed() {
+    return state.health.some(function (h) { return !!h.d2; });
+  }
+
+  function updateD2(announce) {
+    var need = d2needed();
+    var box = $('#d2Box');
+    var fo = $('#field-opinion');
+    var fm = $('#field-medicine');
+    var req = $('#opinionReq');
+    var opt = $('#opinionOpt');
+    var hasOpinion = !!state.files.opinion;
+
+    if (fo) { fo.classList.toggle('d2need', need && !hasOpinion); }
+    if (fm) { fm.classList.toggle('d2need', need); }
+    if (req) { req.classList.toggle('hide', !need); }
+    if (opt) { opt.textContent = need ? 'D2 판정 — 필수' : 'D2 판정을 받은 경우 필수'; }
+    if (!box) { return; }
+    if (!need) { box.classList.add('hide'); return; }
+
+    box.classList.remove('hide');
+    var b = box.querySelector('b');
+    var p = box.querySelector('p');
+    if (hasOpinion) {
+      if (b) { b.textContent = '✅ 소견서가 첨부되었습니다'; }
+      if (p) { p.textContent = '복용 중인 약봉투 사진이 있으면 함께 올려 주세요. 없으면 넘어가셔도 됩니다.'; }
+    } else {
+      if (b) { b.textContent = '⚠️ D2 판정이 확인되었습니다'; }
+      if (p) { p.textContent = '소견서(필수)와 복용 중인 약봉투 사진(없으면 패스)을 첨부해 주세요!'; }
+    }
+    if (announce) {
+      toast('D2 판정입니다 — 소견서(필수)와 약봉투 사진을 첨부해 주세요.', 4600);
+      try { box.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* 무시 */ }
+    }
+  }
+
   function healthOptions(cur) {
     var out = '<option value=""' + (cur ? '' : ' selected') + '>선택</option>';
     HEALTH_TYPES.forEach(function (t) {
@@ -392,18 +440,21 @@
 
     healthList.innerHTML = state.health.map(function (h) {
       var ok = !!(h.date && h.type);
-      var cls = 'hfile' + (h.state === 'reading' ? ' busy' : (ok ? '' : ' warn'));
+      var bad = expired(h);
+      var cls = 'hfile' + (h.state === 'reading' ? ' busy' : (bad ? ' bad' : (ok ? '' : ' warn')));
       var stat;
       if (h.state === 'reading') {
         stat = '⏳ PDF에서 검진일자·종류를 읽는 중…';
+      } else if (bad) {
+        stat = '❌ 검진일로부터 1년이 지난 서류는 사용할 수 없습니다. 최근 1년 이내 검진 결과지(PDF)를 올려 주세요.';
       } else if (ok) {
-        stat = '✅ ' + (h.auto ? '자동 인식' : '직접 입력') + ' · 검진일 ' + esc(h.date) + ' · ' + esc(h.type);
+        stat = '✅ ' + (h.auto ? '자동 인식' : '직접 입력') + ' · 검진일 ' + esc(h.date) + ' · ' + esc(h.type) + (h.d2 ? ' · <b style="color:#B42318">D2 판정</b>' : '');
       } else if (h.state === 'error') {
         stat = '⚠️ PDF를 읽지 못했어요. 검진일자와 종류를 골라 주세요.';
       } else {
         stat = '⚠️ PDF 글자가 없어 자동 인식을 못 했어요(스캔본 등). 검진일자와 종류를 골라 주세요.';
       }
-      var showEdit = h.state !== 'reading' && (!ok || h.edit);
+      var showEdit = h.state !== 'reading' && (!ok || h.edit || bad);
 
       var html = ''
         + '<div class="' + cls + '" data-huid="' + esc(h.uid) + '">'
@@ -434,6 +485,7 @@
       var r = ExamPDF.parseExam(text, h.file.name);
       h.date = r.date || '';
       h.type = r.type || '';
+      h.d2 = !!r.d2;
       h.auto = !!(r.date || r.type);
       h.state = (r.chars > 0) ? 'done' : 'notext';
     } catch (e) {
@@ -469,13 +521,14 @@
 
     var made = accepted.map(function (f) {
       state.hseq += 1;
-      return { uid: 'h' + state.hseq, file: f, blob: f, ext: 'pdf', mime: 'application/pdf', date: '', type: '', state: 'reading', edit: false, auto: false };
+      return { uid: 'h' + state.hseq, file: f, blob: f, ext: 'pdf', mime: 'application/pdf', date: '', type: '', d2: false, state: 'reading', edit: false, auto: false };
     });
     state.health = state.health.concat(made);
     renderHealth();
     updateProgress();
 
     for (var k = 0; k < made.length; k++) { await readHealth(made[k]); }
+    updateD2(made.some(function (m) { return m.d2; }));
   }
 
   if (healthInput) {
@@ -531,7 +584,7 @@
   }
 
   function healthReady() {
-    return state.health.length > 0 && state.health.every(function (h) { return h.date && h.type; });
+    return state.health.length > 0 && state.health.every(function (h) { return h.date && h.type && !expired(h); });
   }
 
   function requiredState() {
@@ -543,7 +596,7 @@
       !!val('#blood_type'), !!radio('vest_size'), !!val('#shoe_size'),
       !!radio('glasses_type'),
       !!state.files.idcard, !!state.files.edu, !!state.files.bank, !!state.files.photo,
-      healthReady(), !!state.files.career,
+      healthReady(), (!d2needed() || !!state.files.opinion), !!state.files.career,
       agrees.every(function (a) { return a.checked; })
     ];
   }
@@ -554,6 +607,7 @@
     var pct = Math.round((done / s.length) * 100);
     var bar = $('#prog');
     if (bar) { bar.style.width = pct + '%'; }
+    updateD2(false);
     if (state.submitted) { return; }
     var btn = $('#submitBtn');
     if (btn) { btn.disabled = false; }
@@ -606,6 +660,7 @@
       case 'bank': return '통장사본(' + n + ').' + (state.files.bank.ext);
       case 'photo': return n + '_' + b6 + '.jpg';
       case 'opinion': return n + ' 소견서.pdf';
+      case 'medicine': return n + ' 약봉투.' + ((state.files.medicine && state.files.medicine.ext) || 'jpg');
       case 'career': return n + ' 경력증명서' + (row.job_role ? '(' + row.job_role + ')' : '') + '.pdf';
       default: return n + '_' + key;
     }
@@ -637,6 +692,8 @@
     else if (!state.health.length) { problems.push(['#healthAdd', '건강검진 결과지 PDF를 올려 주세요.']); }
     else if (state.health.some(function (h) { return h.state === 'reading'; })) { problems.push(['#healthList', '검진 PDF를 읽는 중입니다. 잠시 뒤 다시 눌러 주세요.']); }
     else if (state.health.some(function (h) { return !h.date || !h.type; })) { problems.push(['#healthList', '검진일자·종류를 읽지 못한 파일이 있어요. 날짜와 종류를 골라 주세요.']); }
+    else if (state.health.some(expired)) { problems.push(['#healthList', '❌ 검진일로부터 1년이 지난 서류는 사용할 수 없습니다. 최근 1년 이내 검진 결과지(PDF)를 올려 주세요.']); }
+    else if (d2needed() && !state.files.opinion) { problems.push(['#field-opinion', 'D2 판정입니다. 소견서 PDF를 올려 주세요.']); }
     else if (!state.files.career) { problems.push(['[data-file=career]', '경력증명서 PDF를 올려 주세요.']); }
     else if (!agrees.every(function (a) { return a.checked; })) { problems.push(['#agreeAll', '개인정보 동의 3가지를 모두 체크해 주세요.']); }
     return problems;
@@ -651,7 +708,7 @@
             type: 'health', pathKey: h.uid,
             blob: h.blob, ext: 'pdf', mime: 'application/pdf',
             name: ExamPDF.fileName(row.name, h.date, h.type),
-            exam_date: h.date, exam_type: h.type
+            exam_date: h.date, exam_type: h.type, d2: !!h.d2
           });
         });
         return;
@@ -670,7 +727,7 @@
   async function uploadOne(row, it) {
     var path = state.id + '/' + it.pathKey + '.' + it.ext;
     var info = { type: it.type, path: path, name: it.name, size: it.blob.size, mime: it.mime };
-    if (it.type === 'health') { info.exam_date = it.exam_date; info.exam_type = it.exam_type; }
+    if (it.type === 'health') { info.exam_date = it.exam_date; info.exam_type = it.exam_type; info.d2 = !!it.d2; }
     if (state.uploaded[it.pathKey]) { return info; }
 
     var res = await fetch(CFG.url + '/storage/v1/object/' + CFG.bucket + '/' + encodeURIComponent(path).replace(/%2F/g, '/'), {
@@ -790,7 +847,18 @@
   /* 이름을 적으면 검진 파일 이름도 같이 바뀜 */
   var nameInput = $('#name');
   if (nameInput) { nameInput.addEventListener('input', renderHealth); }
+
+  /* D2 안내의 바로 올리기 버튼 */
+  $$('[data-jump]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var row = $('[data-file="' + b.getAttribute('data-jump') + '"]');
+      var inp = row && row.querySelector('input[type=file]');
+      if (inp) { inp.click(); }
+    });
+  });
+
   careerHint();
+  updateD2(false);
 
   updateProgress();
   renderGuide();

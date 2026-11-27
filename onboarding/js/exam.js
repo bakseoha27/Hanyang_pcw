@@ -141,6 +141,16 @@
     return { type: '', src: '' };
   }
 
+  /* ---------- D2 판정 ---------- */
+  function detectD2(text) {
+    var flat = norm(text).replace(/\s+/g, '');
+    if (!flat) { return false; }
+    // D2 / 판정D2 / D2판정 / D2유소견 — 숫자가 붙은 D20 같은 코드는 제외
+    if (/D2(?![0-9])/.test(flat)) { return true; }
+    if (/디투/.test(flat)) { return true; }
+    return false;
+  }
+
   /* ---------- 공개 ---------- */
   function parseExam(text, fileName) {
     var raw = norm(text);
@@ -152,6 +162,7 @@
       type: t.type || '',
       dateSrc: d.src || '',
       typeSrc: t.src || '',
+      d2: detectD2(raw),
       chars: flat.length,
       snippet: raw.replace(/\s+/g, ' ').trim().slice(0, 300)
     };
@@ -175,6 +186,7 @@
     ready: !!window.pdfjsLib,
     extractText: extractText,
     parseExam: parseExam,
+    detectD2: detectD2,
     fileName: fileName,
     yymmdd: yymmdd,
     labels: TYPE_LABEL
