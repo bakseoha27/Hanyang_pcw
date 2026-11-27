@@ -267,11 +267,13 @@
     if (!row) { return; }
     var nameEl = row.querySelector('[data-name]');
     var thumb = row.querySelector('[data-thumb]');
+    var st = state.files[key] || {};
     row.classList.add('done');
+    row.classList.toggle('blurry', !!st.blur);
     // 기술인 화면에는 원본 파일명만(길면 줄임) — 변환된 저장 이름은 보여 주지 않는다
     var orig = String((file && file.name) || '');
     if (orig.length > 24) { orig = orig.slice(0, 22) + '…'; }
-    nameEl.textContent = orig ? '첨부 완료 ✓ ' + orig : '첨부 완료 ✓';
+    nameEl.textContent = (st.blur ? '⚠️ 흐릿함 의심 · ' : '') + (orig ? '첨부 완료 ✓ ' + orig : '첨부 완료 ✓');
     var pick = row.querySelector('[data-pick]');
     if (pick) { pick.textContent = '변경'; }
     if (thumb) {
@@ -290,6 +292,7 @@
     var row = $('[data-file="' + key + '"]');
     if (!row) { return; }
     row.classList.remove('done');
+    row.classList.remove('blurry');
     var thumb = row.querySelector('[data-thumb]');
     var icon = thumb.getAttribute('data-icon');
     if (icon) { thumb.textContent = icon; }
@@ -402,9 +405,449 @@
         } catch (e) { alert('아이폰 사진(HEIC)을 변환하지 못했어요. 사진첩에서 JPG로 저장한 뒤 올려 주세요.'); }
         return;
       }
-      state.files[key] = { file: file, blob: file, ext: ext, mime: file.type || (isPdf(file) ? 'application/pdf' : 'image/jpeg') };
-      setFileRow(key, file);
-      updateProgress();
+      if (isPdf(file)) {
+        state.files[key] = { file: file, blob: file, ext: 'pdf', mime: 'application/pdf' };
+        setFileRow(key, file);
+        updateProgress();
+        return;
+      }
+      // 사진은 여백 자동 자르기 · 흐릿함 확인 · 회전/자르기 편집 창에서 정리한다
+      peOpen(key, file);
+    });
+  });
+
+  /* =========================================================
+     사진 편집 — 여백 자동 자르기 · 흐릿함 감지 · 90° 회전 · 직접 자르기
+     (신분증 · 기초이수증 · 통장사본의 사진만. PDF 는 그대로 올린다)
+     ========================================================= */
+  var EDIT_KEYS = { idcard: '신분증', edu: '기초이수증', bank: '통장사본' };
+  var TRIM_ANALYZE = 800;     // 여백 판정용 축소 크기
+  var TRIM_LINE_RANGE = 14;   // 한 줄(행/열) 안의 밝기 폭 허용치 — 작을수록 보수적
+  var TRIM_LINE_DIFF = 10;    // 가장자리 기준색과 그 줄 평균의 차 허용치
+  var TRIM_MAX_SIDE = 0.45;   // 한 변에서 최대로 자를 수 있는 비율
+  var TRIM_MIN_KEEP = 0.25;   // 자른 뒤 남아야 하는 최소 비율
+  var BLUR_SCALE = 640;       // 흐릿함 판정용 축소 크기
+  var BLUR_VAR_MIN = 12;      // 라플라시안 분산이 이보다 작으면 흐릿함
+  var BLUR_STD_MIN = 4;       // 거의 단색인 그림은 경고하지 않음
+  var WORK_MAX = 2200;        // 편집·저장 최대 변 길이
+  var CROP_MIN = 0.06;        // 자르기 최소 크기(비율)
+
+  var PE = null;              // 편집 중인 사진 상태
+
+  function newCanvas(w, h) {
+    var c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w));
+    c.height = Math.max(1, Math.round(h));
+    return c;
+  }
+
+  function copyCanvas(src) {
+    var c = newCanvas(src.width, src.height);
+    c.getContext('2d').drawImage(src, 0, 0);
+    return c;
+  }
+
+  function cropCanvas(src, r) {
+    var c = newCanvas(r.w, r.h);
+    var x = c.getContext('2d');
+    x.fillStyle = '#FFFFFF';
+    x.fillRect(0, 0, c.width, c.height);
+    x.drawImage(src, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
+    return c;
+  }
+
+  /* 시계 방향 90° 회전 */
+  function rotateCanvas(src) {
+    var c = newCanvas(src.height, src.width);
+    var x = c.getContext('2d');
+    x.translate(c.width, 0);
+    x.rotate(Math.PI / 2);
+    x.drawImage(src, 0, 0);
+    return c;
+  }
+
+  function loadImage(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        reject(new Error('사진을 열지 못했어요. 다른 사진으로 다시 시도해 주세요.'));
+      };
+      img.src = url;
+    });
+  }
+
+  /* 회색조로 축소해 픽셀값 뽑기 */
+  function grayOf(src, maxSide) {
+    var w = src.width, h = src.height;
+    var s = Math.min(1, (maxSide || TRIM_ANALYZE) / Math.max(w, h));
+    var cw = Math.max(3, Math.round(w * s)), ch = Math.max(3, Math.round(h * s));
+    var c = newCanvas(cw, ch);
+    var x = c.getContext('2d');
+    x.imageSmoothingEnabled = true;
+    x.drawImage(src, 0, 0, cw, ch);
+    var d = x.getImageData(0, 0, cw, ch).data;
+    var g = new Float32Array(cw * ch);
+    for (var i = 0, p = 0; i < g.length; i++, p += 4) {
+      g[i] = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+    }
+    return { g: g, w: cw, h: ch };
+  }
+
+  /* 가장자리에서부터 단색(캡처 여백)인 줄(행/열)을 세어 본다 */
+  function blankLines(G, vertical, fromStart, lo, hi) {
+    var w = G.w, h = G.h, g = G.g;
+    var n = vertical ? h : w;                       /* 줄 개수 */
+    var a0 = vertical ? 0 : (lo || 0);
+    var a1 = vertical ? w : (hi == null ? h : hi);
+    var len = a1 - a0;
+    if (len <= 0) { return 0; }
+    var pix = vertical
+      ? function (line, i) { return g[line * w + a0 + i]; }
+      : function (line, i) { return g[(a0 + i) * w + line]; };
+    var ref = 0, rn = 0, k, i, line, sum, v, mn, mx;
+    for (k = 0; k < 2 && k < n; k++) {
+      line = fromStart ? k : n - 1 - k;
+      sum = 0;
+      for (i = 0; i < len; i++) { sum += pix(line, i); }
+      ref += sum / len; rn++;
+    }
+    ref = rn ? ref / rn : 0;
+    var cnt = 0;
+    for (k = 0; k < n; k++) {
+      var idx = fromStart ? k : n - 1 - k;
+      mn = Infinity; mx = -Infinity; sum = 0;
+      for (i = 0; i < len; i++) {
+        v = pix(idx, i);
+        if (v < mn) { mn = v; }
+        if (v > mx) { mx = v; }
+        sum += v;
+      }
+      if (mx - mn <= TRIM_LINE_RANGE && Math.abs(sum / len - ref) <= TRIM_LINE_DIFF) { cnt++; }
+      else { break; }
+    }
+    return cnt;
+  }
+
+  /* 여백 사각형 (원본 픽셀 기준) — 아니면 changed:false */
+  function trimRect(src) {
+    var G = grayOf(src, TRIM_ANALYZE);
+    var top = blankLines(G, true, true);
+    var bot = blankLines(G, true, false);
+    if (top > TRIM_MAX_SIDE * G.h) { top = 0; }
+    if (bot > TRIM_MAX_SIDE * G.h) { bot = 0; }
+    if (top + bot >= G.h) { top = 0; bot = 0; }
+    var left = blankLines(G, false, true, top, G.h - bot);
+    var right = blankLines(G, false, false, top, G.h - bot);
+    if (left > TRIM_MAX_SIDE * G.w) { left = 0; }
+    if (right > TRIM_MAX_SIDE * G.w) { right = 0; }
+    if (left + right >= G.w) { left = 0; right = 0; }
+    var cw = G.w - left - right, ch = G.h - top - bot;
+    var any = !!(top || bot || left || right);
+    if (!any || cw < TRIM_MIN_KEEP * G.w || ch < TRIM_MIN_KEEP * G.h) {
+      return { x: 0, y: 0, w: src.width, h: src.height, changed: false };
+    }
+    var fx = src.width / G.w, fy = src.height / G.h;
+    return {
+      x: Math.round(left * fx), y: Math.round(top * fy),
+      w: Math.max(1, Math.round(cw * fx)), h: Math.max(1, Math.round(ch * fy)),
+      changed: true
+    };
+  }
+
+  /* 라플라시안 분산(선명도) — 작을수록 흐릿함 */
+  function sharpness(src) {
+    var G = grayOf(src, BLUR_SCALE);
+    var w = G.w, h = G.h, g = G.g;
+    if (w < 3 || h < 3) { return { score: 0, std: 0 }; }
+    var sum = 0, sum2 = 0, n = 0, s = 0, s2 = 0, x, y, i, v;
+    for (y = 1; y < h - 1; y++) {
+      for (x = 1; x < w - 1; x++) {
+        i = y * w + x;
+        v = 4 * g[i] - g[i - 1] - g[i + 1] - g[i - w] - g[i + w];
+        sum += v; sum2 += v * v; n++;
+        s += g[i]; s2 += g[i] * g[i];
+      }
+    }
+    var mean = sum / n;
+    var score = sum2 / n - mean * mean;
+    var m = s / n;
+    return { score: score, std: Math.sqrt(Math.max(0, s2 / n - m * m)) };
+  }
+
+  function peCropReset() { PE.crop = { x: 0, y: 0, w: 1, h: 1 }; }
+
+  function peCropPx() {
+    var W = PE.work.width, H = PE.work.height, c = PE.crop;
+    var x = Math.round(c.x * W), y = Math.round(c.y * H);
+    var w = Math.round(c.w * W), h = Math.round(c.h * H);
+    x = Math.max(0, Math.min(W - 1, x));
+    y = Math.max(0, Math.min(H - 1, y));
+    w = Math.max(1, Math.min(W - x, w));
+    h = Math.max(1, Math.min(H - y, h));
+    return { x: x, y: y, w: w, h: h };
+  }
+
+  function peCropPaint() {
+    var ov = $('#peCrop'), c = PE.crop;
+    if (!ov) { return; }
+    ov.style.left = (c.x * 100) + '%';
+    ov.style.top = (c.y * 100) + '%';
+    ov.style.width = (c.w * 100) + '%';
+    ov.style.height = (c.h * 100) + '%';
+  }
+
+  function peInfoUpdate() {
+    var el = $('#peInfo');
+    if (!el || !PE) { return; }
+    var k = PE.full.width / PE.oriW;             // 원본 → 작업 배율
+    var pw = Math.round(PE.work.width / k), ph = Math.round(PE.work.height / k);
+    var cp = peCropPx();
+    el.textContent = '원본 ' + PE.oriW + '×' + PE.oriH
+      + (PE.trimmed ? ' → 여백 자동 정리 ' + pw + '×' + ph : ' · 여백 자동 정리 없음')
+      + (PE.rot ? ' · 90° 회전 ' + PE.rot + '회' : '')
+      + (PE.blurry && !PE.ackBlur ? ' · 흐릿함 감지' : '');
+    el.setAttribute('data-orig', PE.oriW + 'x' + PE.oriH);
+    el.setAttribute('data-work', pw + 'x' + ph);
+    el.setAttribute('data-trimmed', PE.trimmed ? '1' : '0');
+    el.setAttribute('data-rot', String(PE.rot));
+    el.setAttribute('data-blur', PE.score.toFixed(1));
+    el.setAttribute('data-blurry', PE.blurry ? '1' : '0');
+    el.setAttribute('data-crop', [cp.x, cp.y, cp.w, cp.h].join(','));
+  }
+
+  function peRender() {
+    if (!PE) { return; }
+    var box = $('#peBox'), cv = $('#peCanvas');
+    if (!box || !cv) { return; }
+    var avail = (box.parentNode && box.parentNode.clientWidth) || 320;
+    var maxH = Math.max(150, Math.round((window.innerHeight || 700) * 0.42));
+    var s = Math.min(avail / PE.work.width, maxH / PE.work.height);
+    if (!isFinite(s) || s <= 0) { s = 1; }
+    box.style.width = Math.max(80, Math.round(PE.work.width * s)) + 'px';
+    box.style.height = Math.max(60, Math.round(PE.work.height * s)) + 'px';
+    cv.width = PE.work.width;
+    cv.height = PE.work.height;
+    cv.getContext('2d').drawImage(PE.work, 0, 0);
+    peCropPaint();
+    peInfoUpdate();
+  }
+
+  function peOpen(key, file) {
+    PE = null;
+    loadImage(file).then(function (img) {
+      var sc = Math.min(1, WORK_MAX / Math.max(img.naturalWidth, img.naturalHeight));
+      var w = Math.max(1, Math.round(img.naturalWidth * sc));
+      var h = Math.max(1, Math.round(img.naturalHeight * sc));
+      var full = newCanvas(w, h);
+      var ctx = full.getContext('2d');
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+
+      var p = {
+        key: key, label: EDIT_KEYS[key], file: file,
+        full: full, work: copyCanvas(full),
+        crop: { x: 0, y: 0, w: 1, h: 1 },
+        oriW: img.naturalWidth, oriH: img.naturalHeight,
+        rot: 0, trimmed: false, blurry: false, ackBlur: false, score: 0
+      };
+      var tr = trimRect(p.work);
+      if (tr.changed) { p.work = cropCanvas(p.work, tr); p.trimmed = true; }
+      var sh = sharpness(p.work);
+      p.score = sh.score;
+      p.blurry = sh.score < BLUR_VAR_MIN && sh.std >= BLUR_STD_MIN;
+
+      PE = p;
+      $('#peTitle').textContent = p.label + ' 사진 편집';
+      $('#peBlur').classList.toggle('hide', !p.blurry);
+      var ap = $('#peApply');
+      if (ap) { ap.disabled = false; ap.textContent = '이대로 적용'; }
+      openModal('photoEditModal');
+      peRender();
+    }).catch(function (e) {
+      alert((e && e.message) || '사진을 열지 못했어요. 다른 사진으로 다시 시도해 주세요.');
+    });
+  }
+
+  /* ---- 자르기 네모 조절 (터치·마우스 공통) ---- */
+  var peDrag = null;
+
+  function pePoint(e) {
+    var r = $('#peCanvas').getBoundingClientRect();
+    var cl = function (v) { return Math.max(0, Math.min(1, v)); };
+    return {
+      x: cl(r.width ? (e.clientX - r.left) / r.width : 0),
+      y: cl(r.height ? (e.clientY - r.top) / r.height : 0)
+    };
+  }
+
+  function peDown(e) {
+    if (!PE) { return; }
+    var hd = e.target.closest ? e.target.closest('[data-h]') : null;
+    var onCrop = e.target.closest ? e.target.closest('#peCrop') : null;
+    if (e.preventDefault) { e.preventDefault(); }
+    var p = pePoint(e);
+    peDrag = {
+      mode: hd ? 'resize' : (onCrop ? 'move' : 'new'),
+      dir: hd ? hd.getAttribute('data-h') : '',
+      from: p,
+      crop0: { x: PE.crop.x, y: PE.crop.y, w: PE.crop.w, h: PE.crop.h }
+    };
+    if (peDrag.mode === 'new') { PE.crop = { x: p.x, y: p.y, w: 0, h: 0 }; }
+    try { $('#peBox').setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
+  }
+
+  function peMove(e) {
+    if (!peDrag || !PE) { return; }
+    if (e.preventDefault) { e.preventDefault(); }
+    var p = pePoint(e);
+    var c0 = peDrag.crop0;
+    var dx = p.x - peDrag.from.x, dy = p.y - peDrag.from.y;
+    if (peDrag.mode === 'move') {
+      PE.crop.x = Math.max(0, Math.min(1 - c0.w, c0.x + dx));
+      PE.crop.y = Math.max(0, Math.min(1 - c0.h, c0.y + dy));
+    } else if (peDrag.mode === 'resize') {
+      var dir = peDrag.dir;
+      var x0 = c0.x, y0 = c0.y, x1 = c0.x + c0.w, y1 = c0.y + c0.h;
+      if (dir.indexOf('w') >= 0) { x0 = Math.max(0, Math.min(x1 - CROP_MIN, c0.x + dx)); }
+      if (dir.indexOf('e') >= 0) { x1 = Math.min(1, Math.max(x0 + CROP_MIN, c0.x + c0.w + dx)); }
+      if (dir.indexOf('n') >= 0) { y0 = Math.max(0, Math.min(y1 - CROP_MIN, c0.y + dy)); }
+      if (dir.indexOf('s') >= 0) { y1 = Math.min(1, Math.max(y0 + CROP_MIN, c0.y + c0.h + dy)); }
+      PE.crop = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    } else {
+      var ax = Math.min(peDrag.from.x, p.x), ay = Math.min(peDrag.from.y, p.y);
+      PE.crop = {
+        x: ax, y: ay,
+        w: Math.abs(p.x - peDrag.from.x),
+        h: Math.abs(p.y - peDrag.from.y)
+      };
+    }
+    peCropPaint();
+  }
+
+  function peUp() {
+    if (!peDrag || !PE) { return; }
+    var mode = peDrag.mode;
+    peDrag = null;
+    if (mode === 'new' && (PE.crop.w < CROP_MIN || PE.crop.h < CROP_MIN)) { peCropReset(); }
+    peCropPaint();
+    peInfoUpdate();
+  }
+
+  var peBoxEl = $('#peBox');
+  if (peBoxEl) {
+    peBoxEl.addEventListener('pointerdown', peDown);
+    peBoxEl.addEventListener('pointermove', peMove);
+    peBoxEl.addEventListener('pointerup', peUp);
+    peBoxEl.addEventListener('pointercancel', peUp);
+  }
+
+  var peApplyBtn = $('#peApply');
+  if (peApplyBtn) {
+    peApplyBtn.addEventListener('click', function () {
+      if (!PE) { return; }
+      var out = cropCanvas(PE.work, peCropPx());
+      var btn = this;
+      btn.disabled = true;
+      btn.textContent = '적용 중…';
+      out.toBlob(function (blob) {
+        btn.disabled = false;
+        btn.textContent = '이대로 적용';
+        if (!PE) { return; }
+        if (!blob) { toast('사진을 저장하지 못했어요. 다시 시도해 주세요.'); return; }
+        if (blob.size > CFG.maxFileMB * 1048576) {
+          toast('사진 용량이 너무 큽니다. 네모를 조금 더 좁혀 주세요.', 3600);
+          return;
+        }
+        var key = PE.key, f = PE.file, blur = PE.blurry;
+        state.files[key] = {
+          file: f, blob: blob, ext: 'jpg', mime: 'image/jpeg',
+          converted: 'jpg', blur: blur, w: out.width, h: out.height
+        };
+        setFileRow(key, f);
+        updateProgress();
+        closeModal('photoEditModal');
+        PE = null;
+        toast(blur
+          ? '흐릿한 사진으로 첨부했어요. 글자가 잘 보이는지 한 번 더 확인해 주세요.'
+          : '사진을 정리해 첨부했어요.', 3200);
+      }, 'image/jpeg', 0.9);
+    });
+  }
+
+  var peRotateBtn = $('#peRotate');
+  if (peRotateBtn) {
+    peRotateBtn.addEventListener('click', function () {
+      if (!PE) { return; }
+      PE.work = rotateCanvas(PE.work);
+      PE.rot = (PE.rot + 1) % 4;
+      peCropReset();
+      peRender();
+    });
+  }
+
+  var peAutoBtn = $('#peAuto');
+  if (peAutoBtn) {
+    peAutoBtn.addEventListener('click', function () {
+      if (!PE) { return; }
+      var src = cropCanvas(PE.work, peCropPx());   /* 지금 네모 안쪽에서 다시 찾기 */
+      var tr = trimRect(src);
+      if (tr.changed) {
+        PE.work = cropCanvas(src, tr);
+        PE.trimmed = true;
+        peCropReset();
+        peRender();
+        toast('여백을 자동으로 잘랐어요.');
+      } else {
+        peRender();
+        toast('자를 여백을 찾지 못했어요. 사진을 그대로 두었습니다.', 3200);
+      }
+    });
+  }
+
+  var peResetBtn = $('#peReset');
+  if (peResetBtn) {
+    peResetBtn.addEventListener('click', function () {
+      if (!PE) { return; }
+      PE.work = copyCanvas(PE.full);
+      PE.trimmed = false;
+      PE.rot = 0;
+      peCropReset();
+      peRender();
+      toast('처음 사진으로 되돌렸어요.');
+    });
+  }
+
+  var peReselectBtn = $('#peReselect');
+  if (peReselectBtn) {
+    peReselectBtn.addEventListener('click', function () {
+      if (!PE) { return; }
+      var key = PE.key;
+      closeModal('photoEditModal');
+      PE = null;
+      var row = $('[data-file="' + key + '"]');
+      var inp = row && row.querySelector('input[type=file]');
+      if (inp) { setTimeout(function () { inp.click(); }, 80); }
+    });
+  }
+
+  var peUseBtn = $('#peUseAnyway');
+  if (peUseBtn) {
+    peUseBtn.addEventListener('click', function () {
+      if (!PE) { return; }
+      PE.ackBlur = true;
+      $('#peBlur').classList.add('hide');
+      peInfoUpdate();
+    });
+  }
+
+  $$('[data-pe-cancel]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      closeModal('photoEditModal');
+      PE = null;
     });
   });
 

@@ -7,7 +7,7 @@
 <title>한양 pcw팀 신규입사자 서류 제출</title>
 <meta name="description" content="한양 pcw팀 신규입사자 서류 제출 — 기본 정보 입력과 서류 업로드">
 <link rel="icon" href="../icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="css/app.v3.css">
+<link rel="stylesheet" href="css/app.v4.css">
 </head>
 <body>
 <div class="wrap">
@@ -390,12 +390,48 @@
   </div>
 </div>
 
+<!-- 사진 편집 (여백 자동 자르기 · 흐릿함 경고 · 90° 회전 · 직접 자르기) -->
+<div class="modal photoedit" id="photoEditModal">
+  <div class="bg" data-pe-cancel></div>
+  <div class="sheet">
+    <div class="head"><b id="peTitle">사진 편집</b><button type="button" data-pe-cancel>✕</button></div>
+    <div class="body">
+      <div class="blurbar hide" id="peBlur">
+        <b>⚠️ 사진이 흐릿해서 글자가 잘 안 보일 수 있어요!</b>
+        <p>선명한 사진이 있다면 다시 올려 주세요.</p>
+        <div class="d2acts">
+          <button type="button" class="btn sm" id="peReselect">다른 사진 다시 고르기</button>
+          <button type="button" class="btn sm ghost" id="peUseAnyway">그대로 사용</button>
+        </div>
+      </div>
+      <div class="pewrap">
+        <div class="pebox" id="peBox">
+          <canvas id="peCanvas"></canvas>
+          <div class="pecrop" id="peCrop">
+            <i class="hd nw" data-h="nw"></i><i class="hd n" data-h="n"></i><i class="hd ne" data-h="ne"></i>
+            <i class="hd w" data-h="w"></i><i class="hd e" data-h="e"></i>
+            <i class="hd sw" data-h="sw"></i><i class="hd s" data-h="s"></i><i class="hd se" data-h="se"></i>
+          </div>
+        </div>
+      </div>
+      <p class="peinfo" id="peInfo"></p>
+      <p class="pehint">네모 안쪽만 남습니다. 모서리를 끌어 자르는 범위를 조절하세요.</p>
+      <div class="peacts">
+        <button type="button" class="btn sm ghost" id="peRotate">↻ 90° 회전</button>
+        <button type="button" class="btn sm ghost" id="peAuto">자동 여백 자르기</button>
+        <button type="button" class="btn sm ghost" id="peReset">초기화</button>
+      </div>
+      <button type="button" class="btn" id="peApply">이대로 적용</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
-<script src="js/config.v3.js"></script>
+<script src="js/config.v4.js"></script>
 <script src="js/guide.js"></script>
 <script src="vendor/pdfjs/pdf.min.js"></script>
 <script src="js/exam.js"></script>
-<script src="js/submit.v3.js"></script>
+<script src="js/submit.v4.js"></script>
 </body>
 </html>
