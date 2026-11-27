@@ -1457,3 +1457,8 @@ a.btn{text-decoration:none;}
   .ppe-sw-ic{font-size:13px;}
   .ppe1-tm{max-width:68px;}
 }
+
+/* 검색 + [미서명만] 한 줄에 (모바일 세로 공간 절약) */
+.ppe2-toolbar{align-items:stretch;}
+.ppe2-toolbar .name-search{flex:1 1 150px;min-width:0;height:42px;padding:0 12px;margin:8px 0 6px;}
+.ppe2-toolbar .ppe2-uns{height:42px;margin:8px 0 6px;padding:0 12px;}
