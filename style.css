@@ -978,3 +978,194 @@ a.btn{text-decoration:none;}
 .hc-copy-mini{flex:0 0 auto;height:24px;padding:0 8px;font-size:10.5px;border-radius:8px;}
 .lv-btn.cp{color:#475467;background:#F2F4F7;}
 .la-acts .lv-btn.cp{color:#475467;background:#F2F4F7;}
+
+/* =========================================================
+   2026-11-27 · PC(≥900px) 와이드 대시보드 · 모바일은 그대로
+   · 새 래퍼(.dash-grid/.dash-col/.rep-grid/.docs-grid)는 모바일에서
+     display:contents 로 흐름을 전혀 바꾸지 않는다
+   ========================================================= */
+.dash-grid,.rep-grid,.docs-grid{display:block;}
+.dash-col{display:contents;}
+.tb-tabs,.tb-logout{display:none;}
+
+@media (min-width:900px){
+  /* ---------- 앱 틀 ---------- */
+  #app{max-width:1200px;}
+  body{background:#DFE4EE;}
+  #screen{padding:18px 24px 46px;}
+  #screen.screen-guest{max-width:560px;margin:0 auto;padding-top:26px;}
+  #screen.screen-worker{max-width:720px;margin:0 auto;}
+  .card{border-radius:16px;padding:18px 18px 19px;margin-bottom:14px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04),0 10px 26px -18px rgba(16,24,40,.3);}
+  .card.tight{padding:15px;}
+  .sec-t{font-size:15px;}
+  .muted{font-size:12.5px;}
+  .hint{font-size:12px;}
+  .seg.big{max-width:460px;}
+
+  /* ---------- 상단 바 : 브랜드 · 탭 · 계정 ---------- */
+  #topbar{padding:13px 24px 14px;border-radius:0 0 20px 20px;}
+  #topbar .tb-row{gap:18px;align-items:center;}
+  #topbar .brand{gap:11px;flex:0 0 auto;}
+  .brand-mark{width:40px;height:40px;border-radius:13px;font-size:17px;}
+  .brand-title{font-size:19px;letter-spacing:-.5px;}
+  .brand-sub{font-size:11.5px;}
+  .tb-tabs{display:flex;flex:1 1 auto;justify-content:center;align-items:center;gap:4px;min-width:0;}
+  .tb-tabs .tab{flex:0 0 auto;flex-direction:row;gap:7px;padding:10px 17px;border-radius:11px;
+    color:#BAC7DF;white-space:nowrap;transition:background .15s,color .15s;}
+  .tb-tabs .tab .ic{font-size:15px;line-height:1;filter:grayscale(.4);opacity:.9;}
+  .tb-tabs .tab .lb{font-size:13px;font-weight:800;letter-spacing:-.2px;}
+  .tb-tabs .tab:hover{background:rgba(255,255,255,.09);color:#fff;}
+  .tb-tabs .tab.active{background:rgba(255,255,255,.17);color:#fff;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.24);}
+  .tb-tabs .tab.active .ic{filter:none;opacity:1;}
+  .tb-btns{gap:8px;flex:0 0 auto;}
+  .tb-btns .role-chip{height:38px;padding:0 14px;font-size:13px;gap:6px;}
+  .tb-btns .tb-ic{width:40px;height:38px;border-radius:11px;font-size:15px;}
+  .tb-btns .tb-logout{display:inline-flex;align-items:center;justify-content:center;gap:6px;width:auto;
+    min-width:0;height:38px;padding:0 14px;font-size:12.5px;font-weight:900;color:#E6ECF8;
+    letter-spacing:-.2px;white-space:nowrap;}
+  .tb-logout:hover{background:rgba(255,255,255,.18);}
+  #tabbar{display:none;}
+
+  /* ---------- 연결 상태 줄 ---------- */
+  #syncbar.syncbar{max-width:1200px;padding:9px 24px 0;text-align:center;}
+  #syncbar .sync-btn{display:inline-flex;width:auto;padding:5px 14px;border-radius:999px;font-size:10.5px;}
+
+  /* ---------- 전체 현황 : 2단 (왼쪽 정보 · 오른쪽 명단) ---------- */
+  .dash-grid{display:grid;grid-template-columns:minmax(0,360px) minmax(0,1fr);
+    gap:14px;align-items:start;}
+  .dash-col{display:flex;flex-direction:column;gap:14px;min-width:0;}
+  .dash-col>.card{margin-bottom:0;}
+  .dash-col>.foot-note{padding:2px 0 0;}
+
+  .stat-grid{gap:9px;}
+  .stat{padding:13px 6px 12px;border-radius:14px;}
+  .stat .s-num{font-size:26px;}
+  .stat .s-lab{font-size:11px;}
+
+  /* 인원별 출퇴근 : 필터는 접지 않고 한 줄에, 목록은 넓게 */
+  .filter-row{flex-wrap:wrap;overflow:visible;padding-bottom:6px;}
+  .fchip{padding:7px 13px;font-size:12.5px;}
+  .name-search{padding:9px 12px;margin:10px 0;}
+  .name-search .ns-in{font-size:14.5px;}
+  .p-row{padding:11px 4px;gap:12px;}
+  .p-name{font-size:15px;}
+  .p-sub{font-size:12px;}
+  .p-time{font-size:11.5px;}
+  .p-row:hover{background:#F8FAFF;border-radius:10px;}
+  .pill-mini,.badge{font-size:10.5px;}
+  .bulk-bar{padding:12px 14px 14px;}
+  .bulk-grid{grid-template-columns:repeat(4,minmax(0,1fr));}
+  .bulk-grid>.span2{grid-column:span 2;}
+
+  /* ---------- 팀·조 : 카드 그리드 ---------- */
+  [data-list="teams"]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:14px;align-items:start;}
+  [data-list="teams"]>.card{margin-bottom:0;}
+  [data-list="teams"]>.unassigned,[data-list="teams"]>.q-empty{grid-column:1/-1;}
+  .team-card{padding:16px 16px 14px;}
+  .team-name{font-size:16px;}
+  .team-card .chips{gap:7px;margin-top:10px;}
+  .team-card .chip{font-size:13px;padding:8px 11px;}
+
+  /* ---------- 작업일보함 · 현장자료 : 2열 카드 ---------- */
+  .rep-grid,.docs-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:14px;align-items:start;}
+  .rep-grid>.card,.docs-grid>.card{margin-bottom:0;}
+  .docs-grid>.card{display:flex;flex-direction:column;}
+  .rep-team{font-size:15.5px;}
+  .rep-content{font-size:13px;max-height:none;}
+  .date-nav button{width:42px;height:42px;}
+  .doc-open-btn{height:50px;}
+
+  /* ---------- 시트 → 화면 가운데 다이얼로그 ---------- */
+  .sheet{left:50%;top:50%;bottom:auto;width:min(600px,calc(100% - 48px));max-width:600px;
+    max-height:min(86vh,920px);border-radius:20px;opacity:0;
+    transform:translate(-50%,-46%) scale(.985);box-shadow:0 24px 70px -18px rgba(16,24,40,.45);
+    transition:transform .22s cubic-bezier(.22,.9,.25,1),opacity .16s ease;}
+  #sheetWrap.open .sheet{transform:translate(-50%,-50%) scale(1);opacity:1;}
+  .sheet-grip{display:none;}
+  #sheetBody{padding:6px 20px 18px;}
+  .sheet-title{position:sticky;top:0;z-index:3;background:#fff;padding:14px 0 11px;margin-bottom:6px;
+    border-bottom:1px solid #F1F3F8;}
+  .sheet-title b{font-size:17.5px;}
+  .sheet .btn-row{position:sticky;bottom:0;z-index:2;background:#fff;margin-top:14px;
+    padding:11px 0 3px;box-shadow:0 -10px 16px -14px rgba(16,24,40,.45);}
+  .sheet .btn-row>.btn{height:48px;}
+  #sheetWrap.alarm-open .sheet.alarm{animation:pcwAlarmPopPC .3s cubic-bezier(.22,.9,.25,1);}
+  @keyframes pcwAlarmPopPC{
+    from{transform:translate(-50%,-44%) scale(.97);opacity:.55;}
+    to{transform:translate(-50%,-50%) scale(1);opacity:1;}
+  }
+
+  /* ---------- 한달 공수표 ---------- */
+  .gs-table{font-size:12px;}
+  .gs-table th,.gs-table td{padding:7px 4px;}
+  .gs-table th.gs-name,.gs-table td.gs-name{width:78px;min-width:78px;}
+  .gs-table td.gs-c{min-width:42px;}
+  .gs-team-row{padding:10px 14px;}
+
+  /* ---------- 기술인 화면 (가운데 정돈) ---------- */
+  #screen.screen-worker .hello{margin:2px 0 14px;}
+  #screen.screen-worker .hello .h-name{font-size:20px;}
+  #screen.screen-worker .attbox .val{font-size:27px;}
+  #screen.screen-worker .clock{font-size:22px;}
+  #screen.screen-worker .grid2{gap:0 14px;}
+  #screen.screen-worker .btn-row>.btn{height:50px;}
+  #screen.screen-guest .login-brand{padding:30px 20px 26px;}
+  #screen.screen-guest .login-brand .lb-mark{width:62px;height:62px;border-radius:19px;font-size:26px;}
+  #screen.screen-guest .login-brand .lb-t{font-size:23px;}
+  #screen.screen-guest .login-brand .lb-s{font-size:12px;}
+
+  /* ---------- 토스트 ---------- */
+  #toast{bottom:34px;max-width:520px;}
+}
+
+@media (min-width:1200px){
+  .dash-grid{grid-template-columns:minmax(0,400px) minmax(0,1fr);}
+  [data-list="teams"]{grid-template-columns:repeat(3,minmax(0,1fr));}
+}
+
+/* =========================================================
+   2026-11-27 · 인원별 출퇴근 : 조 칩 → [전체 ▾] 드롭다운
+   + 줄 오른쪽 [☑️ 전체 선택] (아코디언 열지 않고 바로 선택/해제)
+   ========================================================= */
+.filter-row.frow-main{
+  display:flex;align-items:center;flex-wrap:nowrap;overflow:visible;gap:6px;
+  padding:2px 0 9px;margin-top:2px;
+}
+.filter-row.frow-main .fchip{flex:0 0 auto;}
+.fchip.fteam{display:inline-flex;align-items:center;gap:4px;max-width:128px;padding-right:9px;}
+.fchip.fteam .ft-lab{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.fchip.fteam i{font-style:normal;font-size:9px;opacity:.75;flex:0 0 auto;}
+.fchip.fall{display:inline-flex;align-items:center;gap:4px;margin-left:auto;
+  background:#EAF0FF;color:#1E4FD8;padding-left:9px;padding-right:9px;}
+.fchip.fall.on{background:var(--navy);color:#fff;}
+.fchip.fall .fa-cnt{font-style:normal;font-size:10px;font-weight:900;background:rgba(255,255,255,.22);
+  border-radius:6px;padding:1px 5px;line-height:1.35;}
+.team-menu{margin-top:2px;}
+.team-menu .cert-opt{flex:0 0 auto;}
+/* 상태 배지만 남긴 줄 — 이름·소속이 넓게 */
+.p-row .p-right{gap:4px;}
+@media (max-width:380px){
+  .fchip.fteam{max-width:104px;}
+  .filter-row.frow-main{gap:5px;}
+  .fchip.fall .fa-lab{font-size:11px;}
+}
+@media (min-width:900px){
+  .filter-row.frow-main{gap:8px;}
+  .fchip.fteam{max-width:180px;font-size:12.5px;}
+  .fchip.fall{font-size:12.5px;}
+}
+
+/* ---------- 2026-11-27 · PC 정돈 : 넓은 카드 안 버튼이 화면 끝까지 늘어나지 않게 ---------- */
+.team-card .card-head>.badge{flex:0 0 auto;white-space:nowrap;}
+@media (min-width:900px){
+  #screen.screen-admin .btn-row{justify-content:flex-start;gap:10px;}
+  #screen.screen-admin .btn-row>.btn{flex:0 1 auto;min-width:170px;max-width:300px;}
+  #screen.screen-admin .btn.block{max-width:520px;}
+  #screen.screen-admin .date-nav{max-width:640px;margin:0 auto 10px;}
+  #screen.screen-admin .rep-sum{max-width:640px;margin:12px auto 0;}
+  #screen.screen-admin .digest-btn{max-width:420px;}
+}

@@ -11,6 +11,7 @@ var TABS = {
 function render() {
   if (!state.ready) {
     $('#topbar').innerHTML = '<div class="tb-row">' + topBrandHTML() + '</div>';
+    $('#screen').className = 'screen-loading';
     $('#screen').innerHTML = '<div class="card" style="margin:14px 0"><div class="empty"><span class="e-ic">⏳</span>현장 데이터를 불러오는 중입니다…</div></div>';
     $('#tabbar').innerHTML = '';
     renderSync();
@@ -18,6 +19,7 @@ function render() {
   }
   if (!state.auth || !me()) {
     renderLoginTop();
+    $('#screen').className = 'screen-guest';
     $('#screen').innerHTML = loginView();
     $('#tabbar').innerHTML = '';
     renderSync();
@@ -32,6 +34,8 @@ function render() {
   var valid = TABS[state.role].map(function (t) { return t[0]; });
   if (valid.indexOf(state.ui[key]) < 0) { state.ui[key] = valid[0]; }
   var html = state.role === 'worker' ? workerView() : adminView();
+  /* 화면 폭 기준 (PC 최적화용) — 모바일은 이 클래스로 달라지는 것이 없다 */
+  $('#screen').className = state.role === 'worker' ? 'screen-worker' : 'screen-admin';
   $('#screen').innerHTML = html;
   renderTabs();
   renderSync();
@@ -90,12 +94,16 @@ function renderTop() {
     roleChip = '<button class="role-chip" data-act="roleMenu" aria-label="화면 전환 · 지금 ' + cur[1] + '">' +
       '<span class="rc-lab">' + cur[1] + '</span><span class="rc-car">▾</span></button>';
   }
+  /* PC(≥900px)에서는 탭을 상단 바 가운데로 옮기고 로그아웃을 오른쪽에 둔다.
+     모바일에서는 .tb-tabs · .tb-logout 이 숨겨져 지금 그대로다. */
   $('#topbar').innerHTML =
     '<div class="tb-row">' +
     topBrandHTML() +
+    '<div class="tb-tabs" id="tabsTop"></div>' +
     '<div class="tb-btns">' +
     roleChip +
     '<button class="tb-ic" data-act="openSettings" title="내 정보" aria-label="내 정보">⚙️</button>' +
+    '<button class="tb-ic tb-logout" data-act="logout" title="로그아웃" aria-label="로그아웃">로그아웃</button>' +
     '</div>' +
     '</div>';
 }
@@ -133,11 +141,15 @@ function renderTabs() {
   var list = TABS[state.role];
   var key = state.role === 'worker' ? 'workerTab' : 'adminTab';
   var cur = state.ui[key];
-  $('#tabbar').innerHTML = list.map(function (t) {
+  var html = list.map(function (t) {
     var on = cur === t[0] ? ' active' : '';
     return '<button class="tab' + on + '" data-act="tab" data-tab="' + t[0] + '">' +
       '<span class="ic">' + t[2] + '</span><span class="lb">' + t[1] + '</span></button>';
   }).join('');
+  $('#tabbar').innerHTML = html;
+  /* PC 상단 바의 탭 (모바일에서는 CSS 로 숨김) */
+  var top = document.getElementById('tabsTop');
+  if (top) { top.innerHTML = html; }
 }
 
 /* =========================================================
@@ -210,8 +222,6 @@ function syncBulkUI() {
   var n = Object.keys(bulkSel).length;
   var c = document.getElementById('bulkCnt');
   if (c) { c.textContent = n + '명 선택'; c.classList.toggle('hide', !n); }
-  var b = document.getElementById('bulkAllBtn');
-  if (!b) { return; }
   var box = document.querySelector('[data-list="dash"]');
   var chks = box ? box.querySelectorAll('.bulk-chk') : [];
   var vis = Array.prototype.filter.call(chks, function (x) {
@@ -219,7 +229,21 @@ function syncBulkUI() {
     return row && !row.classList.contains('q-hide');
   });
   var allOn = vis.length > 0 && vis.every(function (x) { return x.checked; });
-  b.textContent = allOn ? '선택 해제' : '전체 선택';
+  var b = document.getElementById('bulkAllBtn');
+  if (b) { b.textContent = allOn ? '선택 해제' : '전체 선택'; }
+  /* 인원별 출퇴근 줄의 [☑️ 전체 선택] — 아코디언을 열지 않아도 바로 선택/해제 */
+  var q = document.getElementById('bulkQuickBtn');
+  if (q) {
+    var lab = q.querySelector('.fa-lab');
+    if (lab) { lab.textContent = allOn ? '선택 해제' : '전체 선택'; }
+    var cnt = q.querySelector('.fa-cnt');
+    if (n && !allOn) {
+      if (!cnt) { cnt = document.createElement('span'); cnt.className = 'fa-cnt'; q.appendChild(cnt); }
+      cnt.textContent = String(n);
+    } else if (cnt) { cnt.parentNode.removeChild(cnt); }
+    q.classList.toggle('on', n > 0);
+    q.setAttribute('aria-pressed', allOn ? 'true' : 'false');
+  }
 }
 function bulkChecksVisible() {
   var box = document.querySelector('[data-list="dash"]');
@@ -1264,7 +1288,7 @@ function pdfRowHTML(cat, f, isAdmin) {
 
 function docsViewerHTML(who) {
   var isAdmin = who === 'admin' && isAdminView();
-  return DOC_CATS.map(function (c) {
+  return '<div class="docs-grid">' + DOC_CATS.map(function (c) {
     var files = state.docs[c.key] || [];
     var latest = files[0];
     var list = files.length
@@ -1281,7 +1305,7 @@ function docsViewerHTML(who) {
           '<span class="ub-ic">＋</span><span class="ub-tx">' + c.label + ' PDF 파일 업로드</span></label>'
         : '') +
       '</div>';
-  }).join('') +
+  }).join('') + '</div>' +
     '<div class="foot-note">' + (isAdmin
       ? 'PDF는 Supabase Storage <b>site-docs</b> 버킷에 저장됩니다 · 파일당 50MB까지'
       : '자료는 관리자가 등록 · 교체합니다') + '</div>';
@@ -1430,7 +1454,7 @@ function adminDash() {
     '<button class="' + (view === 'today' ? 'on' : '') + '" data-act="adminDashView" data-v="today">오늘 현황</button>' +
     '<button class="' + (view === 'gongsu' ? 'on' : '') + '" data-act="adminDashView" data-v="gongsu">한달 공수표</button>' +
     '</div>';
-  return seg + (view === 'gongsu' ? adminGongsu() : noticeBannerHTML('admin') + schedSummaryHTML() + adminTodayBody());
+  return seg + (view === 'gongsu' ? adminGongsu() : adminTodayBody());
 }
 
 function gsPeopleList() {
@@ -1864,13 +1888,19 @@ function adminTodayBody() {
   if (hasNone) { filters.push(['none', '미배정']); }
   var f = state.ui.adminTeamFilter || 'all';
   var rsel = dashRoleSel();
-  var teamChips = filters.map(function (x) {
-    return '<button class="fchip' + (f === x[0] ? ' on' : '') + '" data-act="adminFilter" data-f="' + x[0] + '">' + esc(x[1]) + '</button>';
-  });
+  var tOpen = !!state.ui.teamMenu;
+  /* 팀 칩을 한 줄에 늘어놓지 않고 [전체 ▾] 드롭다운 하나로 (2026-11-27 요청) */
+  var teamBtn = '<button class="fchip fteam' + (f !== 'all' ? ' on' : '') + '" data-act="adminTeamOpen" aria-expanded="' +
+    (tOpen ? 'true' : 'false') + '" aria-label="조 선택">' +
+    '<span class="ft-lab">' + esc(teamFilterLabel(f)) + '</span> <i>' + (tOpen ? '▴' : '▾') + '</i></button>';
   var roleBtn = '<button class="fchip ffilter' + (rsel.length ? ' on' : '') + '" data-act="dashRoleOpen" aria-expanded="' +
     (state.ui.dashRolePanel ? 'true' : 'false') + '">☑ 필터' + (rsel.length ? ' ' + rsel.length : '') +
     ' <i>' + (state.ui.dashRolePanel ? '▴' : '▾') + '</i></button>';
-  var filterHtml = '<div class="filter-row">' + teamChips[0] + roleBtn + teamChips.slice(1).join('') + '</div>' +
+  var selN0 = Object.keys(bulkSel).length;
+  var pickBtn = '<button class="fchip fall' + (selN0 ? ' on' : '') + '" id="bulkQuickBtn" data-act="bulkAll" aria-label="현재 목록 전체 선택">' +
+    '☑️ <span class="fa-lab">전체 선택</span>' + (selN0 ? '<span class="fa-cnt">' + selN0 + '</span>' : '') + '</button>';
+  var filterHtml = '<div class="filter-row frow-main">' + teamBtn + roleBtn + pickBtn + '</div>' +
+    (tOpen ? teamMenuHTML(filters, f) : '') +
     (state.ui.dashRolePanel ? dashRolePanelHTML() : '');
 
   var list = adminPeopleList();
@@ -1882,7 +1912,7 @@ function adminTodayBody() {
       (p.role === 'leader' ? '<span class="tag tag-leader">반장</span>' : '') +
       (p.admin ? '<span class="tag tag-admin">관리자</span>' : '') + '</span>' +
       '<span class="p-sub">' + teamLabel(p.teamId) + ' · ' + birthText(p.birth) + '생' + (isAdminView() ? ' · ' + won(p.price) + '원' : '') + '</span></span>' +
-      '<span class="p-right">' + statusBadge(p) + '<span class="p-time">' + timeText(p) + '</span></span>' +
+      '<span class="p-right">' + statusBadge(p) + '</span>' +
       '</div>';
   }).join('');
 
@@ -1949,7 +1979,17 @@ function adminTodayBody() {
     '<div class="hint">당일 휴무 취소는 기술인이 직접 할 수 없어 관리자에게 연락해야 합니다.</div>' +
     '</div>' : '';
 
-  return adminHeadcountCard() + tbmAlertHTML() + statCard + leaveCard + avgCard + peopleCard +
+  /* PC(≥900px)는 2단 대시보드 — 왼쪽 = 공지/토요일 조사 · 일정 · 인원 현황 · TBM 알림,
+     오른쪽 = 오늘 현황 통계 · 휴무 · 평균 단가 · 인원별 출퇴근.
+     모바일에서는 .dash-col{display:contents} 로 위에서 아래로 지금과 같은 순서로 흐른다. */
+  return '<div class="dash-grid">' +
+    '<div class="dash-col dash-col-l">' +
+      noticeBannerHTML('admin') + schedSummaryHTML() + adminHeadcountCard() + tbmAlertHTML() +
+    '</div>' +
+    '<div class="dash-col dash-col-r">' +
+      statCard + leaveCard + avgCard + peopleCard +
+    '</div>' +
+    '</div>' +
     '<div class="foot-note">Supabase 실시간 저장 · 20초마다 자동 새로고침</div>';
 }
 
@@ -1994,6 +2034,28 @@ function dashSortRank(p) {
   if ((p.job || '') === '배관공') { return 3; }
   return 4;
 }
+/* 조 선택 라벨 — [전체 ▾] 버튼에 표시 */
+function teamFilterLabel(f) {
+  if (!f || f === 'all') { return '전체'; }
+  if (f === 'none') { return '미배정'; }
+  var t = teamById(f);
+  return t ? t.name : '전체';
+}
+/* [전체 ▾] 드롭다운 패널 — 실제 등록된 조 목록 (인원 수 포함) */
+function teamMenuHTML(filters, f) {
+  return '<div class="cert-panel team-menu" data-teammenu="1">' +
+    filters.map(function (x) {
+      var n = x[0] === 'all' ? activePeople().length
+        : x[0] === 'none' ? activePeople().filter(function (p) { return !p.teamId || !teamById(p.teamId); }).length
+          : teamMembers(x[0]).length;
+      var on = (f || 'all') === x[0];
+      return '<button class="cert-opt' + (on ? ' on' : '') + '" data-act="adminFilter" data-f="' + x[0] + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
+        esc(x[1]) + ' <b>' + n + '명</b></button>';
+    }).join('') +
+    '</div>' +
+    '<div class="cert-hint">조를 고르면 그 조 인원만 보입니다 · 이름 검색·☑ 필터와 함께 적용됩니다</div>';
+}
+
 function dashRolePanelHTML() {
   var sel = dashRoleSel();
   return '<div class="cert-panel dash-fpanel" data-rolepanel="1">' +
@@ -2137,7 +2199,7 @@ function adminReports() {
       '</div>';
   }).join('');
 
-  return nav + (teams.length ? cards : '<div class="card"><div class="empty"><span class="e-ic">🧩</span>아직 만든 조가 없습니다.<br>팀·조 탭에서 조를 만들고 인원을 배정해 주세요.</div></div>') +
+  return nav + (teams.length ? '<div class="rep-grid">' + cards + '</div>' : '<div class="card"><div class="empty"><span class="e-ic">🧩</span>아직 만든 조가 없습니다.<br>팀·조 탭에서 조를 만들고 인원을 배정해 주세요.</div></div>') +
     '<div class="foot-note">작업일보는 기술인이 제출하면 이 화면에 바로 나타납니다</div>';
 }
 

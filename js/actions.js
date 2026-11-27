@@ -879,6 +879,8 @@ function openLeaveProxySheet() {
 /* =========================================================
    동작 정의
    ========================================================= */
+var loginPending = false;   /* 로그인 처리 중복 실행 방지 */
+
 var ACTIONS = {
   /* ----- 공통 ----- */
   role: function (el) {
@@ -923,6 +925,13 @@ var ACTIONS = {
 
   /* ----- 로그인 · 계정 ----- */
   loginSubmit: async function () {
+    if (loginPending) { return; }
+    loginPending = true;
+    try { await ACTIONS.doLoginSubmit(); }
+    catch (e) { toast('로그인 중 문제가 생겼어요 · 다시 시도해 주세요.'); }
+    finally { loginPending = false; }
+  },
+  doLoginSubmit: async function () {
     var f = readLoginForm();
     if (f.err) { toast(f.err); return; }
     /* [필수] 개인정보 수집·이용 동의 — 체크하지 않으면 로그인·자동등록 모두 차단 */
@@ -937,6 +946,24 @@ var ACTIONS = {
     var found = state.people.filter(function (p) {
       return p.name === f.name && p.birth === f.birth && phoneDigits(p.phone) === f.pd;
     })[0];
+
+    /* 중복 등록 방지 (2026-11-27)
+       같은 (이름 · 생년월일 · 전화번호) 이 DB workers 에 이미 있는데 이 화면 데이터에 없으면
+       (다른 기기에서 먼저 등록 · 오프라인 캐시 등) 새 행을 만들지 않고 다시 불러와 그 계정으로 로그인한다. */
+    if (!found) {
+      var chk = await findWorkerInDb(f.name, f.birth, f.pd);
+      if (chk.failed) {
+        toast('등록된 정보를 확인하지 못했어요.<br>전화 · 와이파이 연결을 확인하고 다시 시도해 주세요.');
+        return;
+      }
+      if (chk.row) {
+        await loadData({ silent: true });
+        found = state.people.filter(function (p) {
+          return p.name === f.name && p.birth === f.birth && phoneDigits(p.phone) === f.pd;
+        })[0];
+        if (!found) { toast('이미 등록된 계정이 있어요.<br>잠시 후 다시 시도해 주세요.'); return; }
+      }
+    }
 
     /* 팀장 선택 : is_leader 또는 is_admin 인 사람만 통과 · 자동등록 없음 · 관리자만 암호 확인 */
     if (f.job === LOGIN_MANAGER_LABEL) {
@@ -1580,6 +1607,12 @@ var ACTIONS = {
   },
   adminFilter: function (el) {
     state.ui.adminTeamFilter = el.getAttribute('data-f');
+    state.ui.teamMenu = false;
+    render();
+  },
+  /* 인원별 출퇴근 : [전체 ▾] 조 선택 드롭다운 */
+  adminTeamOpen: function () {
+    state.ui.teamMenu = !state.ui.teamMenu;
     render();
   },
   /* 인원별 출퇴근 : [☑ 필터] 다중 선택 (역할·직종) */

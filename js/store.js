@@ -849,6 +849,26 @@ function markSensitiveAgree(p) {
   patchWorker(p.id, { sensitive_agreed_at: at }, '민감정보 동의 저장');
   return at;
 }
+/* ---------- 로그인 중복 등록 방지 ----------
+   같은 (이름 · 생년월일 · 전화번호, 하이픈 무시) 이 이미 workers 에 있으면
+   새 행을 INSERT 하지 않고 그 계정으로 로그인한다. (2026-11-27)
+   결과: { row } 찾음 · { row: null } 없음 · { failed: true } 확인 못함(연결 실패) */
+async function findWorkerInDb(name, birth, pd) {
+  var r = await apiGet('/rest/v1/workers?select=id,name,birth_date,phone,status,is_admin,is_leader,created_at&name=' + sbEq(name));
+  if (!r || !r.ok || !Array.isArray(r.data)) { return { row: null, failed: true }; }
+  var hit = r.data.filter(function (w) {
+    return String(w.birth_date || '') === String(birth || '') && phoneDigits(w.phone) === String(pd || '');
+  });
+  if (!hit.length) { return { row: null }; }
+  /* 이미 중복된 행이 있으면 재직 중인 것 → 먼저 등록된 것 순서로 고른다 (행을 지우지는 않는다) */
+  hit.sort(function (a, b) {
+    var ra = (a.status === 'resigned') ? 1 : 0, rb = (b.status === 'resigned') ? 1 : 0;
+    if (ra !== rb) { return ra - rb; }
+    return String(a.created_at || '') < String(b.created_at || '') ? -1 : 1;
+  });
+  return { row: hit[0], dupes: hit };
+}
+
 function insertWorker(p, label) {
   return apiWrite({
     m: 'POST', path: '/rest/v1/workers', prefer: 'return=minimal', label: label || '신규 인원 등록',
