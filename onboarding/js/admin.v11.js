@@ -1287,8 +1287,8 @@
     return Math.max(1, Math.round(v / 1024)) + 'KB';
   }
   function basePath() {
-    var tag = document.querySelector('script[src*="js/admin.v10.js"]');
-    return (tag && tag.src) ? tag.src.replace(/js\/admin\.v10\.js.*$/, '') : './';
+    var tag = document.querySelector('script[src*="js/admin.v"]');
+    return (tag && tag.src) ? tag.src.replace(/js\/admin\.v\d+\.js.*$/, '') : './';
   }
 
   async function openView(id, idx) {
