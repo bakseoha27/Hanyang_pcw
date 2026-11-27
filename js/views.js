@@ -2679,93 +2679,185 @@ function forkRowHTML(s) {
     '</div></div>';
 }
 
-/* 🛡️ 보호구 서명지 — ① 안전보호구·시설물 지급(중복 방지) ② 방진마스크 일일 서명 */
-var PPE_ITEMS = [
-  { key: 'goggles_normal', label: '일반보안경' },
-  { key: 'goggles_glasses', label: '안경보안경' },
-  { key: 'goggles_goggle', label: '고글보안경' },
-  { key: 'helmet_tech', label: '안전모(기술인)' },
-  { key: 'helmet_admin', label: '안전모(관리자)' },
-  { key: 'belt', label: '안전벨트' },
-  { key: 'shoes', label: '안전화' },
-  { key: 'facility', label: '시설물' }
-];
+/* =========================================================
+   🛡️ 보호구 서명지 (v23)
+   ① 안전시설물 — 장기 지급(품목은 DB ppe_items, 중복 지급 방지)
+   ② 방진마스크 ③ 귀마개 — 오늘 출근자 일일 소모품 서명
+   · 반입일정 바로 아래 3개 바로가기(안전시설물 · 방진마스크 · 귀마개)로 섹션 전환
+   · 목록은 1줄(44px) 체크 — 줄을 누르면 바로 서명/해제
+   · 번호 · 정렬은 이름 가나다순 · 기본 5명 · [더보기]로 한 쪽(15명)까지
+   ========================================================= */
 var PPE_MASK_KEY = 'dust_mask';
+var PPE_EAR_KEY = 'earplugs';
+var PPE_PAGE = 15;          /* 한 쪽 최대 인원 (더보기 최대치) */
+var PPE_SHOW_INIT = 5;      /* 기본 노출 인원 */
+var PPE_TABS = [
+  { key: 'issue', no: 1, ic: '🛡️', lb: '안전시설물' },
+  { key: PPE_MASK_KEY, no: 2, ic: '😷', lb: '방진마스크' },
+  { key: PPE_EAR_KEY, no: 3, ic: '👂', lb: '귀마개' }
+];
+function ppeTabKey() {
+  var t = state.ui.ppeTab;
+  return (t === PPE_MASK_KEY || t === PPE_EAR_KEY) ? t : 'issue';
+}
+function ppeTabInfo(key) {
+  for (var i = 0; i < PPE_TABS.length; i++) { if (PPE_TABS[i].key === key) { return PPE_TABS[i]; } }
+  return PPE_TABS[0];
+}
 function ppeItemLabel(key) {
-  for (var i = 0; i < PPE_ITEMS.length; i++) { if (PPE_ITEMS[i].key === key) { return PPE_ITEMS[i].label; } }
+  var list = ppeItemList();
+  for (var i = 0; i < list.length; i++) { if (list[i].key === key) { return list[i].label; } }
   return '방진마스크';
 }
-/* 방진마스크 대장 번호 — 오늘 출근자만 팀 순서 → 가나다순으로 1번부터 (종이 대장 25줄 = 1장) */
+/* 일일 서명(방진마스크 · 귀마개) 상태 키 — 섹션마다 검색어·더보기·쪽을 따로 기억 */
+function ppeStKey(itemKey, kind) {
+  var ear = itemKey === PPE_EAR_KEY;
+  if (kind === 'q') { return ear ? 'ppeEarQ' : 'ppeQ'; }
+  if (kind === 'shown') { return ear ? 'ppeEarShown' : 'ppeShown'; }
+  return ear ? 'ppeEarPage' : 'ppePage';
+}
+/* 이름 가나다순 번호 — 오늘 출근자만 1번부터 (휴무·결근 제외) */
 function ppeRoster(dateKey) {
   var tg = ppeTargets(dateKey);
-  var order = {};
-  state.teams.forEach(function (t, i) { order[t.id] = i; });
-  tg.list.sort(function (a, b) {
-    var oa = a.p.teamId ? (order[a.p.teamId] === undefined ? 90 : order[a.p.teamId]) : 99;
-    var ob = b.p.teamId ? (order[b.p.teamId] === undefined ? 90 : order[b.p.teamId]) : 99;
-    if (oa !== ob) { return oa - ob; }
-    var ta = teamLabel(a.p.teamId), tb = teamLabel(b.p.teamId);
-    if (ta !== tb) { return ta.localeCompare(tb, 'ko'); }
-    return a.p.name.localeCompare(b.p.name, 'ko');
-  });
-  tg.list.forEach(function (x, i) {
-    x.no = i + 1;
-    x.sig = ppeSigOn(x.p.id, PPE_MASK_KEY, dateKey);
-  });
+  tg.list.sort(function (a, b) { return a.p.name.localeCompare(b.p.name, 'ko'); });
+  tg.list.forEach(function (x, i) { x.no = i + 1; });
   return tg;
+}
+function ppeDailyDone(tg, itemKey, dateKey) {
+  var n = 0;
+  tg.list.forEach(function (x) {
+    var s = ppeSigOn(x.p.id, itemKey, dateKey);
+    if (s && s.signed) { n++; }
+  });
+  return n;
 }
 function mdShort(k) {
   var p = String(k).split('-');
   return parseInt(p[1], 10) + '/' + parseInt(p[2], 10);
 }
+/* 활성 인원 이름 가나다순 (안전시설물 목록 기준) */
+function ppeNameList() {
+  var arr = activePeople().map(function (p) { return { p: p }; });
+  arr.sort(function (a, b) { return a.p.name.localeCompare(b.p.name, 'ko'); });
+  return arr;
+}
+/* 더보기 / 쪽 넘김 공통 */
+function ppeMoreBtn(itemKey, shown, total, act) {
+  return '<button class="ppe-more" data-act="' + (act || 'ppeMore') + '" data-item="' + itemKey + '">' +
+    '더보기 (' + shown + ' / ' + total + '명) ▾</button>';
+}
+function ppePager(itemKey, page, pages, total) {
+  if (pages < 2) { return ''; }
+  return '<div class="ppe2-pager ppe1-pager">' +
+    '<button data-act="ppePage" data-item="' + itemKey + '" data-d="-1"' + (page <= 1 ? ' disabled' : '') + ' aria-label="이전 15명">‹</button>' +
+    '<span class="pp-lab"><b>' + page + '</b> / ' + pages + '쪽<em>전체 ' + total + '명</em></span>' +
+    '<button data-act="ppePage" data-item="' + itemKey + '" data-d="1"' + (page >= pages ? ' disabled' : '') + ' aria-label="다음 15명">›</button>' +
+    '</div>';
+}
 
 function ppeCardHTML(tg) {
   var d = todayKey();
   tg = tg || ppeRoster(d);
-  var item = state.ui.ppeItem || PPE_ITEMS[0].key;
-  if (!PPE_ITEMS.filter(function (x) { return x.key === item; }).length) { item = PPE_ITEMS[0].key; }
-
-  /* ① 안전보호구 · 시설물 — 품목 탭 + 이름 검색 → 제출함(잠금) / 미제출(서명 완료) */
-  var itemTabs = '<div class="ppe2-tabs">' + PPE_ITEMS.map(function (x) {
-    return '<button class="ppe2-tab' + (item === x.key ? ' on' : '') + '" data-act="ppeItem" data-key="' + x.key + '">' + x.label + '</button>';
+  var tab = ppeTabKey();
+  var sw = '<div class="ppe-switch" role="tablist">' + PPE_TABS.map(function (t) {
+    var on = tab === t.key;
+    var cnt = '';
+    if (t.key !== 'issue') {
+      var left = tg.list.length - ppeDailyDone(tg, t.key, d);
+      cnt = '<em class="ppe-sw-n' + (left ? ' warn' : '') + '">' + left + '</em>';
+    }
+    return '<button class="ppe-sw' + (on ? ' on' : '') + '" data-act="ppeTab" data-tab="' + t.key + '" role="tab" aria-selected="' + (on ? 'true' : 'false') + '">' +
+      '<span class="ppe-sw-ic">' + t.ic + '</span><span class="ppe-sw-lb">' + t.lb + '</span>' + cnt + '</button>';
   }).join('') + '</div>';
-  var iq = normNameQ(state.ui.ppeIssueQ || '');
-  var issueSrc = iq ? activePeople().map(function (p) { return { p: p }; }) : tg.list.map(function (x) { return { p: x.p }; });
-  var issueList = issueSrc.filter(function (x) {
-    return !iq || normNameQ(x.p.name).indexOf(iq) >= 0;
-  }).sort(function (a, b) {
-    var ta = teamLabel(a.p.teamId), tb = teamLabel(b.p.teamId);
-    if (ta !== tb) { return ta.localeCompare(tb, 'ko'); }
-    return a.p.name.localeCompare(b.p.name, 'ko');
+  var body = tab === 'issue' ? ppeIssueHTML(tg) : ppeDailyHTML(tg, tab);
+  return '<div class="card ppe2-card" id="ppeCard">' + sw +
+    '<div id="ppeBody"><div class="ppe-sec" data-sec="' + tab + '">' + body + '</div></div></div>';
+}
+
+/* ① 안전시설물 — 품목(DB) 탭 · 이름 검색 · 1줄 지급 체크 */
+function ppeIssueHTML(tg) {
+  var items = ppeItemList();
+  var item = state.ui.ppeItem || (items[0] && items[0].key) || 'goggles_normal';
+  if (!items.filter(function (x) { return x.key === item; }).length) { item = items[0] ? items[0].key : 'goggles_normal'; }
+
+  var chips = '<div class="ppe2-tabs ppe-item-tabs">' + items.map(function (x) {
+    var on = item === x.key;
+    return '<div class="ppe2-tab' + (on ? ' on' : '') + '" data-act="ppeItem" data-key="' + esc(x.key) + '" role="tab" aria-selected="' + (on ? 'true' : 'false') + '">' +
+      '<span>' + esc(x.label) + '</span>' +
+      (on ? '<button class="ppe-tab-del" data-act="ppeItemDel" data-key="' + esc(x.key) + '" data-label="' + esc(x.label) + '" aria-label="' + esc(x.label) + ' 품목 삭제">✕</button>' : '') +
+      '</div>';
+  }).join('') + '</div>';
+
+  var q = normNameQ(state.ui.ppeIssueQ || '');
+  var all = ppeNameList();
+  var src = q ? all : all.filter(function (x) {
+    return tg.list.filter(function (y) { return y.p.id === x.p.id; }).length > 0;
   });
-  var issueRows = issueList.map(function (x) {
+  var vis = src.filter(function (x) { return !q || normNameQ(x.p.name).indexOf(q) >= 0; });
+  vis.forEach(function (x, i) { x.no = i + 1; });
+  var pages = Math.max(1, Math.ceil(vis.length / PPE_PAGE));
+  var page = Math.min(Math.max(1, state.ui.ppeIssuePage || 1), pages);
+  var pageRows = vis.slice((page - 1) * PPE_PAGE, page * PPE_PAGE);
+  var shown = Math.min(Math.max(PPE_SHOW_INIT, state.ui.ppeIssueShown || PPE_SHOW_INIT), pageRows.length || PPE_SHOW_INIT);
+
+  var rows = pageRows.slice(0, shown).map(function (x) {
     var g = ppeGrantOf(x.p.id, item);
-    return '<div class="ppe2-row' + (g ? ' got' : '') + '" data-name="' + esc(x.p.name) + '">' +
-      '<div class="ppe2-main"><div class="ppe2-name">' + esc(x.p.name) + '</div>' +
-      (g ? '' : '<div class="ppe2-sub">미제출 (낸 적 없음)</div>') +
-      '</div>' +
-      (g
-        ? '<button class="ppe2-lock" data-act="ppeUnlock" data-id="' + x.p.id + '" data-item="' + item + '" data-date="' + g.date + '" aria-label="재지급">🔒 ' + mdShort(g.date) + ' 제출함</button>'
-        : '<button class="ppe2-go" data-act="ppeGrant" data-id="' + x.p.id + '" data-item="' + item + '">서명 완료</button>') +
+    return '<div class="ppe1-row' + (g ? ' got' : '') + '"' + (g ? '' : ' data-act="ppeGrant" data-id="' + x.p.id + '" data-item="' + esc(item) + '" role="checkbox" aria-checked="false" tabindex="0"') + '>' +
+      '<span class="ppe1-box' + (g ? ' on' : '') + '">' + (g ? '☑' : '☐') + '</span>' +
+      '<span class="ppe1-no">' + x.no + '</span>' +
+      '<span class="ppe1-nm">' + esc(x.p.name) + '</span>' +
+      '<span class="ppe1-tm">' + esc(teamLabel(x.p.teamId)) + '</span>' +
+      (g ? '<button class="ppe1-date" data-act="ppeUnlock" data-id="' + x.p.id + '" data-item="' + esc(item) + '" data-date="' + esc(g.date) + '" aria-label="재지급">' + mdShort(g.date) + '</button>' : '') +
       '</div>';
   }).join('');
 
-  /* ② 방진마스크 일일 서명 — 검색 · 팀 필터 · 미서명만 · 25명씩 페이지 */
-  var q = normNameQ(state.ui.ppeQ || '');
+  return '<div class="ppe2-head"><div class="sec-t">1. 🛡️ 안전시설물 <span class="ppe2-cap">(중복 지급 방지)</span></div>' +
+    '<div class="muted">품목을 눌러 고르고, 줄을 누르면 지급 서명 · 오른쪽 날짜는 이미 지급</div></div>' +
+    '<div class="ppe-issue-bar"><span class="ppe-issue-lb">품목</span>' +
+    '<button class="ppe-mini" data-act="ppeGrid">▦ 한눈에 보기</button>' +
+    '<button class="ppe-mini" data-act="ppeItemAdd">＋ 품목 추가</button></div>' +
+    chips +
+    '<label class="name-search ppe2-search"><span class="ns-ic">🔍</span>' +
+    '<input id="ppe_issue_q" class="ns-in" placeholder="이름으로 찾기" value="' + esc(state.ui.ppeIssueQ || '') + '">' +
+    '<button class="ns-x' + (state.ui.ppeIssueQ ? '' : ' hide') + '" data-act="ppeIssueClear" aria-label="검색 지우기">×</button></label>' +
+    '<div class="ppe1-list" id="ppeIssueList">' + (rows || '<div class="empty"><span class="e-ic">🛡️</span>' + (q ? '검색 결과가 없습니다.' : '오늘 출근한 사람이 없습니다.') + '</div>') + '</div>' +
+    (shown < pageRows.length ? ppeMoreBtn('issue', shown, pageRows.length, 'ppeMoreIssue') : '') +
+    ppePager('issue', page, pages, vis.length) +
+    '<div class="ppe2-item-hint">날짜 배지를 누르면 <b>재지급</b>(분실·교체) 확인 후 다시 지급할 수 있습니다.</div>';
+}
+
+/* ② 방진마스크 · ③ 귀마개 — 오늘 출근자 1줄 체크 */
+function ppeDailyHTML(tg, itemKey) {
+  var d = todayKey();
+  var T = ppeTabInfo(itemKey);
+  var qk = ppeStKey(itemKey, 'q'), sk = ppeStKey(itemKey, 'shown'), pk = ppeStKey(itemKey, 'page');
+  var q = normNameQ(state.ui[qk] || '');
   var teamF = state.ui.ppeTeam || '';
   var onlyUns = !!state.ui.ppeUnsignedOnly;
-  var done = tg.list.filter(function (x) { return x.sig && x.sig.signed; }).length;
+  var done = ppeDailyDone(tg, itemKey, d);
+
   var vis = tg.list.filter(function (x) {
     if (teamF && String(x.p.teamId || '') !== teamF) { return false; }
-    if (onlyUns && x.sig && x.sig.signed) { return false; }
+    var s = ppeSigOn(x.p.id, itemKey, d);
+    if (onlyUns && s && s.signed) { return false; }
     if (q && normNameQ(x.p.name).indexOf(q) < 0) { return false; }
     return true;
   });
-  var PER = 25;
-  var pages = Math.max(1, Math.ceil(vis.length / PER));
-  var page = Math.min(Math.max(1, state.ui.ppePage || 1), pages);
-  var chunk = vis.slice((page - 1) * PER, page * PER);
-  var range = chunk.length ? (chunk[0].no + '~' + chunk[chunk.length - 1].no + '번') : '0명';
+  var pages = Math.max(1, Math.ceil(vis.length / PPE_PAGE));
+  var page = Math.min(Math.max(1, state.ui[pk] || 1), pages);
+  var pageRows = vis.slice((page - 1) * PPE_PAGE, page * PPE_PAGE);
+  var shown = Math.min(Math.max(PPE_SHOW_INIT, state.ui[sk] || PPE_SHOW_INIT), pageRows.length || PPE_SHOW_INIT);
+
+  var rows = pageRows.slice(0, shown).map(function (x) {
+    var s = ppeSigOn(x.p.id, itemKey, d);
+    var on = !!(s && s.signed);
+    return '<div class="ppe1-row' + (on ? ' ok' : '') + '" data-act="ppeTick" data-id="' + x.p.id + '" data-item="' + itemKey + '" role="checkbox" aria-checked="' + (on ? 'true' : 'false') + '" tabindex="0">' +
+      '<span class="ppe1-box' + (on ? ' on' : '') + '">' + (on ? '☑' : '☐') + '</span>' +
+      '<span class="ppe1-no">' + x.no + '</span>' +
+      '<span class="ppe1-nm">' + esc(x.p.name) + '</span>' +
+      '<span class="ppe1-tm">' + esc(teamLabel(x.p.teamId)) + '</span>' +
+      '</div>';
+  }).join('');
 
   var teamChips = '<div class="ppe2-teams">' +
     '<button class="ppe2-team' + (teamF === '' ? ' on' : '') + '" data-act="ppeTeam" data-team="">전체</button>' +
@@ -2773,62 +2865,36 @@ function ppeCardHTML(tg) {
       return '<button class="ppe2-team' + (teamF === t.id ? ' on' : '') + '" data-act="ppeTeam" data-team="' + t.id + '">' + esc(t.name) + '</button>';
     }).join('') + '</div>';
 
-  var maskRows = chunk.map(function (x) {
-    var signed = !!(x.sig && x.sig.signed);
-    var st = statusOf(x.p);
-    return '<div class="ppe2-row' + (signed ? ' ok' : '') + '" data-name="' + esc(x.p.name) + '">' +
-      '<span class="ppe2-no">' + x.no + '</span>' +
-      '<div class="ppe2-main"><div class="ppe2-name">' + esc(x.p.name) + '</div>' +
-      '<div class="ppe2-sub">' + esc(teamLabel(x.p.teamId)) + ' · ' + esc(st) + ' · ' + (signed ? '오늘 마스크 수령' : '아직 서명 안 함') + '</div></div>' +
-      (signed
-        ? '<button class="ppe2-done" data-act="ppeMask" data-id="' + x.p.id + '" aria-pressed="true">서명 완료</button>'
-        : '<button class="ppe2-go" data-act="ppeMask" data-id="' + x.p.id + '">서명 완료하기</button>') +
-      '</div>';
-  }).join('');
+  var excl = tg.off.map(function (x) { return esc(x.p.name) + '(휴무)'; })
+    .concat(tg.absent.map(function (x) { return esc(x.p.name) + '(미출근)'; }));
 
-  var nav = '<div class="ppe2-pager">' +
-    '<button data-act="ppePage" data-d="-1"' + (page <= 1 ? ' disabled' : '') + ' aria-label="이전 25명">‹</button>' +
-    '<span class="pp-lab"><b>' + page + '페이지</b> · ' + range + '<em>전체 ' + vis.length + '명</em></span>' +
-    '<button data-act="ppePage" data-d="1"' + (page >= pages ? ' disabled' : '') + ' aria-label="다음 25명">›</button>' +
-    '</div>';
-
-  var exclRows = tg.off.map(function (x) {
-    return '<div class="ppe2-xrow"><span class="ppe2-name">' + esc(x.p.name) + ' (휴무)</span>' +
-      '<span class="ppe2-xsub">' + esc(x.reason || '휴무') + ' · 종이 대장에 적으면 안 됨!</span>' +
-      '<span class="ppe2-xbadge">제외됨</span></div>';
-  }).join('') + tg.absent.map(function (x) {
-    return '<div class="ppe2-xrow"><span class="ppe2-name">' + esc(x.p.name) + ' (미출근 / 결근)</span>' +
-      '<span class="ppe2-xsub">출근 기록 없음 · 종이 대장에 적으면 안 됨!</span>' +
-      '<span class="ppe2-xbadge">제외됨</span></div>';
-  }).join('');
-
-  return '<div class="card ppe2-card" id="ppeCard">' +
-    '<div class="ppe2-head"><div class="sec-t">1. 안전보호구 · 시설물 <span class="ppe2-cap">(중복 지급 방지)</span></div>' +
-    '<div class="muted">이미 받은 품목은 날짜가 뜨고 자동으로 잠겨요</div></div>' +
-    itemTabs +
-    '<label class="name-search ppe2-search" style="margin-top:6px"><span class="ns-ic">🔍</span>' +
-    '<input id="ppe_issue_q" class="ns-in" placeholder="이름으로 찾기" value="' + esc(state.ui.ppeIssueQ || '') + '">' +
-    '<button class="ns-x' + (state.ui.ppeIssueQ ? '' : ' hide') + '" data-act="ppeIssueClear" aria-label="검색 지우기">×</button></label>' +
-    '<div class="ppe2-list" id="ppeIssueList">' + (issueRows || '<div class="empty"><span class="e-ic">🛡️</span>' + (iq ? '검색 결과가 없습니다.' : '오늘 출근한 사람이 없습니다.') + '</div>') + '</div>' +
-    '<div class="ppe2-item-hint">🔒 제출함을 누르면 <b>재지급</b>(분실·교체) 확인 후 다시 제출할 수 있습니다.</div>' +
-
-    '<div class="ppe2-head" style="margin-top:16px"><div class="sec-t">2. 방진마스크 일일 서명 (' + shortDate(d) + ' 출근자만)</div>' +
+  return '<div class="ppe2-head"><div class="sec-t">' + T.no + '. ' + T.ic + ' ' + T.lb + ' <span class="ppe2-cap">' + shortDate(d) + ' 출근자만</span></div>' +
     '<div class="muted">휴무 · 결근자는 빼서 종이 대장 적을 때 실수 0%</div></div>' +
     '<div class="ppe2-toolbar">' +
     '<label class="name-search ppe2-search"><span class="ns-ic">🔍</span>' +
-    '<input id="ppe_q" class="ns-in" placeholder="이름으로 찾기" value="' + esc(state.ui.ppeQ || '') + '">' +
-    '<button class="ns-x' + (state.ui.ppeQ ? '' : ' hide') + '" data-act="ppeClear" aria-label="검색 지우기">×</button></label>' +
-    '<button class="ppe2-uns' + (onlyUns ? ' on' : '') + '" data-act="ppeUnsigned" aria-pressed="' + (onlyUns ? 'true' : 'false') + '">미서명만 보기</button>' +
-    '</div>' +
-    teamChips +
+    '<input id="' + (itemKey === PPE_EAR_KEY ? 'ppe_ear_q' : 'ppe_q') + '" class="ns-in" placeholder="이름으로 찾기" value="' + esc(state.ui[qk] || '') + '">' +
+    '<button class="ns-x' + (state.ui[qk] ? '' : ' hide') + '" data-act="ppeClear" data-item="' + itemKey + '" aria-label="검색 지우기">×</button></label>' +
+    '<button class="ppe2-uns' + (onlyUns ? ' on' : '') + '" data-act="ppeUnsigned" aria-pressed="' + (onlyUns ? 'true' : 'false') + '">미서명만</button>' +
+    '</div>' + teamChips +
     '<div class="ppe2-counts"><span class="ok">서명 완료 <b>' + done + '</b></span><span class="no">미서명 <b>' + (tg.list.length - done) + '</b></span></div>' +
-    nav +
-    '<div class="ppe2-list" id="ppeList">' + (maskRows || '<div class="empty"><span class="e-ic">🛡️</span>조건에 맞는 출근자가 없습니다.<br>검색어 · 팀 필터를 바꿔 보세요.</div>') + '</div>' +
-    (tg.off.length + tg.absent.length ?
-      '<div class="ppe2-xbox"><div class="ppe2-xt">⛔ 제외됨 <b>' + (tg.off.length + tg.absent.length) + '명</b> — 서명 체크 불가</div>' + exclRows + '</div>'
-      : '') +
-    '<div class="ppe2-note">번호는 <b>오늘 출근자</b>를 팀 · 가나다순으로 1번부터 매긴 것입니다. 종이 대장 <b>25줄 = 1장</b>과 맞춰 보세요. 한 사람당 하루 1번만 서명됩니다(중복은 DB에서 차단).</div>' +
-    '</div>';
+    '<div class="ppe1-list" id="ppeList">' + (rows || '<div class="empty"><span class="e-ic">🛡️</span>조건에 맞는 출근자가 없습니다.<br>검색어 · 팀 필터를 바꿔 보세요.</div>') + '</div>' +
+    (shown < pageRows.length ? ppeMoreBtn(itemKey, shown, pageRows.length) : '') +
+    ppePager(itemKey, page, pages, vis.length) +
+    (excl.length ? '<div class="ppe-x1">⛔ 제외 ' + excl.length + '명 · ' + excl.join(' · ') + '</div>' : '') +
+    '<div class="ppe2-note">번호는 <b>오늘 출근자</b>를 이름 가나다순으로 1번부터 매겼습니다. 한 사람당 하루 1번만 서명됩니다(중복은 DB에서 차단).</div>';
+}
+
+/* ▦ 한눈에 보기 — 등록된 모든 품목 그리드 (누르면 그 품목으로 이동) */
+function ppeGridCells() {
+  var items = ppeItemList();
+  var cur = state.ui.ppeItem || (items[0] && items[0].key) || '';
+  var all = activePeople();
+  return items.map(function (x) {
+    var got = 0;
+    all.forEach(function (p) { if (ppeGrantOf(p.id, x.key)) { got++; } });
+    return '<button class="ppe-g-cell' + (x.key === cur ? ' on' : '') + '" data-act="ppePick" data-key="' + esc(x.key) + '">' +
+      '<b>' + esc(x.label) + '</b><span>지급 ' + got + ' / ' + all.length + '명</span></button>';
+  }).join('');
 }
 
 /* 지게차일정 */

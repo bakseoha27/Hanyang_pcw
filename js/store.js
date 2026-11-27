@@ -21,7 +21,8 @@ var state = {
   liftSchedules: [],          /* 반입일정 + 지게차일정 (kind: delivery | forklift) */
   materialOrders: [],         /* 자재주문내역 */
   sharedTools: [],            /* 공도구리스트 */
-  ppeSigs: [],                /* 보호구 서명지 (sign_date · worker_id 1건) */
+  ppeSigs: [],                /* 보호구 서명지 (sign_date · worker_id · item_key 1건) */
+  ppeItems: [],               /* 안전보호구·시설물 품목 (ppe_items · 없으면 기본 8종) */
   docs: { risk: [], spec: [] },
   draft: null,
   ui: {},
@@ -416,6 +417,15 @@ function buildState(d) {
       signed: !!s.signed, at: s.signed_at || '', by: s.signed_by || ''
     };
   });
+  state.ppeItems = (d.ppeItems || []).map(function (t) {
+    return {
+      id: t.id, key: t.key || '', label: t.label || t.key || '',
+      sortOrder: (t.sort_order === null || t.sort_order === undefined) ? 100 : (+t.sort_order || 0)
+    };
+  }).filter(function (t) { return !!t.key; }).sort(function (a, b) {
+    if (a.sortOrder !== b.sortOrder) { return a.sortOrder - b.sortOrder; }
+    return a.label.localeCompare(b.label, 'ko');
+  });
   (d.documents || []).forEach(function (doc) {
     var cat = doc.doc_type === 'spec' ? 'spec' : 'risk';
     state.docs[cat].push({
@@ -451,11 +461,18 @@ function buildState(d) {
     liftDate: /^\d{4}-\d{2}-\d{2}$/.test(String(ui.liftDate || '')) ? ui.liftDate : todayKey(),
     liftForkDate: /^\d{4}-\d{2}-\d{2}$/.test(String(ui.liftForkDate || '')) ? ui.liftForkDate : todayKey(),
     ppeQ: ui.ppeQ || '',
+    ppeEarQ: ui.ppeEarQ || '',
     ppeIssueQ: ui.ppeIssueQ || '',
     ppeItem: ui.ppeItem || 'goggles_normal',
+    ppeTab: ui.ppeTab || 'issue',
     ppeTeam: ui.ppeTeam || '',
     ppeUnsignedOnly: !!ui.ppeUnsignedOnly,
     ppePage: ui.ppePage || 1,
+    ppeEarPage: ui.ppeEarPage || 1,
+    ppeShown: ui.ppeShown || 5,
+    ppeEarShown: ui.ppeEarShown || 5,
+    ppeIssuePage: ui.ppeIssuePage || 1,
+    ppeIssueShown: ui.ppeIssueShown || 5,
     ppeExclOpen: !!ui.ppeExclOpen,
     orderFilter: ui.orderFilter || 'all',
     toolFilter: ui.toolFilter || 'all',
@@ -497,11 +514,12 @@ function fetchTables() {
     '/rest/v1/lifting_schedules?select=*&order=sched_date.asc',
     '/rest/v1/material_orders?select=*&order=order_date.desc',
     '/rest/v1/shared_tools?select=*&order=created_at.asc',
-    '/rest/v1/ppe_signatures?select=*&order=sign_date.desc'
+    '/rest/v1/ppe_signatures?select=*&order=sign_date.desc',
+    '/rest/v1/ppe_items?select=*&order=sort_order.asc,created_at.asc'
   ];
   return Promise.all(q.map(function (path) { return apiGet(path); })).then(function (res) {
-    /* schedules · early_leaves · 양중 4개 테이블은 실패해도 앱 전체를 멈추지 않는다 */
-    var soft = [9, 10, 11, 12, 13, 14];
+    /* schedules · early_leaves · 양중 5개 테이블은 실패해도 앱 전체를 멈추지 않는다 */
+    var soft = [9, 10, 11, 12, 13, 14, 15];
     var bad = res.filter(function (r, i) { return !r.ok && soft.indexOf(i) < 0; })[0];
     if (bad) {
       var e = new Error(bad.error || 'DB 연결 실패');
@@ -523,7 +541,8 @@ function fetchTables() {
       liftSchedules: softData(res[11]),
       materialOrders: softData(res[12]),
       sharedTools: softData(res[13]),
-      ppeSigs: softData(res[14])
+      ppeSigs: softData(res[14]),
+      ppeItems: softData(res[15])
     };
   });
 }
@@ -547,7 +566,8 @@ function saveCache(raw) {
       liftSchedules: raw.liftSchedules || [],
       materialOrders: raw.materialOrders || [],
       sharedTools: raw.sharedTools || [],
-      ppeSigs: raw.ppeSigs || []
+      ppeSigs: raw.ppeSigs || [],
+      ppeItems: raw.ppeItems || []
     };
     localStorage.setItem(CACHE_KEY, JSON.stringify({ at: new Date().toISOString(), d: d }));
   } catch (e) { /* 저장 불가 */ }
@@ -871,6 +891,21 @@ function ppeSigOf(workerId, dateKey) {
   return (state.ppeSigs || []).filter(function (s) { return s.workerId === workerId && s.date === dateKey; })[0] || null;
 }
 /* 품목별 '오늘' 서명 줄 (item_key) */
+/* ---------- 보호구 품목 ----------
+   품목은 DB ppe_items 가 기준이다. 테이블을 아직 못 읽었을 때(오프라인 · 첫 배포)만 기본 8종을 쓴다. */
+var PPE_ITEMS_BASE = [
+  { key: 'goggles_normal', label: '일반보안경', sortOrder: 1 },
+  { key: 'goggles_glasses', label: '안경보안경', sortOrder: 2 },
+  { key: 'goggles_goggle', label: '고글보안경', sortOrder: 3 },
+  { key: 'helmet_tech', label: '안전모(기술인)', sortOrder: 4 },
+  { key: 'helmet_admin', label: '안전모(관리자)', sortOrder: 5 },
+  { key: 'belt', label: '안전벨트', sortOrder: 6 },
+  { key: 'shoes', label: '안전화', sortOrder: 7 },
+  { key: 'facility', label: '시설물', sortOrder: 8 }
+];
+function ppeItemList() {
+  return (state.ppeItems && state.ppeItems.length) ? state.ppeItems : PPE_ITEMS_BASE;
+}
 function ppeSigOn(workerId, itemKey, dateKey) {
   return (state.ppeSigs || []).filter(function (s) {
     return s.workerId === workerId && s.itemKey === itemKey && s.date === dateKey;

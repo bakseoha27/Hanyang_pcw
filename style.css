@@ -1397,3 +1397,63 @@ a.btn{text-decoration:none;}
   .fp-chip{height:38px;font-size:12px;padding:0 12px;}
   .fp-head{font-size:12px;}
 }
+
+/* ---------- 2026-11-27 · v23 보호구 서명지 (3개 바로가기 · 1줄 체크 · 5명 더보기 · 품목 DB) ---------- */
+.ppe2-tab{display:inline-flex;align-items:center;gap:6px;cursor:pointer;}
+.ppe-tab-del{flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.24);
+  color:#fff;font-size:10.5px;font-weight:900;line-height:1;display:flex;align-items:center;justify-content:center;}
+.ppe-switch{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:2px 0 13px;}
+.ppe-sw{display:flex;align-items:center;justify-content:center;gap:4px;height:48px;border-radius:13px;
+  background:#EEF2F8;color:#475467;font-size:12.5px;font-weight:900;letter-spacing:-.4px;white-space:nowrap;}
+.ppe-sw.on{background:#14213D;color:#fff;box-shadow:0 6px 14px -8px rgba(20,33,61,.9);}
+.ppe-sw-ic{font-size:15px;line-height:1;}
+.ppe-sw-n{font-style:normal;font-size:10.5px;font-weight:900;color:#667085;background:#fff;border-radius:999px;padding:2px 5px;}
+.ppe-sw.on .ppe-sw-n{background:rgba(255,255,255,.22);color:#fff;}
+.ppe-sw-n.warn{color:#B42318;background:#FEE4E2;}
+.ppe-sw.on .ppe-sw-n.warn{background:#FEE4E2;color:#B42318;}
+.ppe1-list{border:1px solid #E4E7EC;border-radius:13px;overflow:hidden;background:#fff;margin-top:2px;}
+.ppe1-row{display:flex;align-items:center;gap:8px;height:44px;padding:0 11px;
+  border-bottom:1px solid #EEF1F5;cursor:pointer;}
+.ppe1-row:last-child{border-bottom:none;}
+.ppe1-row:active{background:#F4F7FC;}
+.ppe1-row.ok{background:#F7FEF9;}
+.ppe1-row.got{background:#FFFCF2;}
+.ppe1-box{flex:0 0 auto;width:20px;font-size:15px;line-height:1;color:#B6BFCC;text-align:center;}
+.ppe1-box.on{color:#027A48;}
+.ppe1-no{flex:0 0 auto;min-width:18px;text-align:right;font-size:11px;font-weight:900;color:#98A2B3;}
+.ppe1-nm{flex:1;min-width:0;font-size:14.5px;font-weight:900;color:#14213D;letter-spacing:-.4px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ppe1-tm{flex:0 0 auto;max-width:92px;font-size:10.5px;font-weight:800;color:#98A2B3;letter-spacing:-.3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ppe1-date{flex:0 0 auto;background:#FFF1CC;color:#B45309;border-radius:8px;padding:5px 8px;
+  font-size:11px;font-weight:900;letter-spacing:-.2px;}
+.ppe-more{width:100%;height:42px;margin-top:7px;border-radius:11px;background:#F2F5FA;color:#475467;
+  font-size:12.5px;font-weight:900;letter-spacing:-.3px;}
+.ppe1-pager{margin:8px 0 2px;}
+.ppe-issue-bar{display:flex;align-items:center;gap:5px;margin:10px 0 0;}
+.ppe-issue-lb{font-size:11.5px;font-weight:900;color:#667085;margin-right:auto;letter-spacing:-.3px;}
+.ppe-mini{height:32px;padding:0 10px;border-radius:9px;background:#F2F5FA;color:#475467;
+  font-size:11.5px;font-weight:900;letter-spacing:-.3px;white-space:nowrap;}
+.ppe-mini:active{background:#E7ECF3;}
+.ppe-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0 4px;}
+.ppe-g-cell{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-height:62px;
+  background:#F6F8FC;border:1.5px solid #E4E7EC;border-radius:13px;padding:11px 12px;text-align:left;}
+.ppe-g-cell b{font-size:13.5px;font-weight:900;color:#14213D;letter-spacing:-.4px;}
+.ppe-g-cell span{font-size:11px;font-weight:800;color:#98A2B3;}
+.ppe-g-cell.on{background:#EAF1FF;border-color:#2563EB;}
+.ppe-x1{margin-top:9px;background:#FEF3F2;color:#B42318;border-radius:10px;padding:8px 10px;
+  font-size:10.5px;font-weight:800;line-height:1.5;letter-spacing:-.2px;}
+#ppeCard{scroll-margin-top:84px;}
+@media (min-width:900px){
+  .ppe-switch{margin:4px 0 14px;}
+  .ppe-sw{height:52px;font-size:13.5px;gap:6px;}
+  .ppe1-row{height:46px;padding:0 14px;}
+  .ppe1-nm{font-size:15.5px;}
+  .ppe-grid{grid-template-columns:repeat(3,minmax(0,1fr));}
+  #ppeCard{scroll-margin-top:96px;}
+}
+@media (max-width:359px){
+  .ppe-sw{height:44px;font-size:11.5px;gap:3px;}
+  .ppe-sw-ic{font-size:13px;}
+  .ppe1-tm{max-width:68px;}
+}

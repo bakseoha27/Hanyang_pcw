@@ -2770,34 +2770,142 @@ var ACTIONS = {
     if (typeof XLSX === 'undefined') { toast('엑셀 기능을 불러오지 못했어요.<br>인터넷 연결을 확인하고 새로고침해 주세요.'); return; }
     try { exportToolsXlsx(); } catch (e) { toast('엑셀을 만들지 못했어요 · ' + esc(e && e.message || e)); }
   },
-  ppeItem: function (el) {
-    state.ui.ppeItem = el.getAttribute('data-key') || PPE_ITEMS[0].key;
+  /* ----- 🛡️ 보호구 서명지 (v23) ----- */
+  ppeTab: function (el) {
+    state.ui.ppeTab = el.getAttribute('data-tab') || 'issue';
     render();
+    ppeScrollTop();
+  },
+  ppeItem: function (el) {
+    state.ui.ppeItem = el.getAttribute('data-key') || '';
+    state.ui.ppeIssueShown = PPE_SHOW_INIT;
+    state.ui.ppeIssuePage = 1;
+    render();
+  },
+  /* ▦ 한눈에 보기 — 품목 그리드에서 고르면 그 품목 서명 화면으로 이동 */
+  ppeGrid: function () {
+    openSheet('▦ 품목 한눈에 보기',
+      '<div class="hint">등록된 품목 <b>' + ppeItemList().length + '가지</b> — 품목을 누르면 그 품목 서명 화면으로 바로 이동합니다.</div>' +
+      '<div class="ppe-grid">' + ppeGridCells() + '</div>' +
+      '<div class="hint">품목이 빠졌으면 안전시설물 줄의 <b>＋ 품목 추가</b>로 넣어 주세요.</div>',
+      '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>');
+  },
+  ppePick: function (el) {
+    var key = el.getAttribute('data-key') || '';
+    if (!key) { return; }
+    state.ui.ppeItem = key;
+    state.ui.ppeTab = 'issue';
+    state.ui.ppeIssueShown = PPE_SHOW_INIT;
+    state.ui.ppeIssuePage = 1;
+    closeSheet();
+    render();
+    ppeScrollTop();
+  },
+  ppeItemAdd: function () {
+    if (!liftEditOk()) { return; }
+    openSheet('🛡️ 안전시설물 품목 추가',
+      '<div class="sect"><label class="field"><span>품목 이름</span><input id="pi_label" maxlength="20" placeholder="예) 절연장갑"></label></div>' +
+      '<div class="hint">종이 서명지에 적힌 이름 그대로 넣어 주세요. 추가한 품목은 품목 줄과 <b>한눈에 보기</b>에 바로 생기고, 다른 사람 화면에도 반영됩니다.</div>',
+      '<button class="btn btn-ghost" data-act="closeSheet">취소</button>' +
+      '<button class="btn btn-primary" data-act="ppeItemAddSave">추가</button>');
+    var el = document.getElementById('pi_label');
+    if (el) { try { el.focus(); } catch (e) { /* noop */ } }
+  },
+  ppeItemAddSave: function () {
+    if (!liftEditOk()) { return; }
+    var inp = document.getElementById('pi_label');
+    var label = (inp && inp.value ? inp.value : '').trim();
+    if (!label) { toast('품목 이름을 입력해 주세요.'); return; }
+    var dup = ppeItemList().filter(function (x) { return x.label === label; })[0];
+    if (dup) { toast('이미 있는 품목이에요 · <b>' + esc(label) + '</b>'); return; }
+    var maxNo = 0;
+    ppeItemList().forEach(function (x) { if ((x.sortOrder || 0) > maxNo) { maxNo = x.sortOrder || 0; } });
+    var it = { id: uuid(), key: 'c' + Date.now().toString(36), label: label, sortOrder: maxNo + 1 };
+    state.ppeItems = ppeItemList().concat([it]);
+    state.ui.ppeItem = it.key;
+    state.ui.ppeTab = 'issue';
+    state.ui.ppeIssueShown = PPE_SHOW_INIT;
+    state.ui.ppeIssuePage = 1;
+    apiWrite({
+      m: 'POST', path: '/rest/v1/ppe_items', prefer: 'return=representation', label: '보호구 품목 추가',
+      body: { id: it.id, key: it.key, label: it.label, sort_order: it.sortOrder }
+    });
+    closeSheet();
+    render();
+    toast('🛡️ <b>' + esc(label) + '</b> 품목을 추가했어요');
+  },
+  ppeItemDel: function (el) {
+    if (!liftEditOk()) { return; }
+    var key = el.getAttribute('data-key');
+    var label = el.getAttribute('data-label') || ppeItemLabel(key);
+    var n = (state.ppeSigs || []).filter(function (s) { return s.itemKey === key; }).length;
+    confirmSheet('이 품목을 삭제할까요?',
+      '<b>' + esc(label) + '</b> 품목을 목록에서 지웁니다.' +
+      (n ? '<br>이 품목으로 기록된 지급 서명 <b>' + n + '건</b>은 지우지 않고 그대로 보관합니다.' : '') +
+      '<br>삭제하면 품목 줄에서 사라지고 다른 사람 화면에도 바로 반영됩니다.',
+      '삭제', 'ppeItemDelDo', 'data-key="' + esc(key) + '" data-label="' + esc(label) + '"');
+  },
+  ppeItemDelDo: function (el) {
+    if (!liftEditOk()) { return; }
+    var key = el.getAttribute('data-key');
+    var list = ppeItemList();
+    if (list.length <= 1) { closeSheet(); toast('품목은 최소 1개는 남겨야 합니다.'); return; }
+    state.ppeItems = list.filter(function (x) { return x.key !== key; });
+    if (state.ui.ppeItem === key) { state.ui.ppeItem = state.ppeItems[0] ? state.ppeItems[0].key : ''; }
+    apiWrite({ m: 'DELETE', path: '/rest/v1/ppe_items?key=' + sbEq(key), prefer: 'return=minimal', label: '보호구 품목 삭제' });
+    closeSheet();
+    render();
+    toast('품목을 삭제했어요');
   },
   ppeTeam: function (el) {
     state.ui.ppeTeam = el.getAttribute('data-team') || '';
-    state.ui.ppePage = 1;
+    state.ui.ppePage = 1; state.ui.ppeEarPage = 1;
+    state.ui.ppeShown = PPE_SHOW_INIT; state.ui.ppeEarShown = PPE_SHOW_INIT;
     render();
   },
   ppeUnsigned: function () {
     state.ui.ppeUnsignedOnly = !state.ui.ppeUnsignedOnly;
-    state.ui.ppePage = 1;
+    state.ui.ppePage = 1; state.ui.ppeEarPage = 1;
+    state.ui.ppeShown = PPE_SHOW_INIT; state.ui.ppeEarShown = PPE_SHOW_INIT;
+    render();
+  },
+  /* 5명 → 15명 펼치기 */
+  ppeMore: function (el) {
+    var k = ppeStKey(el.getAttribute('data-item'), 'shown');
+    state.ui[k] = Math.min(PPE_PAGE, (state.ui[k] || PPE_SHOW_INIT) + (PPE_PAGE - PPE_SHOW_INIT));
+    render();
+  },
+  ppeMoreIssue: function () {
+    state.ui.ppeIssueShown = Math.min(PPE_PAGE, (state.ui.ppeIssueShown || PPE_SHOW_INIT) + (PPE_PAGE - PPE_SHOW_INIT));
     render();
   },
   ppePage: function (el) {
+    var item = el.getAttribute('data-item') || '';
     var d = parseInt(el.getAttribute('data-d'), 10) || 0;
-    state.ui.ppePage = Math.max(1, (state.ui.ppePage || 1) + d);
+    if (item === 'issue') {
+      state.ui.ppeIssuePage = Math.max(1, (state.ui.ppeIssuePage || 1) + d);
+      state.ui.ppeIssueShown = PPE_SHOW_INIT;
+    } else {
+      var pk = ppeStKey(item, 'page'), sk = ppeStKey(item, 'shown');
+      state.ui[pk] = Math.max(1, (state.ui[pk] || 1) + d);
+      state.ui[sk] = PPE_SHOW_INIT;
+    }
     render();
   },
-  ppeClear: function () {
-    state.ui.ppeQ = '';
-    state.ui.ppePage = 1;
+  ppeClear: function (el) {
+    var item = (el && el.getAttribute('data-item')) || ppeTabKey();
+    var k = ppeStKey(item, 'q');
+    state.ui[k] = '';
+    state.ui[ppeStKey(item, 'page')] = 1;
+    state.ui[ppeStKey(item, 'shown')] = PPE_SHOW_INIT;
     render();
-    var inp = $('#ppe_q');
+    var inp = document.getElementById(item === PPE_EAR_KEY ? 'ppe_ear_q' : 'ppe_q');
     if (inp) { try { inp.focus(); } catch (e) { /* noop */ } }
   },
   ppeIssueClear: function () {
     state.ui.ppeIssueQ = '';
+    state.ui.ppeIssuePage = 1;
+    state.ui.ppeIssueShown = PPE_SHOW_INIT;
     render();
     var inp = $('#ppe_issue_q');
     if (inp) { try { inp.focus(); } catch (e) { /* noop */ } }
@@ -2806,9 +2914,9 @@ var ACTIONS = {
   ppeGrant: function (el) {
     if (!liftEditOk()) { return; }
     var id = el.getAttribute('data-id');
-    var item = el.getAttribute('data-item') || PPE_ITEMS[0].key;
+    var item = el.getAttribute('data-item') || (ppeItemList()[0] || {}).key;
     var p = personById(id);
-    if (!p) { return; }
+    if (!p || !item) { return; }
     var d = todayKey();
     var at = new Date().toISOString();
     var by = me() ? me().name : '';
@@ -2854,32 +2962,33 @@ var ACTIONS = {
     render();
     toast('재지급으로 잠금을 풀었어요 · 다시 <b>서명 체크</b>하면 오늘 날짜로 기록됩니다');
   },
-  /* ② 방진마스크 일일 서명 */
-  ppeMask: function (el) {
+  /* ② 방진마스크 · ③ 귀마개 — 줄을 누르면 바로 서명/해제 */
+  ppeTick: function (el) {
     if (!liftEditOk()) { return; }
     var id = el.getAttribute('data-id');
+    var item = el.getAttribute('data-item');
     var p = personById(id);
-    if (!p) { return; }
+    if (!p || !item) { return; }
     var d = todayKey();
     var tg = ppeRoster(d);
     var allowed = tg.list.filter(function (x) { return x.p.id === id; })[0];
     if (!allowed) { toast('휴무·결근 인원은 서명 체크할 수 없습니다.'); return; }
-    var cur = ppeSigOn(id, PPE_MASK_KEY, d);
+    var cur = ppeSigOn(id, item, d);
     var on = !(cur && cur.signed);
     var at = on ? new Date().toISOString() : '';
     var by = me() ? me().name : '';
     if (cur) { cur.signed = on; cur.at = at; cur.by = on ? by : ''; }
-    else { state.ppeSigs.push({ id: uuid(), date: d, workerId: id, itemKey: PPE_MASK_KEY, signed: true, at: at, by: by }); }
+    else { state.ppeSigs.push({ id: uuid(), date: d, workerId: id, itemKey: item, signed: true, at: at, by: by }); }
     apiWrite({
       m: 'POST', path: '/rest/v1/ppe_signatures?on_conflict=sign_date,worker_id,item_key',
-      prefer: 'resolution=merge-duplicates,return=minimal', label: '방진마스크 서명',
-      body: { sign_date: d, worker_id: id, item_key: PPE_MASK_KEY, signed: on, signed_at: on ? at : null, signed_by: by || null }
+      prefer: 'resolution=merge-duplicates,return=minimal', label: ppeItemLabel(item) + ' 서명',
+      body: { sign_date: d, worker_id: id, item_key: item, signed: on, signed_at: on ? at : null, signed_by: by || null }
     });
     render();
-    var tg2 = ppeRoster(d);
-    var dn = tg2.list.filter(function (x) { return x.sig && x.sig.signed; }).length;
-    toast((on ? '😷 <b>' + esc(p.name) + '</b> 방진마스크 서명 완료' : '<b>' + esc(p.name) + '</b> 서명을 취소했어요') +
-      '<br>서명 완료 ' + dn + '명 / 미서명 ' + (tg2.list.length - dn) + '명');
+    var dn = ppeDailyDone(ppeRoster(d), item, d);
+    toast((on ? '☑ <b>' + esc(p.name) + '</b> ' + esc(ppeItemLabel(item)) + ' 서명 완료'
+      : '<b>' + esc(p.name) + '</b> ' + esc(ppeItemLabel(item)) + ' 서명을 취소했어요') +
+      '<br>서명 완료 ' + dn + '명 / 미서명 ' + (tg.list.length - dn) + '명');
   }
 };
 
@@ -2889,6 +2998,13 @@ var ACTIONS = {
 function liftEditOk() {
   if (!isLiftingView()) { toast('양중 화면에서만 바꿀 수 있습니다.'); return false; }
   return true;
+}
+/* 보호구 카드를 화면 위로 — 바로가기 · 품목 선택 뒤 스크롤 없이 바로 작업 */
+function ppeScrollTop() {
+  var el = document.getElementById('ppeCard');
+  if (!el) { return; }
+  try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  catch (e) { try { el.scrollIntoView(); } catch (e2) { /* noop */ } }
 }
 function liftById(id) { return (state.liftSchedules || []).filter(function (x) { return x.id === id; })[0] || null; }
 function orderById(id) { return (state.materialOrders || []).filter(function (x) { return x.id === id; })[0] || null; }
@@ -3066,13 +3182,25 @@ function onInput(e) {
   if (el.id === 'ppe_q') {
     state.ui.ppeQ = el.value;
     state.ui.ppePage = 1;
+    state.ui.ppeShown = 5;
     render();
     var pq = document.getElementById('ppe_q');
     if (pq) { try { pq.focus(); pq.setSelectionRange(pq.value.length, pq.value.length); } catch (e) { /* noop */ } }
     return;
   }
+  if (el.id === 'ppe_ear_q') {
+    state.ui.ppeEarQ = el.value;
+    state.ui.ppeEarPage = 1;
+    state.ui.ppeEarShown = 5;
+    render();
+    var eq = document.getElementById('ppe_ear_q');
+    if (eq) { try { eq.focus(); eq.setSelectionRange(eq.value.length, eq.value.length); } catch (e) { /* noop */ } }
+    return;
+  }
   if (el.id === 'ppe_issue_q') {
     state.ui.ppeIssueQ = el.value;
+    state.ui.ppeIssuePage = 1;
+    state.ui.ppeIssueShown = 5;
     render();
     var iq = document.getElementById('ppe_issue_q');
     if (iq) { try { iq.focus(); iq.setSelectionRange(iq.value.length, iq.value.length); } catch (e) { /* noop */ } }
