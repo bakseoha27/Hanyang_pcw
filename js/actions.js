@@ -1,6 +1,34 @@
 /* =========================================================
    시트 · 동작 · 시작
    ========================================================= */
+/* 내 정보 → 개인정보 수정 : 보유 자격 체크를 기존 certs_json 과 병합
+   · 관리자가 넣어 둔 custom 자격 · 다른 속성(키)은 그대로 두고 on/exp 만 바꾼다
+   · 화면에 없는 자격(이름이 다른 예전 항목)도 지우지 않는다 */
+function mergeMyCerts(list, onEls, expEls) {
+  var out = (list || []).filter(function (c) { return c && c.name; }).map(function (c) {
+    var copy = {};
+    Object.keys(c).forEach(function (k) { copy[k] = c[k]; });
+    return copy;
+  });
+  function rowOf(n) {
+    for (var i = 0; i < out.length; i++) { if (out[i].name === n) { return out[i]; } }
+    var r = { name: n, on: false, exp: '', custom: CERT_BASE.indexOf(n) < 0 };
+    out.push(r);
+    return r;
+  }
+  (onEls || []).forEach(function (el) {
+    var n = el.getAttribute('data-name');
+    if (!n) { return; }
+    rowOf(n).on = !!el.checked;
+  });
+  (expEls || []).forEach(function (el) {
+    var n = el.getAttribute('data-name');
+    if (!n) { return; }
+    rowOf(n).exp = el.value || '';
+  });
+  return out;
+}
+
 function openSheet(title, body, footer, opts) {
   var sb = $('#sheetBody');
   sb.innerHTML =
@@ -1131,12 +1159,18 @@ var ACTIONS = {
     p.phone = ($('#mi_phone').value || '').trim() || p.phone;
     p.job = $('#mi_job').value || p.job;
     if ($('#mi_hire')) { p.hireDate = $('#mi_hire').value || ''; }
+    p.certs = mergeMyCerts(p.certs, $$('#miCertList .mi-cert-on'), $$('#miCertList .mi-cert-exp'));
     var s = sessionRead();
     if (s && s.personId === p.id) { sessionSave(p, state.role); }
-    patchWorker(p.id, { name: p.name, birth_date: p.birth, phone: p.phone, job_type: p.job, hire_date: p.hireDate || null }, '내 정보 저장');
+    patchWorker(p.id, {
+      name: p.name, birth_date: p.birth, phone: p.phone, job_type: p.job, hire_date: p.hireDate || null,
+      certs_json: p.certs
+    }, '내 정보 저장');
     render();
     openSettings(p);
-    toast('내 정보를 저장했어요 · 관리자 인원 목록에도 반영');
+    var held = (p.certs || []).filter(function (c) { return c.on; }).map(function (c) { return c.name; });
+    toast('내 정보를 저장했어요 · 관리자 인원 목록에도 반영' +
+      '<br><span class="muted">보유 자격: ' + (held.length ? esc(held.join(' · ')) : '없음') + '</span>');
   },
   logout: function () {
     confirmSheet('로그아웃할까요?', '로그아웃하면 다시 <b>이름 · 생년월일 · 전화번호</b>로 로그인해야 합니다.<br>출퇴근 · 휴무 · 일보 기록은 그대로 남아 있어요.',

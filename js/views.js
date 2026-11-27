@@ -738,6 +738,27 @@ function openSettings(p) {
   openSheet('내 정보', body, '<button class="btn btn-ghost" data-act="closeSheet">닫기</button>');
 }
 
+/* 내 정보 → 개인정보 수정 : 보유 자격 선택 (본인이 직접 체크)
+   · workers.certs_json = [{name, on, exp, custom}] 그대로 · 기본 5개 + 관리자가 등록해 둔 custom 자격
+   · T/L 은 2024년 5월 이후 발급분만 인정 (안내 문구 고정) · TBM 리더는 만료일(date)까지 입력 */
+var TL_NOTICE = '※ 2024년 5월 이후 발급/취득 면허증만 해당';
+function myCertRowsHTML(p) {
+  var cur = {};
+  (p.certs || []).forEach(function (c) { if (c && c.name) { cur[c.name] = c; } });
+  return certNameList().map(function (n) {
+    var c = cur[n] || { on: false, exp: '', custom: CERT_BASE.indexOf(n) < 0 };
+    var hasExp = (n === 'TBM 리더');
+    return '<div class="cert-row mi-cert-row' + (hasExp ? ' has-exp' : '') + '" data-mcert="' + esc(n) + '">' +
+      '<label class="chk"><input type="checkbox" class="mi-cert-on" data-name="' + esc(n) + '"' + (c.on ? ' checked' : '') + '>' +
+      '<span class="cert-label">' + esc(n) + '</span>' +
+      (c.custom ? '<span class="mi-cert-tag">관리자 등록</span>' : '') + '</label>' +
+      (hasExp ? '<div class="mi-cert-expwrap"><span>만료일</span>' +
+        '<input class="mi-cert-exp" type="date" data-name="' + esc(n) + '" value="' + esc(c.exp || '') + '" aria-label="TBM 리더 만료일"></div>' : '') +
+      '</div>' +
+      (n === 'T/L' ? '<div class="cert-note" data-certnote="tl">' + TL_NOTICE + '</div>' : '');
+  }).join('');
+}
+
 /* 내 정보 → 개인정보 수정 (접힌 서브시트) */
 function openMyInfoEdit(p) {
   if (!p) { return; }
@@ -750,6 +771,12 @@ function openMyInfoEdit(p) {
     '<label class="field"><span>입사일자</span><input id="mi_hire" type="date" value="' + esc(p.hireDate || '') + '"></label>' +
     '</div>' +
     '<div class="hint">이름 · 직종 · 연락처 · 생년월일 · 입사일자는 관리자 인원 목록에도 바로 반영됩니다. 생년월일은 <b>숫자 6자리(961228)</b> 또는 <b>8자리(19961228)</b>로 적어 주세요.</div>' +
+    '<div class="sect">' +
+    '<div class="sect-t">보유 자격</div>' +
+    '<div class="muted">본인이 가진 자격을 직접 체크하세요. 저장하면 <b>인원 상세 자격</b>과 <b>팀·조 [🏷 자격] 필터</b>에 바로 반영됩니다.</div>' +
+    '<div id="miCertList">' + myCertRowsHTML(p) + '</div>' +
+    '<div class="hint">관리자가 인원 상세에서 등록한 자격도 함께 나옵니다. 만료일이 지난 자격은 <b>보유</b>로 치지 않아요.</div>' +
+    '</div>' +
     '<button class="btn btn-line sm block" style="margin-top:9px" data-act="saveMyInfo" data-id="' + p.id + '">개인정보 저장</button>';
   openSheet('개인정보 수정', body,
     '<button class="btn btn-ghost" data-act="myGsToSettings">설정으로</button>');

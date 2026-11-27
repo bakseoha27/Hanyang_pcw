@@ -388,6 +388,15 @@ input.cert-exp{width:114px;height:38px;border:1.5px solid var(--line);border-rad
 .cert-exp-add{height:30px;padding:0 9px;border-radius:8px;background:#F2F4F7;color:#98A2B3;font-size:10.5px;font-weight:900;flex:0 0 auto;letter-spacing:-.2px;}
 .cert-x{width:30px;height:30px;border-radius:9px;background:#F2F4F7;color:#98A2B3;font-size:11px;font-weight:900;flex:0 0 auto;display:flex;align-items:center;justify-content:center;}
 .exp-warn{font-size:9.5px;font-weight:900;color:#B54708;background:var(--orange-soft);padding:3px 5px;border-radius:5px;flex:0 0 auto;line-height:1.2;text-align:center;}
+/* 내 정보 → 개인정보 수정 : 보유 자격 선택 */
+.mi-cert-row{flex-wrap:wrap;row-gap:4px;}
+.mi-cert-row .chk{font-size:14px;}
+.mi-cert-tag{font-size:9px;font-weight:900;color:#667085;background:#F2F4F7;padding:2px 5px;border-radius:5px;letter-spacing:-.2px;flex:0 0 auto;}
+.mi-cert-expwrap{flex:1 0 100%;display:flex;align-items:center;gap:7px;padding:0 0 5px 27px;}
+.mi-cert-expwrap span{font-size:11px;font-weight:800;color:#98A2B3;flex:0 0 auto;}
+input.cert-exp.mi-cert-exp,.mi-cert-exp{flex:1;min-width:0;width:auto;height:36px;border:1.5px solid var(--line);border-radius:9px;padding:0 6px;font-size:12.5px;font-weight:700;background:#FCFCFD;color:#475467;}
+.cert-note{margin:1px 0 9px 27px;padding:8px 10px;border-radius:10px;background:var(--orange-soft);border:1px solid #FBDBA7;
+  color:#B54708;font-size:12px;font-weight:900;letter-spacing:-.25px;line-height:1.35;}
 .exp-off{font-size:9.5px;font-weight:900;color:#98A2B3;background:#F2F4F7;padding:3px 5px;border-radius:5px;flex:0 0 auto;}
 .seg-toggle{display:flex;gap:6px;margin-top:8px;}
 .seg-toggle button{flex:1;height:44px;border-radius:11px;background:#F2F4F7;font-size:13.5px;font-weight:900;color:#667085;border:1.5px solid transparent;}
