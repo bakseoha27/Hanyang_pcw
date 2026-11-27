@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#14213D">
+<title>한양 pcw팀 신규입사자 서류 제출</title>
+<meta name="description" content="한양 pcw팀 신규입사자 서류 제출 — 기본 정보 입력과 서류 업로드">
+<link rel="icon" href="../icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="row">
+      <div class="logo">PC</div>
+      <div>
+        <h1>한양 pcw팀 신규입사자 서류 제출</h1>
+        <p>한양이엔지(주) PCW 현장 · 모바일 제출</p>
+      </div>
+    </div>
+    <div class="progress"><i id="prog"></i></div>
+  </header>
+
+  <main id="formArea">
+    <!-- 1. 기본 정보 -->
+    <section class="card">
+      <h2><span class="step">1</span> 기본 정보</h2>
+      <p class="hint">신분증과 똑같이 적어 주세요. 주민등록번호는 서류 확인·4대보험 신고에만 사용합니다.</p>
+
+      <div class="field">
+        <label for="name">성명<span class="req">*</span></label>
+        <input type="text" id="name" autocomplete="name" placeholder="예) 김근하">
+      </div>
+
+      <div class="field">
+        <label for="rrn">주민등록번호<span class="req">*</span></label>
+        <input type="tel" id="rrn" inputmode="numeric" autocomplete="off" placeholder="000000-0000000" maxlength="14">
+        <p class="sub">숫자만 입력해도 하이픈이 자동으로 들어갑니다.</p>
+      </div>
+
+      <div class="field">
+        <label for="address">주소<span class="req">*</span></label>
+        <textarea id="address" placeholder="예) 경기도 평택시 고덕아너스아파트 923동 1203호" rows="2"></textarea>
+      </div>
+
+      <div class="field">
+        <label>휴대폰 기종<span class="req">*</span></label>
+        <div class="seg" id="seg-os">
+          <label><input type="radio" name="phone_os" value="삼성"><span>삼성</span></label>
+          <label><input type="radio" name="phone_os" value="아이폰"><span>아이폰</span></label>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="phone">휴대폰번호<span class="req">*</span></label>
+        <input type="tel" id="phone" inputmode="numeric" autocomplete="tel" placeholder="010-0000-0000" maxlength="13">
+      </div>
+
+      <div class="field">
+        <label>본인 명의 휴대폰인가요?<span class="req">*</span></label>
+        <div class="seg" id="seg-owned">
+          <label><input type="radio" name="phone_self_owned" value="O"><span>O (본인 명의)</span></label>
+          <label><input type="radio" name="phone_self_owned" value="X"><span>X (가족 명의 등)</span></label>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>숙소 사용<span class="opt">선택</span></label>
+        <div class="seg mini" id="seg-house">
+          <label><input type="radio" name="housing" value="O"><span>O (숙소 필요)</span></label>
+          <label><input type="radio" name="housing" value="X"><span>X (자체 거주)</span></label>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 근무 / 급여 -->
+    <section class="card">
+      <h2><span class="step">2</span> 근무 · 급여 정보</h2>
+      <p class="hint">급여 입금 계좌는 본인 명의로 적어 주세요.</p>
+
+      <div class="grid2">
+        <div class="field">
+          <label for="bank">은행<span class="req">*</span></label>
+          <input type="text" id="bank" list="bankList" placeholder="예) 농협">
+          <datalist id="bankList">
+            <option value="농협"><option value="신한"><option value="국민"><option value="하나">
+            <option value="우리"><option value="기업"><option value="카카오뱅크"><option value="토스">
+            <option value="케이뱅크"><option value="새마을금고"><option value="부산은행"><option value="대구은행">
+            <option value="경남은행"><option value="광주은행"><option value="전북은행"><option value="제주은행">
+            <option value="수협"><option value="우체국"><option value="SC제일"><option value="씨티">
+          </datalist>
+        </div>
+        <div class="field">
+          <label for="account_number">계좌번호<span class="req">*</span></label>
+          <input type="tel" id="account_number" inputmode="numeric" placeholder="숫자와 -">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>직종<span class="req">*</span></label>
+        <div class="seg mini" id="seg-job">
+          <label><input type="radio" name="job_role" value="배관공"><span>배관공</span></label>
+          <label><input type="radio" name="job_role" value="용접공"><span>용접공</span></label>
+          <label><input type="radio" name="job_role" value="보통인부"><span>보통인부</span></label>
+          <label><input type="radio" name="job_role" value="품질관리자"><span>품질관리자</span></label>
+          <label><input type="radio" name="job_role" value="기타"><span>기타</span></label>
+        </div>
+        <div class="input-add hide" id="jobEtcWrap">
+          <input type="text" id="job_role_etc" placeholder="직종을 직접 적어 주세요 (예) 공사관리자">
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="field">
+          <label for="daily_wage">단가<span class="req">*</span></label>
+          <input type="tel" id="daily_wage" inputmode="numeric" placeholder="예) 180000">
+        </div>
+        <div class="field">
+          <label for="blood_type">혈액형<span class="req">*</span></label>
+          <select id="blood_type">
+            <option value="">선택</option>
+            <option value="A">A</option><option value="B">B</option>
+            <option value="O">O</option><option value="AB">AB</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="total_career">총 경력<span class="req">*</span></label>
+          <input type="text" id="total_career" placeholder="예) 12년 0개월">
+        </div>
+        <div class="field">
+          <label for="semi_career">반도체 경력<span class="opt">선택</span></label>
+          <input type="text" id="semi_career" placeholder="예) 5년 0개월 / 없음">
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="email">이메일<span class="opt">선택</span></label>
+        <input type="email" id="email" inputmode="email" autocomplete="email" placeholder="예) hong@daum.net">
+      </div>
+    </section>
+
+    <!-- 3. 지급품 / 자격 -->
+    <section class="card">
+      <h2><span class="step">3</span> 지급품 · 보유 자격</h2>
+      <p class="hint">현장에서 지급할 작업복·안전화 사이즈와 보유 자격을 골라 주세요.</p>
+
+      <div class="field">
+        <label>조끼 사이즈<span class="req">*</span></label>
+        <div class="seg mini" id="seg-vest">
+          <label><input type="radio" name="vest_size" value="XL"><span>XL</span></label>
+          <label><input type="radio" name="vest_size" value="2XL"><span>2XL</span></label>
+          <label><input type="radio" name="vest_size" value="3XL"><span>3XL</span></label>
+          <label><input type="radio" name="vest_size" value="4XL"><span>4XL</span></label>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="field">
+          <label for="shoe_size">안전화 사이즈<span class="req">*</span></label>
+          <input type="tel" id="shoe_size" inputmode="numeric" placeholder="예) 270">
+        </div>
+        <div class="field">
+          <label>보안경<span class="req">*</span></label>
+          <div class="seg mini" id="seg-glasses">
+            <label><input type="radio" name="glasses_type" value="일반"><span>일반</span></label>
+            <label><input type="radio" name="glasses_type" value="안경형"><span>안경형</span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>보유 자격<span class="opt">복수 선택 · 없으면 넘어가세요</span></label>
+        <div class="chips" id="certChips">
+          <label><input type="checkbox" name="certs" value="TL"><span>TL</span></label>
+          <label><input type="checkbox" name="certs" value="체결"><span>체결</span></label>
+          <label><input type="checkbox" name="certs" value="신호수"><span>신호수</span></label>
+          <label><input type="checkbox" name="certs" value="지게차"><span>지게차</span></label>
+        </div>
+        <div class="input-add">
+          <input type="text" id="certEtc" placeholder="그 밖의 자격 직접 입력 (예) 비계기능사">
+          <button type="button" id="certAdd">추가</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. 서류 -->
+    <section class="card">
+      <h2><span class="step">4</span> 서류 올리기</h2>
+      <p class="hint">휴대폰 사진첩이나 카카오톡에서 받은 파일을 그대로 올리시면 됩니다. 파일 이름은 자동으로 정리됩니다.</p>
+
+      <div class="field">
+        <label>신분증 사진<span class="req">*</span></label>
+        <div class="file" data-file="idcard">
+          <div class="thumb" data-thumb>🪪</div>
+          <div class="meta"><b>신분증(성명)</b><small data-name>선택 안 됨 · 사진 또는 PDF</small></div>
+          <button type="button" class="pick" data-pick>선택</button>
+          <input type="file" accept="image/*,application/pdf">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>기초안전보건교육 이수증<span class="req">*</span></label>
+        <div class="file" data-file="edu">
+          <div class="thumb" data-thumb>📜</div>
+          <div class="meta"><b>기초이수증(성명)</b><small data-name>선택 안 됨 · 사진 또는 PDF</small></div>
+          <button type="button" class="pick" data-pick>선택</button>
+          <input type="file" accept="image/*,application/pdf">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>통장사본<span class="req">*</span></label>
+        <div class="file" data-file="bank">
+          <div class="thumb" data-thumb>🏦</div>
+          <div class="meta"><b>통장사본(성명)</b><small data-name>선택 안 됨 · 사진 또는 PDF</small></div>
+          <button type="button" class="pick" data-pick>선택</button>
+          <input type="file" accept="image/*,application/pdf">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>증명사진<span class="req">*</span></label>
+        <div class="file" data-file="photo">
+          <div class="thumb" data-thumb>🙂</div>
+          <div class="meta"><b>성명_생년월일6자리.jpg</b><small data-name>선택 안 됨 · 사진 (자동으로 JPG 변환)</small></div>
+          <button type="button" class="pick" data-pick>선택</button>
+          <input type="file" accept="image/*">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>본인 건강검진 결과지<span class="req">*</span></label>
+        <div class="file" data-file="health">
+          <div class="thumb" data-thumb>🏥</div>
+          <div class="meta"><b>YYMMDD_성명 일반.pdf</b><small data-name>선택 안 됨 · PDF만 (사진 불가)</small></div>
+          <button type="button" class="pick" data-pick>선택</button>
+          <input type="file" accept="application/pdf">
+        </div>
+        <p class="sub">카카오톡에서 검진 결과 PDF를 찾는 방법이 어려우시면 <button type="button" class="linkbtn" data-guide>❓ 카톡에서 검진 PDF 찾는 법</button> 을 눌러 주세요.</p>
+        <div class="grid2">
+          <div class="field" style="margin-bottom:6px">
+            <label for="health_date">검진 받은 날짜<span class="req">*</span></label>
+            <input type="date" id="health_date">
+          </div>
+          <div class="field" style="margin-bottom:6px">
+            <label for="health_type">검진 종류<span class="req">*</span></label>
+            <select id="health_type">
+              <option value="">선택</option>
+              <option value="일반">일반</option>
+              <option value="배치전">배치전</option>
+              <option value="특수">특수</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>소견서<span class="opt">D2 판정을 받은 경우만</span></label>
+        <div class="file" data-file="opinion">
+          <div class="thumb" data-thumb>🗒️</div>
+          <div class="meta"><b>성명 소견서.pdf</b><small data-name>선택 안 됨 · PDF만 (없으면 넘어가세요)</small></div>
+          <button type="button" class="pick" data-pick>선택</button>
+          <input type="file" accept="application/pdf">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>경력증명서<span class="req">*</span></label>
+        <div class="file" data-file="career">
+          <div class="thumb" data-thumb>📄</div>
+          <div class="meta"><b>성명 경력증명서(직종).pdf</b><small data-name>선택 안 됨 · PDF만 (캡처·사진 불가)</small></div>
+          <button type="button" class="pick" data-pick>선택</button>
+          <input type="file" accept="application/pdf">
+        </div>
+        <div class="note">경력증명서는 <b>PDF 파일만</b> 올릴 수 있습니다. 사진·캡처 이미지는 접수되지 않으니, 발급처에서 PDF로 받아 주세요.</div>
+      </div>
+    </section>
+
+    <!-- 5. 동의 -->
+    <section class="card">
+      <h2><span class="step">5</span> 개인정보 동의</h2>
+      <p class="hint">아래 세 가지에 모두 동의하셔야 서류가 접수됩니다.</p>
+
+      <div class="consent all">
+        <div class="line">
+          <input type="checkbox" id="agreeAll">
+          <label class="t" for="agreeAll">전체 동의합니다<small>아래 필수 동의 3가지를 한 번에 선택합니다.</small></label>
+        </div>
+      </div>
+
+      <div class="consent">
+        <div class="line">
+          <input type="checkbox" class="agree" id="agree_privacy" data-key="privacy">
+          <label class="t" for="agree_privacy">[필수] 개인정보 수집·이용 동의
+            <small>보유기간: 입사 시부터 퇴사 전까지 보관 · 입사 취소 시 즉시 영구 파기</small></label>
+          <button type="button" class="view" data-doc="privacy">전문</button>
+        </div>
+      </div>
+
+      <div class="consent">
+        <div class="line">
+          <input type="checkbox" class="agree" id="agree_unique" data-key="unique">
+          <label class="t" for="agree_unique">[필수] 고유식별정보(주민등록번호) 처리 동의
+            <small>주민등록번호는 본인 확인·4대보험 신고 등 법령상 업무에만 사용합니다.</small></label>
+          <button type="button" class="view" data-doc="unique">전문</button>
+        </div>
+      </div>
+
+      <div class="consent">
+        <div class="line">
+          <input type="checkbox" class="agree" id="agree_sensitive" data-key="sensitive">
+          <label class="t" for="agree_sensitive">[필수] 민감정보(건강검진·혈액형·소견서) 처리 동의
+            <small>현장 안전 배치와 지급품 준비 목적으로만 사용합니다.</small></label>
+          <button type="button" class="view" data-doc="sensitive">전문</button>
+        </div>
+      </div>
+      <p class="sub" style="margin:0 0 12px;color:#98A2B3;font-size:11.5px">동의 일시는 제출 시점으로 자동 기록됩니다.</p>
+    </section>
+
+    <p style="text-align:center;color:#98A2B3;font-size:11.5px;margin:6px 0 26px;line-height:1.6">
+      문의는 서류 제출 링크를 보내드린 담당자에게 연락해 주세요.<br>한양이엔지(주) PCW 현장 · 한양 pcw팀
+    </p>
+  </main>
+
+  <div class="submitbar">
+    <div class="inner">
+      <button class="btn" id="submitBtn">서류 제출하기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 제출 완료 -->
+<div class="modal" id="doneModal">
+  <div class="bg"></div>
+  <div class="sheet">
+    <div class="head"><b>제출 완료</b></div>
+    <div class="body">
+      <div class="done-card">
+        <div class="big">✅</div>
+        <h2>서류가 접수되었습니다</h2>
+        <p id="doneName"></p>
+        <p>담당자가 확인한 뒤 연락드립니다.</p>
+        <div class="done-list" id="doneList"></div>
+      </div>
+      <button class="btn ghost sm" id="doneClose" style="margin-top:14px">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 동의 전문 -->
+<div class="modal" id="docModal">
+  <div class="bg" data-close></div>
+  <div class="sheet">
+    <div class="head"><b id="docTitle">약관</b><button type="button" data-close>✕</button></div>
+    <div class="body" id="docBody"></div>
+  </div>
+</div>
+
+<!-- 카톡 검진 PDF 가이드 -->
+<div class="modal" id="guideModal">
+  <div class="bg" data-close></div>
+  <div class="sheet">
+    <div class="head"><b>카톡에서 건강검진 PDF 찾는 법</b><button type="button" data-close>✕</button></div>
+    <div class="body" id="guideBody"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="js/config.js"></script>
+<script src="js/guide.js"></script>
+<script src="js/submit.js"></script>
+</body>
+</html>
