@@ -1315,9 +1315,12 @@ a.btn{text-decoration:none;}
 @media (max-width:359px){
   .tool-cat b{font-size:11px;}
   .tool-cat span{font-size:9px;}
-  .tq-btn{width:28px;}
-  .tq-num{width:42px;}
-  .tr-name{font-size:14px;}
+  .tool-row{gap:4px;padding:6px 7px;}
+  .tool-status{min-width:42px;padding:0 4px;font-size:11px;}
+  .tq-btn{width:26px;}
+  .tq-num{width:38px;font-size:13px;}
+  .tool-row .lift-ic{width:26px;}
+  .tr-name{font-size:13.5px;}
 }
 @media (min-width:900px){
   .tool-cats{grid-template-columns:repeat(4,minmax(0,160px));}
