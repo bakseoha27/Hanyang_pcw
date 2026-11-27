@@ -440,7 +440,7 @@
     { key: 'd_opinion',     w: 8.0,  t: '소견서',          a: 'center' },
     { key: 'd_medicine',    w: 8.0,  t: '약봉투',          a: 'center' },
     { key: 'd_career',      w: 10.0, t: '경력증명서',       a: 'center' },
-    { key: 'exam',          w: 12.0, t: '검진일 / 종류',    a: 'center' },
+    { key: 'exam',          w: 26.0, t: '검진일 / 종류',    a: 'center' },
     { key: 'created',       w: 17.0, t: '제출일',          a: 'center' },
     { key: 'status',        w: 10.0, t: '상태',           a: 'center' },
     { key: 'ag1',           w: 17.0, t: '개인정보 동의',    a: 'center' },
@@ -516,12 +516,12 @@
       var v = rowValues(r, i);
       var vals = COLS.map(function (c) { return v[c.key] === undefined ? '' : v[c.key]; });
       var row = ws.addRow(vals);
-      row.height = 18;
+      row.height = (String(v.exam || '').length > 26) ? 28 : 18;
       row.eachCell({ includeEmpty: true }, function (cell, col) {
         var c = COLS[col - 1];
         cell.border = border;
         cell.font = bodyFont;
-        cell.alignment = { horizontal: c.a, vertical: 'middle', wrapText: c.key === 'address' || c.key === 'certs' };
+        cell.alignment = { horizontal: c.a, vertical: 'middle', wrapText: c.key === 'address' || c.key === 'certs' || c.key === 'exam' };
         if (c.key === 'daily_wage') { cell.numFmt = '#,##0'; }
         if (c.key === 'shoe_size') { cell.numFmt = '0'; }
         if (c.key === 'rrn' || c.key === 'account_number' || c.key === 'phone') { cell.numFmt = '@'; }
