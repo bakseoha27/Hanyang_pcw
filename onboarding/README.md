@@ -96,6 +96,10 @@ Storage 객체 키는 ASCII만 허용되므로 실제 경로는 `{제출id}/{서
 # projects/onboarding-portal/web/ 에서 고친 뒤
 cp -r projects/onboarding-portal/web/* work/gh-hanyang-pcw/onboarding/
 cd work/gh-hanyang-pcw && git add onboarding && git commit -m "..." && git push
+
+# 엣지 함수를 고쳤을 때
+python3 projects/onboarding-portal/deploy_fn.py onboarding-admin \
+  projects/onboarding-portal/edge-functions/onboarding-admin/index.ts
 ```
 
 DB·스토리지·함수 정의는 `projects/onboarding-portal/supabase-onboarding.sql` 과
