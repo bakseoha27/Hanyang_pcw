@@ -430,3 +430,18 @@ input.locked{background:#F4F7FF;border-color:#D7E3FF;color:#344054;font-weight:9
 .upfields{display:flex;gap:6px;margin-top:6px;}
 .upfields input,.upfields select{flex:1;min-width:0;padding:7px 8px;border:1.5px solid var(--line);border-radius:9px;font-size:12px;background:#fff;}
 #upGo{margin-top:9px;height:40px;font-size:13.5px;}
+
+/* =========================================================
+   v8 — ⏸️ 입사보류 상태 · 상세 상태 선택 (2026-11-27)
+   ========================================================= */
+.tag.st.hold{background:#FFF4DB;color:#B54708;}          /* 노란 배지 */
+.stsel{margin:2px 0 12px;padding:11px 12px 10px;border:1.5px solid #FFE4B5;border-radius:14px;background:#FFFCF4;}
+.stsel .sh{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+.stsel .sh b{font-size:13px;font-weight:900;color:#344054;}
+.stsel .sh span{font-size:11px;font-weight:800;color:#B54708;}
+.stbtns{display:flex;gap:6px;flex-wrap:wrap;}
+.stbtns button{flex:1 1 auto;min-width:74px;height:36px;padding:0 9px;border-radius:10px;border:1.5px solid #E4EAF6;
+  background:#fff;color:#475467;font-size:12px;font-weight:900;letter-spacing:-.2px;cursor:pointer;}
+.stbtns button.on{border-color:#2F6BFF;background:#EFF4FF;color:#1D4ED8;}
+.stbtns button[data-setstate="hold"].on{border-color:#F5B93C;background:#FFF1D6;color:#B54708;}
+.stbtns button[data-setstate="resigned"].on{border-color:#98A2B3;background:#F2F4F8;color:#475467;}

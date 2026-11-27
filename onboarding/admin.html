@@ -7,7 +7,7 @@
 <title>신규입사자 서류 관리 · 한양 pcw팀</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="../icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="css/app.v7.css">
+<link rel="stylesheet" href="css/app.v8.css">
 <style>
   body{background:#EEF2F8;}
   .login-wrap{max-width:430px;margin:0 auto;padding:26px 16px 40px;min-height:100vh;}
@@ -206,6 +206,14 @@
           <input type="date" id="m_resign">
         </div>
       </div>
+      <div class="field">
+        <label for="m_status">상태</label>
+        <select id="m_status">
+          <option value="submitted">입사예정</option>
+          <option value="hold">⏸️ 입사보류</option>
+        </select>
+        <p class="sub">입사가 미뤄진 사람은 <b>입사보류</b>로 등록해 두면 목록·[전체] 탭 보류 필터에 나옵니다.</p>
+      </div>
       <div class="grid2">
         <div class="field">
           <label for="m_wage">단가</label>
@@ -238,7 +246,7 @@
 <script src="vendor/jszip.min.js"></script>
 <script src="vendor/pdfjs/pdf.min.js"></script>
 <script src="js/exam.js"></script>
-<script src="js/config.v7.js"></script>
-<script src="js/admin.v7.js"></script>
+<script src="js/config.v8.js"></script>
+<script src="js/admin.v8.js"></script>
 </body>
 </html>

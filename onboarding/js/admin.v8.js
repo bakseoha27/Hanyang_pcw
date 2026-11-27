@@ -69,12 +69,14 @@
   function isResigned(r) {
     return !!String(r.resign_date || '').trim() || r.status === 'resigned';
   }
-  // 입사예정 / 근무중 / 퇴사 — DB status 대신 퇴사일자까지 함께 본다
+  // 입사예정 / 근무중 / 입사보류 / 퇴사 — DB status 대신 퇴사일자까지 함께 본다 (v8)
   function stateOf(r) {
     if (isResigned(r)) { return 'resigned'; }
+    if (r.status === 'hold') { return 'hold'; }
     return r.status === 'hired' ? 'working' : 'plan';
   }
-  var STATE_LABEL = { plan: '입사예정', working: '근무중', resigned: '퇴사' };
+  var STATE_LABEL = { plan: '입사예정', working: '근무중', hold: '입사보류', resigned: '퇴사' };
+  var STATE_ORDER = ['plan', 'working', 'hold', 'resigned'];
   function stateText(r) { return STATE_LABEL[stateOf(r)] || ''; }
   function notesOf(r) { return Array.isArray(r.admin_notes) ? r.admin_notes : []; }
   function notesText(r) {
@@ -97,6 +99,7 @@
   function statusText(r) {
     if (isArchived(r)) { return '취합완료'; }
     if (isResigned(r)) { return '퇴사'; }
+    if (r.status === 'hold') { return '입사보류'; }
     return r.status === 'hired' ? '입사확정' : '제출';
   }
   function wageText(v) {
@@ -316,7 +319,7 @@
     if (S.tab !== 'all') { return; }
     var rows = S.rows;
     var cnt = function (f) { return rows.filter(f).length; };
-    $('#fStatus').innerHTML = ['plan', 'working', 'resigned'].map(function (k) {
+    $('#fStatus').innerHTML = STATE_ORDER.map(function (k) {
       return chipHtml('data-fst', k, STATE_LABEL[k], cnt(function (r) { return stateOf(r) === k; }), !!S.fStatus[k]);
     }).join('');
     $('#fGender').innerHTML = ['남', '여'].map(function (k) {
@@ -533,6 +536,18 @@
     });
     h += '</dl>';
 
+    /* 상태 — 한 번 누르면 바로 바뀐다. ⏸️ 입사보류를 다시 누르면 해제(v8) */
+    var curSt = stateOf(r);
+    h += '<div class="stsel">'
+      + '<div class="sh"><b>상태</b><span>' + esc(STATE_LABEL[curSt] || '')
+      + (curSt === 'hold' ? ' · ⏸️ 입사보류를 한 번 더 누르면 해제됩니다' : '') + '</span></div>'
+      + '<div class="stbtns">'
+      + STATE_ORDER.map(function (k) {
+        var lbl = k === 'working' ? '입사확정(근무중)' : (k === 'hold' ? '⏸️ 입사보류' : STATE_LABEL[k]);
+        return '<button type="button" data-setstate="' + k + '"' + (curSt === k ? ' class="on"' : '') + '>' + esc(lbl) + '</button>';
+      }).join('')
+      + '</div></div>';
+
     var genOpt = ['', '여', '남'].map(function (g) {
       var cur = genderOf(r);
       return '<option value="' + g + '"' + (cur === g ? ' selected' : '') + '>' + (g || '선택') + '</option>';
@@ -709,8 +724,8 @@
     return Math.max(1, Math.round(v / 1024)) + 'KB';
   }
   function basePath() {
-    var tag = document.querySelector('script[src*="js/admin.v7.js"]');
-    return (tag && tag.src) ? tag.src.replace(/js\/admin\.v7\.js.*$/, '') : '';
+    var tag = document.querySelector('script[src*="js/admin.v8.js"]');
+    return (tag && tag.src) ? tag.src.replace(/js\/admin\.v8\.js.*$/, '') : '';
   }
 
   async function openView(id, idx) {
@@ -982,6 +997,7 @@
       var el = $('#' + k); if (el) { el.value = ''; }
     });
     $('#m_gender').value = '';
+    $('#m_status').value = 'submitted';
     $('#m_vendor').innerHTML = vendorOptions('');
     $('#m_job').innerHTML = jobOptions('');
     jobCustomToggle('#addModal');
@@ -1000,6 +1016,7 @@
       phone: $('#m_phone').value,
       hire_date: $('#m_hire').value,
       resign_date: $('#m_resign').value,
+      status: $('#m_status').value,
       daily_wage: $('#m_wage').value,
       job_role: jobPick('#addModal'),
       outsource_company: vendor,
@@ -1263,6 +1280,38 @@
     } catch (e) { toast(e.message || '변경하지 못했습니다.', 3000); }
   }
 
+  async function setState(id, target) {
+    var r = rowById(id);
+    if (!r) { return; }
+    var cur = stateOf(r);
+    var next = target;
+    if (next === 'hold' && cur === 'hold') { next = 'plan'; }   // ⏸️ 다시 누르면 해제
+    if (next === cur) { toast('이미 ' + STATE_LABEL[cur] + ' 상태입니다.'); return; }
+    var labels = { plan: '입사예정', working: '입사확정(근무중)', hold: '입사보류', resigned: '퇴사' };
+    try {
+      if (next === 'resigned') {
+        var td = todayISO();
+        if (!confirm(r.name + ' 님을 퇴사 처리할까요?\n\n· 퇴사일자를 오늘(' + td + ')로 저장합니다.')) { return; }
+        await call('update_meta', { id: id, meta: { resign_date: td } });
+        r.resign_date = td;
+      } else {
+        var status = next === 'working' ? 'hired' : (next === 'hold' ? 'hold' : 'submitted');
+        await call('set_status', { id: id, status: status });
+        r.status = status;
+        // 퇴사일자가 남아 있으면 목록에서는 계속 퇴사로 보이므로 같이 지운다
+        if (String(r.resign_date || '').trim()) {
+          await call('update_meta', { id: id, meta: { resign_date: '' } });
+          r.resign_date = '';
+        }
+      }
+      render();
+      openDetail(id);
+      toast(r.name + ' 님 상태를 ' + labels[next] + '로 바꿨습니다.');
+    } catch (e) {
+      toast(e.message || '상태를 바꾸지 못했습니다.', 3200);
+    }
+  }
+
   async function setArchived(rows, on) {
     if (!rows.length) { return; }
     var names = rows.map(function (r) { return r.name; }).join(', ');
@@ -1404,6 +1453,8 @@
   $('#detailBody').addEventListener('click', function (e) {
     var ms = e.target.closest('[data-metasave]');
     if (ms) { e.preventDefault(); saveMeta(S.detailId); return; }
+    var ss = e.target.closest('[data-setstate]');
+    if (ss) { e.preventDefault(); setState(S.detailId, ss.getAttribute('data-setstate')); return; }
     var rs = e.target.closest('[data-resign]');
     if (rs) {
       e.preventDefault();
