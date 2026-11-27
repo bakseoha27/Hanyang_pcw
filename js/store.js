@@ -389,6 +389,11 @@ function buildState(d) {
     hcDate: /^\d{4}-\d{2}-\d{2}$/.test(String(ui.hcDate || '')) ? ui.hcDate : todayKey(),
     hcMonth: ui.hcMonth || todayKey().slice(0, 7),
     bulkDate: ui.bulkDate || todayKey(),
+    bulkOpen: !!ui.bulkOpen,
+    certFilter: ui.certFilter || '',
+    certPanel: !!ui.certPanel,
+    dashRoleFilter: Array.isArray(ui.dashRoleFilter) ? ui.dashRoleFilter : [],
+    dashRolePanel: !!ui.dashRolePanel,
     timeEdit: false,
     pollExpand: ui.pollExpand || '',
     resignOpen: !!ui.resignOpen
