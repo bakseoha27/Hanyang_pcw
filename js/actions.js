@@ -1548,6 +1548,29 @@ var ACTIONS = {
     state.ui.adminTeamFilter = el.getAttribute('data-f');
     render();
   },
+  /* 인원별 출퇴근 : [☑ 필터] 다중 선택 (역할·직종) */
+  dashRoleOpen: function () {
+    state.ui.dashRolePanel = !state.ui.dashRolePanel;
+    render();
+  },
+  dashRoleToggle: function (el) {
+    var k = el.getAttribute('data-r');
+    var sel = dashRoleSel().slice();
+    var i = sel.indexOf(k);
+    if (i >= 0) { sel.splice(i, 1); } else { sel.push(k); }
+    state.ui.dashRoleFilter = sel;
+    state.ui.dashRolePanel = true;
+    render();
+  },
+  dashRoleClear: function () {
+    state.ui.dashRoleFilter = [];
+    render();
+  },
+  /* 공수 일괄 적용 : 헤더를 눌러 펼치기/접기 (기본 접힘) */
+  bulkToggle: function () {
+    state.ui.bulkOpen = !state.ui.bulkOpen;
+    render();
+  },
   toggleArchive: function () {
     state.ui.showArchive = !state.ui.showArchive;
     render();
@@ -1561,6 +1584,32 @@ var ACTIONS = {
     var btn = document.querySelector('[data-act="searchClear"][data-search="' + key + '"]');
     if (btn) { btn.classList.add('hide'); }
     applyNameFilters();
+  },
+  /* ----- 팀·조 자격 필터 : [🏷 자격] 열기/닫기 · 자격 선택 · 해제 ----- */
+  certToggle: function () {
+    if (!canManage()) { return; }
+    if (state.ui.certPanel) {
+      /* 열린 상태에서 다시 누르면 닫고, 자격이 걸려 있었으면 원래대로 복귀 */
+      state.ui.certPanel = false;
+      if (state.ui.certFilter) { state.ui.certFilter = ''; }
+    } else {
+      state.ui.certPanel = true;
+    }
+    render();
+  },
+  certSet: function (el) {
+    if (!canManage()) { return; }
+    var name = el.getAttribute('data-cert') || '';
+    if (name && name === (state.ui.certFilter || '')) { name = ''; }   /* 같은 자격을 다시 누르면 해제 */
+    state.ui.certFilter = name;
+    state.ui.certPanel = true;
+    render();
+    if (name) { toast('<b>' + esc(name) + '</b> 보유 <b>' + certHolders(name).length + '명</b>을 진하게 표시했어요'); }
+  },
+  certClear: function () {
+    if (!canManage()) { return; }
+    state.ui.certFilter = '';
+    render();
   },
   /* 공수 일괄 적용 : 전체 선택 / 선택 해제 (지금 화면에 보이는 인원 기준) */
   bulkAll: function () {

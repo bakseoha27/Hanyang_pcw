@@ -209,7 +209,7 @@ function filterGsTable(table, q) {
 function syncBulkUI() {
   var n = Object.keys(bulkSel).length;
   var c = document.getElementById('bulkCnt');
-  if (c) { c.textContent = n + '명 선택'; }
+  if (c) { c.textContent = n + '명 선택'; c.classList.toggle('hide', !n); }
   var b = document.getElementById('bulkAllBtn');
   if (!b) { return; }
   var box = document.querySelector('[data-list="dash"]');
@@ -1836,9 +1836,15 @@ function adminTodayBody() {
   var hasNone = activePeople().filter(function (p) { return !p.teamId; }).length > 0;
   if (hasNone) { filters.push(['none', '미배정']); }
   var f = state.ui.adminTeamFilter || 'all';
-  var filterHtml = '<div class="filter-row">' + filters.map(function (x) {
+  var rsel = dashRoleSel();
+  var teamChips = filters.map(function (x) {
     return '<button class="fchip' + (f === x[0] ? ' on' : '') + '" data-act="adminFilter" data-f="' + x[0] + '">' + esc(x[1]) + '</button>';
-  }).join('') + '</div>';
+  });
+  var roleBtn = '<button class="fchip ffilter' + (rsel.length ? ' on' : '') + '" data-act="dashRoleOpen" aria-expanded="' +
+    (state.ui.dashRolePanel ? 'true' : 'false') + '">☑ 필터' + (rsel.length ? ' ' + rsel.length : '') +
+    ' <i>' + (state.ui.dashRolePanel ? '▴' : '▾') + '</i></button>';
+  var filterHtml = '<div class="filter-row">' + teamChips[0] + roleBtn + teamChips.slice(1).join('') + '</div>' +
+    (state.ui.dashRolePanel ? dashRolePanelHTML() : '');
 
   var list = adminPeopleList();
   var rows = list.map(function (p) {
@@ -1853,10 +1859,16 @@ function adminTodayBody() {
       '</div>';
   }).join('');
 
-  var bulkBar = '<div class="bulk-bar">' +
-    '<div class="bulk-top"><span class="bulk-t">☑️ 공수 일괄 적용</span>' +
-    '<button class="bulk-all" id="bulkAllBtn" data-act="bulkAll">전체 선택</button>' +
-    '<span class="bulk-cnt" id="bulkCnt">0명 선택</span></div>' +
+  var bOpen = !!state.ui.bulkOpen;
+  var selN = Object.keys(bulkSel).length;
+  var bulkBar = '<div class="bulk-bar' + (bOpen ? ' open' : '') + '">' +
+    '<button class="bulk-top" data-act="bulkToggle" aria-expanded="' + (bOpen ? 'true' : 'false') + '">' +
+    '<span class="bulk-t">☑️ 공수 일괄 적용</span>' +
+    '<span class="bulk-cnt' + (selN ? '' : ' hide') + '" id="bulkCnt">' + selN + '명 선택</span>' +
+    '<span class="bulk-car2">' + (bOpen ? '▴' : '▾') + '</span></button>' +
+    (bOpen ? '<div class="bulk-body">' +
+    '<div class="bulk-top2"><span class="muted" style="font-size:11px">목록에서 인원을 체크한 뒤 적용하세요</span>' +
+    '<button class="bulk-all" id="bulkAllBtn" data-act="bulkAll">전체 선택</button></div>' +
     '<div class="bulk-date"><span>날짜</span><input type="date" id="bulkDate" max="' + todayKey() + '" value="' + (state.ui.bulkDate || todayKey()) + '"></div>' +
     '<div class="bulk-pick"><span class="bulk-lab">시간</span>' +
     '<span class="bulk-selwrap"><select id="bulkGsSel" aria-label="공수 선택">' + bulkGsOptionsHTML() + '</select><i class="bulk-car">▾</i></span>' +
@@ -1867,14 +1879,13 @@ function adminTodayBody() {
     '<label class="bt-f"><span>종 료</span><input type="time" id="bulk_out"></label>' +
     '</div>' +
     '<div class="bulk-prev" id="bulkPrev">시작·종료 시간을 넣으면 공수가 자동 계산됩니다.</div>' +
-    '</div></div>';
+    '</div></div>' : '') + '</div>';
 
   var peopleCard = '<div class="card">' +
     '<div class="card-head"><div class="sec-t">인원별 출퇴근</div><span class="muted" data-count="dash">' + list.length + '명</span></div>' +
     nameSearchHTML('dash') +
     filterHtml +
     bulkBar +
-    '<div class="btn-row"><button class="btn btn-dark sm" data-act="personAdd">+ 인원 직접 등록</button></div>' +
     '<div data-list="dash">' +
     (rows || '<div class="empty">해당 인원이 없습니다.<br>팀·조 탭에서 <b>명단 일괄 등록</b>으로 인원을 넣어 주세요.</div>') +
     '<div class="empty q-empty hide">검색 결과가 없습니다.</div>' +
@@ -1920,18 +1931,85 @@ function adminPeopleList() {
   var list = activePeople();
   if (f === 'none') { list = list.filter(function (p) { return !p.teamId; }); }
   else if (f !== 'all') { list = list.filter(function (p) { return p.teamId === f; }); }
-  var order = {};
-  state.teams.forEach(function (t, i) { order[t.id] = i; });
+  list = dashRoleFilterList(list);
+  /* 정렬 : 관리자 → 팀장(관리자 제외) → 용접공 → 배관공 → 그 외 · 각 그룹 안은 가나다순 */
   return list.sort(function (a, b) {
-    var ta = a.teamId ? (order[a.teamId] === undefined ? 90 : order[a.teamId]) : 99;
-    var tb = b.teamId ? (order[b.teamId] === undefined ? 90 : order[b.teamId]) : 99;
-    if (ta !== tb) { return ta - tb; }
-    if (a.role !== b.role) { return a.role === 'leader' ? -1 : 1; }
+    var ra = dashSortRank(a), rb = dashSortRank(b);
+    if (ra !== rb) { return ra - rb; }
     return a.name.localeCompare(b.name, 'ko');
   });
 }
 
+/* ---------- 인원별 출퇴근 : [필터] 다중 선택 (역할·직종) ---------- */
+var DASH_ROLE_OPTS = [['admin', '관리자'], ['leader', '팀장'], ['용접공', '용접공'], ['배관공', '배관공'], ['보통인부', '보통인부']];
+function dashRoleSel() {
+  return Array.isArray(state.ui.dashRoleFilter) ? state.ui.dashRoleFilter : [];
+}
+function dashRoleMatch(p, key) {
+  if (key === 'admin') { return !!p.admin; }
+  if (key === 'leader') { return !p.admin && p.role === 'leader'; }
+  return ((p && p.job) || '') === key;
+}
+function dashRoleFilterList(list) {
+  var sel = dashRoleSel();
+  if (!sel.length) { return list; }
+  return list.filter(function (p) {
+    return sel.some(function (k) { return dashRoleMatch(p, k); });
+  });
+}
+function dashRoleCount(key) {
+  return activePeople().filter(function (p) { return dashRoleMatch(p, key); }).length;
+}
+function dashSortRank(p) {
+  if (p.admin) { return 0; }
+  if (p.role === 'leader') { return 1; }
+  if ((p.job || '') === '용접공') { return 2; }
+  if ((p.job || '') === '배관공') { return 3; }
+  return 4;
+}
+function dashRolePanelHTML() {
+  var sel = dashRoleSel();
+  return '<div class="cert-panel dash-fpanel" data-rolepanel="1">' +
+    DASH_ROLE_OPTS.map(function (o) {
+      var on = sel.indexOf(o[0]) >= 0;
+      return '<button class="cert-opt' + (on ? ' on' : '') + '" data-act="dashRoleToggle" data-r="' + o[0] + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
+        (on ? '✓ ' : '') + esc(o[1]) + ' <b>' + dashRoleCount(o[0]) + '</b></button>';
+    }).join('') +
+    (sel.length ? '<button class="cert-opt all" data-act="dashRoleClear">전체 해제</button>' : '') +
+    '</div>' +
+    '<div class="cert-hint">여러 개를 함께 고를 수 있어요 · 아무것도 고르지 않으면 전체 표시 · 팀 선택·이름 검색과 함께 적용됩니다</div>';
+}
+
 /* ---------------- 팀·조 편성 ---------------- */
+/* 자격 필터 — [자격] 버튼 + 선택 패널 (관리자·팀장 공통 · 단가와 무관) */
+function certFilterHTML() {
+  var cf = state.ui.certFilter || '';
+  var open = !!state.ui.certPanel;
+  var names = certNameList();
+  var bar = '<div class="cert-bar' + (cf ? ' on' : '') + '">' +
+    '<button class="cert-btn' + (cf ? ' on' : '') + '" data-act="certToggle" aria-expanded="' + (open ? 'true' : 'false') + '">' +
+    '🏷 자격' + (cf ? ' <b>' + esc(cf) + '</b>' : '') +
+    ' <span class="cb-car">' + (open ? '▴' : '▾') + '</span></button>' +
+    (cf ? '<span class="cert-status" data-certstatus="1">' + esc(cf) + ' 보유 <b>' + certHolders(cf).length + '명</b></span>' +
+      '<button class="cert-clr" data-act="certClear">해제</button>' : '') +
+    '</div>';
+  if (!open) { return bar; }
+  return bar + '<div class="cert-panel" data-certpanel="1">' +
+    '<button class="cert-opt all' + (cf ? '' : ' on') + '" data-act="certSet" data-cert="">전체</button>' +
+    names.map(function (n) {
+      return '<button class="cert-opt' + (cf === n ? ' on' : '') + '" data-act="certSet" data-cert="' + esc(n) + '">' +
+        esc(n) + ' <b>' + certHolders(n).length + '</b></button>';
+    }).join('') +
+    '</div>' +
+    '<div class="cert-hint">자격을 고르면 보유자는 진하게, 나머지는 흐리게 표시됩니다 · 만료된 자격은 보유로 치지 않아요</div>';
+}
+function memberChipHTML(m, cf) {
+  var hold = cf ? certHeldOf(m, cf) : null;
+  var cls = 'chip' + (m.role === 'leader' ? ' leader' : '') +
+    (hold === null ? '' : (hold ? ' cert-hold' : ' cert-dim'));
+  return '<button class="' + cls + '" data-act="moveMember" data-id="' + m.id + '" data-name="' + esc(m.name) + '"' +
+    (hold === null ? '' : ' data-hold="' + (hold ? '1' : '0') + '"') + '>' + esc(m.name) + ' <i>⇄</i></button>';
+}
 function adminTeams() {
   var ps = activePeople();
   var un = ps.filter(function (p) { return !p.teamId || !teamById(p.teamId); });
@@ -1940,6 +2018,7 @@ function adminTeams() {
     '<div class="card-head"><div><div class="sec-t">팀 · 조 편성</div>' +
     '<div class="muted">전체 ' + ps.length + '명 · ' + state.teams.length + '개 조 · 미배정 ' + un.length + '명</div></div>' +
     '<span class="badge ' + (un.length ? 'b-warn' : 'b-ok') + '">' + (un.length ? '미배정 있음' : '전원 배정') + '</span></div>' +
+    certFilterHTML() +
     '<div class="btn-row">' +
     '<button class="btn btn-dark sm" data-act="newTeam">+ 새 팀/조 만들기</button>' +
     '<button class="btn btn-dark sm" data-act="personAdd">+ 인원 직접 등록</button>' +
@@ -1950,22 +2029,23 @@ function adminTeams() {
     '<div class="muted" style="font-size:11.5px"><span data-count="teams">' + ps.length + '명</span></div>' +
     '</div>';
 
+  var cf = state.ui.certFilter || '';
   var cards = state.teams.map(function (t) {
     var mem = teamMembers(t.id);
     var leader = leaderOf(t.id);
     var rep = findReport(t.id, todayKey());
-    return '<div class="card team-card" data-teamcard="1">' +
+    var sub = '반장 ' + (leader ? esc(leader.name) : '미지정') + ' · ' + jobBreakdownOf(mem);
+    if (cf) { sub += ' · ' + esc(cf) + ' 보유 ' + mem.filter(function (m) { return certHeldOf(m, cf); }).length + '명'; }
+    if (isAdminView()) { sub += ' · 평균 ' + won(avgOf(mem)) + '원'; }
+    return '<div class="card team-card" data-teamcard="1" data-teamid="' + t.id + '">' +
       '<div class="card-head" style="margin-bottom:6px">' +
       '<div class="row gap8">' + (leader ? '<span class="av">' + esc(leader.name.slice(0, 1)) + '</span>' : '<span class="av">?</span>') +
       '<div><div class="team-name">' + esc(t.name) + '</div>' +
-      '<div class="team-sub">반장 ' + (leader ? esc(leader.name) : '미지정') + ' · ' + mem.length + '명' + (isAdminView() ? ' · 평균 ' + won(avgOf(mem)) + '원' : '') + '</div></div></div>' +
+      '<div class="team-sub" data-teamsub="1">' + sub + '</div></div></div>' +
       '<span class="badge ' + (rep ? 'b-ok' : 'b-warn') + '">' + (rep ? '일보 제출' : '일보 미제출') + '</span>' +
       '</div>' +
       '<div class="chips">' +
-      (mem.length ? mem.map(function (m) {
-        return '<button class="chip' + (m.role === 'leader' ? ' leader' : '') + '" data-act="moveMember" data-id="' + m.id + '" data-name="' + esc(m.name) + '">' +
-          esc(m.name) + ' <i>⇄</i></button>';
-      }).join('') : '<span class="muted">조원이 없습니다</span>') +
+      (mem.length ? mem.map(function (m) { return memberChipHTML(m, cf); }).join('') : '<span class="muted">조원이 없습니다</span>') +
       '</div>' +
       '<div class="btn-row">' +
       '<button class="btn btn-line sm" data-act="changeLeader" data-team="' + t.id + '">반장 변경</button>' +
@@ -1979,15 +2059,13 @@ function adminTeams() {
     unCard = '<div class="card unassigned team-card" data-teamcard="1">' +
       '<div class="card-head"><div><div class="team-name">미배정 ' + un.length + '명</div>' +
       '<div class="team-sub">조를 지정하면 조 편성에 포함됩니다</div></div><span class="badge b-warn">미배정</span></div>' +
-      '<div class="chips">' + un.map(function (m) {
-        return '<button class="chip" data-act="moveMember" data-id="' + m.id + '" data-name="' + esc(m.name) + '">' + esc(m.name) + ' <i>⇄</i></button>';
-      }).join('') + '</div></div>';
+      '<div class="chips">' + un.map(function (m) { return memberChipHTML(m, cf); }).join('') + '</div></div>';
   }
 
   return head +
     '<div data-list="teams">' + cards + unCard +
     '<div class="empty q-empty hide">검색 결과가 없습니다.</div></div>' +
-    '<div class="foot-note">조 이동은 조원 이름을 눌러서 바꿀 수 있어요</div>';
+    '<div class="foot-note">조 이동은 조원 이름을 눌러서 바꿀 수 있어요 · [🏷 자격]으로 자격 보유자를 한눈에 볼 수 있습니다</div>';
 }
 
 /* ---------------- 작업일보함 ---------------- */

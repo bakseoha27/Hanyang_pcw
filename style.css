@@ -141,6 +141,32 @@ textarea,.field textarea{height:auto;}
 .chip i{font-style:normal;color:#98A2B3;font-weight:900;font-size:13px;}
 .chip.add{background:#fff;border:1.5px dashed #C7D7FE;color:var(--blue);}
 .chip.leader{background:var(--blue-soft);color:#1D4ED8;}
+
+/* ---------- 팀·조 자격 필터 ([🏷 자격]) ---------- */
+.cert-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px;}
+.cert-btn{display:inline-flex;align-items:center;gap:5px;padding:7px 11px;border-radius:11px;
+  background:#F2F4F7;color:#344054;font-size:12.5px;font-weight:900;letter-spacing:-.3px;}
+.cert-btn b{font-weight:900;color:inherit;}
+.cert-btn .cb-car{font-size:10px;color:#98A2B3;}
+.cert-btn.on{background:var(--navy);color:#fff;}
+.cert-btn.on .cb-car{color:#C7D2E8;}
+.cert-status{font-size:11.5px;font-weight:800;color:var(--navy);letter-spacing:-.3px;}
+.cert-status b{color:#1D4ED8;font-weight:900;}
+.cert-clr{font-size:11px;font-weight:900;color:#667085;background:#F2F4F7;border-radius:9px;padding:5px 9px;letter-spacing:-.2px;}
+.cert-clr:active{background:#E4E8F0;}
+.cert-panel{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;padding:10px;border-radius:14px;
+  background:#F7F9FC;border:1px solid var(--line);}
+.cert-opt{display:inline-flex;align-items:center;gap:5px;padding:6px 10px;border-radius:999px;background:#fff;
+  color:#344054;font-size:12px;font-weight:800;letter-spacing:-.3px;box-shadow:inset 0 0 0 1px var(--line);}
+.cert-opt b{font-size:11px;font-weight:900;color:#98A2B3;}
+.cert-opt.on{background:var(--navy);color:#fff;font-weight:900;box-shadow:none;}
+.cert-opt.on b{color:#C7D2E8;}
+.cert-hint{margin-top:6px;font-size:10.5px;font-weight:700;color:#98A2B3;letter-spacing:-.2px;line-height:1.5;}
+/* 자격 필터가 걸렸을 때 조원 칩 — 보유자는 진하게(불투명·굵게), 나머지는 흐리게 (테두리 없음) */
+.chip{transition:opacity .15s ease;}
+.chips .chip.cert-dim{opacity:.34;}
+.chips .chip.cert-hold{background:#14213D;color:#fff;font-weight:900;opacity:1;}
+.chips .chip.cert-hold i{color:#C7D2E8;}
 .av{
   width:38px;height:38px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
   background:#EAEFFA;color:#31538F;font-weight:900;font-size:15px;flex:0 0 auto;
@@ -217,6 +243,10 @@ textarea,.field textarea{height:auto;}
 .filter-row::-webkit-scrollbar{display:none;}
 .fchip{flex:0 0 auto;font-size:12px;font-weight:900;padding:7px 11px;border-radius:999px;background:#F2F4F7;color:#475467;letter-spacing:-.3px;}
 .fchip.on{background:var(--navy);color:#fff;}
+.fchip.ffilter{background:#EAF0FF;color:#1E4FD8;}
+.fchip.ffilter.on{background:var(--navy);color:#fff;}
+.fchip.ffilter i{font-style:normal;font-size:9px;opacity:.75;margin-left:1px;}
+.dash-fpanel{margin:-4px 0 10px;}
 .p-row{
   display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 2px;
   border-bottom:1px solid #F1F3F8;
@@ -717,7 +747,11 @@ a.btn{text-decoration:none;}
 .name-search .ns-in::placeholder{color:#98A2B3;font-weight:700;}
 .name-search .ns-clr{border:0;background:#DCE3EF;color:#475467;width:22px;height:22px;border-radius:50%;font-weight:900;font-size:12px;line-height:1;flex:none;}
 .bulk-bar{background:#F7F9FD;border:1px solid #E3E9F2;border-radius:13px;padding:10px 11px 11px;margin:2px 0 11px;}
-.bulk-top{display:flex;align-items:center;gap:7px;margin-bottom:8px;}
+.bulk-top{display:flex;align-items:center;gap:7px;width:100%;text-align:left;padding:0;border:0;background:none;}
+.bulk-bar.open .bulk-top{margin-bottom:9px;}
+.bulk-car2{font-size:9.5px;color:#98A2B3;flex:none;margin-left:1px;font-style:normal;}
+.bulk-top2{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
+.bulk-top2 .muted{font-size:11px;}
 .bulk-t{font-size:12.5px;font-weight:900;color:#14213D;letter-spacing:-.3px;flex:1;}
 .bulk-all{border:0;background:#E8EEFB;color:#1E4FD8;font-size:11.5px;font-weight:900;border-radius:9px;padding:6px 9px;flex:none;}
 .bulk-cnt{font-size:11.5px;font-weight:900;color:var(--blue);flex:none;}

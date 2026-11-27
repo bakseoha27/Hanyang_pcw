@@ -626,6 +626,60 @@ function avgOf(list) {
 }
 function overallAvg() { return avgOf(activePeople()); }
 function todayAtt(p) { return p.attendance[todayKey()] || null; }
+
+/* ---------- 자격 필터 · 직종별 인원 (팀·조 화면) ----------
+   자격 데이터는 workers.certs_json = [{name, on, exp, custom}, …] 하나뿐이다(별도 cert_tbm_exp 컬럼 없음).
+   · on = 보유 체크 · exp = 만료일(YYYY-MM-DD, 빈 값이면 미입력) · T/L 은 만료 없음(certRowHTML 과 같은 규칙)
+   · 만료일이 지난 자격은 "보유"로 치지 않는다 (인원 상세의 `만료` 배지와 같은 기준) */
+var CERT_BASE = ['T/L', 'TBM 리더', '유도원', '생명줄', '신호수'];
+function certHasExp(name) { return name !== 'T/L'; }
+function certHeldOf(p, name) {
+  if (!p || !name) { return false; }
+  var list = p.certs || [];
+  for (var i = 0; i < list.length; i++) {
+    var c = list[i];
+    if (!c || c.name !== name || !c.on) { continue; }
+    if (certHasExp(name) && c.exp) {
+      var du = daysUntil(c.exp);
+      if (du !== null && du < 0) { continue; }
+    }
+    return true;
+  }
+  return false;
+}
+/* 자격 선택 목록 — 기본 5개 + 실제 데이터에 있는 기타 자격(커스텀)을 이름순으로 뒤에 */
+function certNameList() {
+  var names = CERT_BASE.slice();
+  activePeople().forEach(function (p) {
+    (p.certs || []).forEach(function (c) {
+      if (c && c.name && names.indexOf(c.name) < 0) { names.push(c.name); }
+    });
+  });
+  return names;
+}
+function certHolders(name) {
+  if (!name) { return []; }
+  return activePeople().filter(function (p) { return certHeldOf(p, name); });
+}
+/* 직종별 인원 표기 — 배관공·용접공·보통인부는 0명이어도 항상, 품질관리자·기타 직종은 1명 이상일 때만 */
+function jobCountIn(list, job) {
+  return (list || []).filter(function (p) { return ((p && p.job) || '') === job; }).length;
+}
+function jobBreakdownOf(list) {
+  var parts = ['배관공', '용접공', '보통인부'].map(function (j) {
+    return j + ' ' + jobCountIn(list, j) + '명';
+  });
+  if (jobCountIn(list, '품질관리자') > 0) { parts.push('품질관리자 ' + jobCountIn(list, '품질관리자') + '명'); }
+  var others = [];
+  (list || []).forEach(function (p) {
+    var j = (p && p.job) || '';
+    if (!j || j === '품질관리자' || ['배관공', '용접공', '보통인부'].indexOf(j) >= 0) { return; }
+    if (others.indexOf(j) < 0) { others.push(j); }
+  });
+  others.sort(function (a, b) { return a.localeCompare(b, 'ko'); });
+  others.forEach(function (j) { parts.push(j + ' ' + jobCountIn(list, j) + '명'); });
+  return parts.join(' ');
+}
 /* 그 날짜 휴무 — 반려(rejected)된 신청은 휴무로 치지 않는다 (0공수 · 명단 · 집계에서 제외) */
 function leaveOn(p, k) {
   return (p.leaves || []).filter(function (l) { return l.date === k && l.status !== 'rejected'; })[0] || null;
