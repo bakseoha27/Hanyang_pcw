@@ -445,3 +445,107 @@ input.locked{background:#F4F7FF;border-color:#D7E3FF;color:#344054;font-weight:9
 .stbtns button.on{border-color:#2F6BFF;background:#EFF4FF;color:#1D4ED8;}
 .stbtns button[data-setstate="hold"].on{border-color:#F5B93C;background:#FFF1D6;color:#B54708;}
 .stbtns button[data-setstate="resigned"].on{border-color:#98A2B3;background:#F2F4F8;color:#475467;}
+
+/* =========================================================
+   v9 — PC 최적화 · 보류 탭 · 선택한 인원 처리 드롭다운 (2026-11-27)
+   ========================================================= */
+
+/* ---- 목록 위 안내 + [선택한 인원 처리 ▾] ---- */
+.listbar{display:flex;align-items:center;gap:10px;margin:0 0 10px;}
+.listbar #listNotice{flex:1;min-width:0;margin:0;color:#98A2B3;font-size:11.5px;line-height:1.45;}
+.listbar #listNotice b{color:#475467;}
+.bulksel{flex:0 0 auto;height:34px;max-width:190px;padding:0 9px;border:1.5px solid var(--line);border-radius:10px;
+  background:#fff;font-size:12px;font-weight:900;color:#475467;letter-spacing:-.2px;cursor:pointer;}
+.bulksel:disabled{background:#F7F8FB;border-style:dashed;color:#A9B2C2;cursor:not-allowed;}
+.bulksel.armed{border-color:var(--blue);background:var(--blue-soft);color:#1D4ED8;}
+
+/* ---- 단가 열: 헤더·숫자 같은 정렬(오른쪽) · 고정폭 숫자 ---- */
+.tbl th.c-wage,.tbl td.c-wage{text-align:right;font-variant-numeric:tabular-nums;}
+.tbl th.c-wage{width:104px;}
+.tbl .c-gender{width:60px;text-align:center;}
+.tbl th.c-act,.tbl td.c-act{text-align:right;width:150px;}
+
+/* ---- 목록에서 바로 고치기: 업체 배지 · 입사일자 ---- */
+.tbl .c-name .vbtn{font-family:inherit;font-size:10.5px;font-weight:900;letter-spacing:-.2px;cursor:pointer;
+  border:1px solid transparent;transition:.12s;}
+.tbl .c-name .vbtn:hover{border-color:#C7D7F7;filter:brightness(.98);}
+.tbl .c-name .vbtn.none{background:#F2F4F8;color:#98A2B3;}
+.tbl .c-name .vbtn.none:hover{background:#EAF0FF;color:#1D4ED8;border-color:#C7D7F7;}
+select.vsel{max-width:120px;height:26px;padding:0 6px;border:1.5px solid var(--blue);border-radius:7px;
+  background:#fff;font-size:11.5px;font-weight:900;color:#1D4ED8;}
+.tbl .c-date{padding:6px 8px;}
+.dbtn{font-family:inherit;font-size:12.5px;font-weight:800;color:#344054;background:none;border:1px solid transparent;
+  border-radius:7px;padding:2px 6px;cursor:pointer;white-space:nowrap;}
+.dbtn:hover{background:#F7FAFF;border-color:#C7D7F7;color:#1D4ED8;}
+.dbtn.none{color:#98A2B3;}
+.dinline{display:inline-flex;align-items:center;gap:3px;}
+input.dsel{width:124px;height:28px;padding:0 5px;border:1.5px solid var(--blue);border-radius:7px;
+  background:#fff;font-size:11.5px;font-weight:800;color:#344054;}
+.dclear{width:22px;height:22px;border:1px solid var(--line);border-radius:6px;background:#fff;color:#98A2B3;
+  font-size:10px;font-weight:900;line-height:1;}
+
+/* 태블릿 이하 — 탭 4개가 줄을 넘지 않게 */
+@media (max-width:560px){
+  .tab{font-size:12px;height:40px;padding:0 4px;letter-spacing:-.4px;}
+  .listbar{flex-wrap:wrap;}
+  .listbar #listNotice{flex:1 1 100%;}
+  .bulksel{max-width:100%;width:100%;height:36px;font-size:12.5px;}
+}
+
+/* =========================================================
+   PC 대시보드 (창 너비 900px 이상) — 컴팩트 툴바 + 넓은 표
+   ========================================================= */
+@media (min-width:900px){
+  body{font-size:14px;}
+  .awrap{max-width:1320px;padding-bottom:28px;}
+  .ahd{padding:11px 24px;}
+  .ahd b{font-size:15px;}
+  .abody{padding:16px 24px;gap:13px;}
+
+  /* 탭 — 한 줄 컴팩트 */
+  .tabs{padding:8px;gap:8px;max-width:920px;margin:0 auto;}
+  .tab{height:38px;font-size:13.5px;}
+  .tab b{font-size:12.5px;}
+
+  /* 요약 카드 + 액션 버튼 4개를 한 줄 툴바로 */
+  .actbar{display:flex;align-items:center;gap:18px;padding:11px 18px;}
+  .actbar .stat3{display:flex;gap:8px;margin:0;flex:0 0 auto;}
+  .actbar .stat3 .s{display:flex;align-items:baseline;gap:7px;padding:7px 14px;border:1px solid var(--line);
+    border-radius:10px;background:#F9FBFF;}
+  .actbar .stat3 .s small{font-size:11.5px;font-weight:800;}
+  .actbar .stat3 .s b{font-size:17px;letter-spacing:-.4px;}
+  .actbar .toolbar{flex:1 1 auto;flex-wrap:nowrap;justify-content:flex-end;gap:8px;}
+  .actbar .toolbar .btn,.actbar .toolbar .btn.grow{flex:0 0 auto;width:auto;height:38px;padding:0 15px;
+    font-size:13px;border-radius:10px;box-shadow:none;letter-spacing:-.3px;}
+
+  /* 목록 머리 — 검색칸 고정폭, 전체 선택은 오른쪽 끝 */
+  .panel .ph{padding:11px 18px;flex-wrap:nowrap;gap:12px;}
+  .panel .ph b{flex:0 0 auto;font-size:14.5px;}
+  .panel .ph input#q{flex:0 1 320px !important;min-width:200px !important;height:36px;font-size:13px;}
+  .panel .ph label{margin-left:auto;font-size:12px;}
+  .panel .pb{padding:13px 18px;}
+
+  /* 표 — 가로 스크롤 없이 한눈에 */
+  .tblwrap{overflow-x:visible;}
+  .tbl{min-width:0;table-layout:auto;font-size:13px;}
+  .tbl th{padding:10px 10px;font-size:12px;}
+  .tbl td{padding:10px 10px;}
+  .tbl .c-chk{width:34px;}
+  .tbl .c-name b{font-size:13.5px;}
+  .tbl .c-act{white-space:nowrap;}
+  .tbl .c-act button{font-size:12px;}
+  .tbl th.c-wage{width:110px;}
+  .tbl tbody tr:hover td{background:#FAFCFF;}
+
+  /* 상세 시트 → 가운데 대화상자 */
+  .modal .sheet{left:50%;right:auto;top:50%;bottom:auto;transform:translate(-50%,-50%);
+    width:min(840px,94vw);max-height:90vh;border-radius:18px;animation:none;}
+  .modal .body{padding:16px 20px 20px;}
+  .modal .head{padding:14px 20px 12px;}
+  .modal.viewer .sheet{width:min(960px,94vw);height:88vh;max-height:88vh;}
+  .kv{grid-template-columns:98px 1fr 108px 1fr;gap:7px 16px;font-size:13px;}
+  .metaform{grid-template-columns:repeat(3,1fr);gap:10px;}
+  .notebox{margin-bottom:16px;}
+  .upform select{max-width:320px;}
+  #toast{bottom:26px;}
+}

@@ -2,6 +2,7 @@
    관리자 페이지 — 조회 · 엑셀 취합 · ZIP 다운로드 · 입사취소 파기
    · 브라우저에는 anon 키만 있고, 실제 조회·다운로드는
      Edge Function(onboarding-admin)이 서비스롤 키로 처리합니다.
+   · v9 (2026-11-27): PC 최적화 · [보류] 탭 분리 · [선택한 인원 처리] 드롭다운
    ========================================================= */
 (function () {
   'use strict';
@@ -280,10 +281,21 @@
 
   /* ---------------- 렌더 ---------------- */
   function isArchived(r) { return !!r.archived_at; }
+
+  /* 탭 분류 (v9) — 한 사람은 반드시 한 탭에만 들어간다
+     · 진행중   : 입사예정(submitted) + 취합 전 + 퇴사일 없음
+     · 보류     : 입사보류(hold) + 퇴사일 없음 (archived_at 과 무관)
+     · 취합완료 : 취합완료로 넘긴 사람 · 근무중(hired) · 퇴사
+     · 전체     : 모두 */
+  function tabOf(r) {
+    var st = stateOf(r);
+    if (st === 'hold') { return 'hold'; }
+    if (st === 'plan' && !isArchived(r)) { return 'active'; }
+    return 'archived';
+  }
   function tabRows() {
     if (S.tab === 'all') { return S.rows.slice(); }
-    var want = S.tab === 'archived';
-    return S.rows.filter(function (r) { return isArchived(r) === want; });
+    return S.rows.filter(function (r) { return tabOf(r) === S.tab; });
   }
   function picked(obj) { return Object.keys(obj).filter(function (k) { return obj[k]; }); }
   // 필터 그룹 사이는 AND, 그룹 안의 여러 체크는 OR (입사예정+근무중 → 둘 다)
@@ -344,22 +356,24 @@
     var list = $('#list');
     var tab = tabRows();
 
-    // 탭 인원 수 + 현재 탭 기준 통계
-    var nActive = S.rows.filter(function (r) { return !isArchived(r); }).length;
-    var nArchived = S.rows.filter(function (r) { return isArchived(r); }).length;
+    // 탭 인원 수 + 현재 탭 기준 통계 (v9: 진행중 / 취합완료 / 보류 합계 = 전체)
+    var nActive = 0, nArchived = 0, nHold = 0;
+    S.rows.forEach(function (r) {
+      var k = tabOf(r);
+      if (k === 'hold') { nHold++; } else if (k === 'archived') { nArchived++; } else { nActive++; }
+    });
     $('#cntActive').textContent = nActive;
     $('#cntArchived').textContent = nArchived;
+    $('#cntHold').textContent = nHold;
     $('#cntAll').textContent = S.rows.length;
     $('#statAll').textContent = tab.length;
     $('#statMiss').textContent = tab.filter(function (r) { return missingOf(r).length > 0; }).length;
     var t = new Date(); t.setHours(0, 0, 0, 0);
     $('#statToday').textContent = tab.filter(function (r) { return new Date(r.created_at) >= t; }).length;
 
-    var arch = S.tab === 'archived';
-    $('#btnArchive').style.display = arch ? 'none' : '';
-    $('#btnRestore').style.display = (arch || S.tab === 'all') ? '' : 'none';
-    $('#empty').textContent = arch ? '취합완료된 인원이 없습니다.'
-      : (S.tab === 'all' ? '등록된 인원이 없습니다.' : '아직 제출된 서류가 없습니다.');
+    $('#empty').textContent = S.tab === 'archived' ? '취합완료된 인원이 없습니다.'
+      : (S.tab === 'hold' ? '입사보류 인원이 없습니다.'
+        : (S.tab === 'all' ? '등록된 인원이 없습니다.' : '입사예정인 인원이 없습니다.'));
     renderFilters();
 
     if (!rows.length) {
@@ -368,6 +382,7 @@
       $('#empty').textContent = (S.tab === 'all' && picked(S.fStatus).length + picked(S.fGender).length + picked(S.fVendor).length)
         ? '조건에 맞는 인원이 없습니다.' : $('#empty').textContent;
       $('#chkAll').checked = false;
+      syncBulk();
       return;
     }
     $('#empty').classList.add('hide');
@@ -380,22 +395,18 @@
       if (isArchived(r)) { tags += '<span class="tag hired">취합완료</span>'; }
       if (miss.length) { tags += '<span class="tag miss" title="미제출: ' + esc(miss.join(', ')) + '">미비 ' + miss.length + '</span>'; }
       var vn = vendorOf(r);
-      var out = vn ? '<span class="tag vendor' + (vn === '외주' ? ' out' : '') + '">' + esc(vn) + '</span>' : '';
-      var notes = notesOf(r);
-      var lastNote = notes.length ? String(notes[notes.length - 1].text || '') : '';
-      var noteCell = notes.length
-        ? '<span class="noteTag" title="' + esc(notesText(r)) + '">📝 ' + notes.length + '</span> <small style="color:#667085">' + esc(lastNote.length > 12 ? lastNote.slice(0, 12) + '…' : lastNote) + '</small>'
-        : '';
+      var out = '<button type="button" class="tag vendor vbtn' + (vn === '외주' ? ' out' : '') + (vn ? '' : ' none')
+        + '" data-vendor-edit="' + r.id + '" title="업체 바로 바꾸기">' + esc(vn || '업체') + ' ▾</button>';
       return '<tr data-id="' + r.id + '"' + (S.sel[r.id] ? ' class="sel"' : '') + '>'
         + '<td class="c-chk"><input type="checkbox" data-check="' + r.id + '" ' + (S.sel[r.id] ? 'checked' : '') + '></td>'
         + '<td class="c-name">' + out + '<b>' + esc(r.name) + '</b>' + tags + '</td>'
         + '<td>' + esc(birthText(r)) + '</td>'
         + '<td>' + esc(fmtPhone(r.phone)) + '</td>'
-        + '<td>' + esc(r.hire_date || '') + '</td>'
+        + '<td class="c-date"><button type="button" class="dbtn' + (r.hire_date ? '' : ' none')
+        + '" data-hire-edit="' + r.id + '" title="입사일자 바로 고치기">' + esc(r.hire_date || '—') + '</button></td>'
         + '<td>' + esc(r.resign_date || '') + '</td>'
-        + '<td class="num">' + esc(wageNum(r.daily_wage)) + '</td>'
-        + '<td>' + esc(genderOf(r)) + '</td>'
-        + '<td class="c-note">' + noteCell + '</td>'
+        + '<td class="num c-wage">' + esc(wageNum(r.daily_wage)) + '</td>'
+        + '<td class="c-gender">' + esc(genderOf(r)) + '</td>'
         + '<td class="c-act">'
         + '<button type="button" data-detail="' + r.id + '">상세</button>'
         + '<button type="button" data-status="' + r.id + '">' + (r.status === 'hired' ? '확정취소' : '확정') + '</button>'
@@ -405,6 +416,7 @@
     }).join('');
 
     $('#chkAll').checked = rows.length > 0 && rows.every(function (r) { return S.sel[r.id]; });
+    syncBulk();
   }
 
   function rowById(id) {
@@ -417,6 +429,165 @@
     var ids = Object.keys(S.sel).filter(function (k) { return S.sel[k]; });
     if (!ids.length) { return rows; }
     return rows.filter(function (r) { return S.sel[r.id]; });
+  }
+
+  /* ---------------- 선택한 인원 처리 (드롭다운, v9) ---------------- */
+  function selRows() {
+    return S.rows.filter(function (r) { return !!S.sel[r.id]; });
+  }
+  function syncBulk() {
+    var sel = $('#bulkSel');
+    if (!sel) { return; }
+    var n = selRows().length;
+    sel.disabled = n === 0;
+    sel.classList.toggle('armed', n > 0);
+    if (sel.options[0]) {
+      sel.options[0].textContent = n ? '선택한 인원 처리 ▾ (' + n + '명)' : '선택한 인원 처리 ▾';
+    }
+    var nt = $('#listNotice');
+    if (nt) {
+      nt.innerHTML = n
+        ? '선택한 <b>' + n + '명</b>에게 할 일을 오른쪽 드롭다운에서 고르세요.'
+        : '인원을 체크하면 오른쪽 <b>[선택한 인원 처리]</b>가 열립니다. (엑셀·ZIP은 체크가 없으면 이 탭 전체)';
+    }
+  }
+
+  async function bulkHold(rows) {
+    if (!rows.length) { return; }
+    var names = rows.map(function (r) { return r.name; }).join(', ');
+    if (!confirm('선택한 인원을 입사보류로 옮길까요?\n\n대상(' + rows.length + '명): ' + names
+      + '\n\n· [보류] 탭으로 이동합니다. 서류는 그대로 보관됩니다.')) { return; }
+    try {
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (r.status !== 'hold') {
+          await call('set_status', { id: r.id, status: 'hold' });
+          r.status = 'hold';
+        }
+        if (String(r.resign_date || '').trim()) {
+          await call('update_meta', { id: r.id, meta: { resign_date: '' } });
+          r.resign_date = '';
+        }
+      }
+      S.sel = {};
+      await refresh(true);
+      toast(rows.length + '명을 입사보류로 옮겼습니다. [보류] 탭에서 볼 수 있습니다.', 3200);
+    } catch (e) {
+      toast(e.message || '입사보류로 옮기지 못했습니다.', 3200);
+    }
+  }
+
+  async function bulkPlan(rows) {
+    if (!rows.length) { return; }
+    var names = rows.map(function (r) { return r.name; }).join(', ');
+    if (!confirm('선택한 인원을 입사예정(진행중)으로 되돌릴까요?\n\n대상(' + rows.length + '명): ' + names
+      + '\n\n· 입사보류를 풀고 [진행중] 탭으로 옮깁니다.')) { return; }
+    try {
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (r.status !== 'submitted') {
+          await call('set_status', { id: r.id, status: 'submitted' });
+          r.status = 'submitted';
+        }
+        if (String(r.resign_date || '').trim()) {
+          await call('update_meta', { id: r.id, meta: { resign_date: '' } });
+          r.resign_date = '';
+        }
+      }
+      var archIds = rows.filter(isArchived).map(function (r) { return r.id; });
+      if (archIds.length) {
+        await call('unarchive', { ids: archIds });
+        archIds.forEach(function (id) { var x = rowById(id); if (x) { x.archived_at = null; } });
+      }
+      S.sel = {};
+      await refresh(true);
+      toast(rows.length + '명을 입사예정(진행중)으로 되돌렸습니다.', 3200);
+    } catch (e) {
+      toast(e.message || '입사예정으로 되돌리지 못했습니다.', 3200);
+    }
+  }
+
+  function runBulk(act) {
+    var rows = selRows();
+    if (!rows.length) { toast('처리할 인원을 먼저 체크해 주세요.', 2600); syncBulk(); return; }
+    if (act === 'archive') { setArchived(rows, true); return; }
+    if (act === 'hold') { bulkHold(rows); return; }
+    if (act === 'plan') { bulkPlan(rows); return; }
+    if (act === 'delete') { deleteRows(rows); return; }
+  }
+
+  /* ---------------- 목록에서 바로 고치기 (v9) — 업체 · 입사일자 ---------------- */
+  function vendorListFor(cur) {
+    var list = S.vendors.slice();
+    if (cur && list.indexOf(cur) < 0) { list.push(cur); }
+    if (list.indexOf('외주') < 0) { list.push('외주'); }
+    return list;
+  }
+  function openVendorEditor(id) {
+    var r = rowById(id);
+    if (!r) { return; }
+    var cell = $('[data-vendor-edit="' + id + '"]');
+    if (!cell || cell.tagName === 'SELECT') { return; }
+    var cur = vendorOf(r);
+    var list = vendorListFor(cur);
+    var h = '<select class="vsel" data-vendor-sel="' + id + '" title="업체 선택">'
+      + '<option value="">미지정</option>'
+      + list.map(function (v) {
+        return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(v) + '</option>';
+      }).join('')
+      + '</select>';
+    cell.outerHTML = h;
+    var sel = $('[data-vendor-sel="' + id + '"]');
+    if (sel) { sel.value = cur; sel.focus(); }
+  }
+  async function saveVendor(id, val) {
+    var r = rowById(id);
+    if (!r) { return; }
+    var v = String(val || '').trim().slice(0, 60);
+    if (v === vendorOf(r)) { render(); return; }
+    try {
+      await call('update_meta', { id: id, meta: { outsource_company: v } });
+      r.outsource_company = v;
+      r.is_outsource = !!v;
+      if (v && S.vendors.indexOf(v) < 0) { S.vendors.push(v); }
+      render();
+      if ($('#detailModal').classList.contains('open') && S.detailId === id) { openDetail(id); }
+      toast(v ? r.name + ' 님 업체를 ' + v + '(으)로 저장했습니다.' : r.name + ' 님 업체를 미지정으로 저장했습니다.', 3000);
+    } catch (e) {
+      render();
+      toast(e.message || '업체를 저장하지 못했습니다.', 3200);
+    }
+  }
+  function openHireEditor(id) {
+    var r = rowById(id);
+    if (!r) { return; }
+    var cell = $('[data-hire-edit="' + id + '"]');
+    if (!cell || cell.tagName === 'INPUT') { return; }
+    cell.outerHTML = '<span class="dinline"><input type="date" class="dsel" data-hire-sel="' + id
+      + '" value="' + esc(r.hire_date || '') + '" title="입사일자 선택">'
+      + '<button type="button" class="dclear" data-hire-clear="' + id + '" title="입사일자 지우기">✕</button></span>';
+    var inp = $('[data-hire-sel="' + id + '"]');
+    if (inp) {
+      inp.focus();
+      try { inp.showPicker(); } catch (e) { /* 일부 브라우저는 showPicker 를 막아 둔다 */ }
+    }
+  }
+  async function saveHire(id, val) {
+    var r = rowById(id);
+    if (!r) { return; }
+    var v = String(val || '').trim();
+    if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) { toast('날짜를 다시 골라 주세요.'); return; }
+    if (v === String(r.hire_date || '')) { render(); return; }
+    try {
+      await call('update_meta', { id: id, meta: { hire_date: v } });
+      r.hire_date = v;
+      render();
+      if ($('#detailModal').classList.contains('open') && S.detailId === id) { openDetail(id); }
+      toast(v ? r.name + ' 님 입사일자를 ' + v + '로 저장했습니다.' : r.name + ' 님 입사일자를 지웠습니다.', 3000);
+    } catch (e) {
+      render();
+      toast(e.message || '입사일자를 저장하지 못했습니다.', 3200);
+    }
   }
 
   /* 상세 — 파일 이름 · 검진일/종류 수정 */
@@ -1377,6 +1548,87 @@
     filtered().forEach(function (r) { if (on) { S.sel[r.id] = true; } else { delete S.sel[r.id]; } });
     render();
   });
+  /* [선택한 인원 처리 ▾] — 고르면 확인 후 바로 실행, 선택은 자동 해제 (v9) */
+  $('#bulkSel').addEventListener('change', function () {
+    var v = this.value;
+    this.selectedIndex = 0;
+    if (!v) { syncBulk(); return; }
+    runBulk(v);
+  });
+
+  $('#list').addEventListener('click', function (e) {
+    var t = e.target;
+    var ve = t.closest('[data-vendor-edit]');
+    if (ve) {
+      e.stopPropagation(); e.preventDefault();
+      openVendorEditor(ve.getAttribute('data-vendor-edit'));
+      return;
+    }
+    var he = t.closest('[data-hire-edit]');
+    if (he) {
+      e.stopPropagation(); e.preventDefault();
+      openHireEditor(he.getAttribute('data-hire-edit'));
+      return;
+    }
+    var hc = t.closest('[data-hire-clear]');
+    if (hc) {
+      e.stopPropagation(); e.preventDefault();
+      saveHire(hc.getAttribute('data-hire-clear'), '');
+      return;
+    }
+    var chk = t.closest('[data-check]');
+    if (chk) {
+      e.stopPropagation();
+      var id = chk.getAttribute('data-check');
+      if (chk.checked) { S.sel[id] = true; } else { delete S.sel[id]; }
+      var row = chk.closest('tr');
+      if (row) { row.classList.toggle('sel', !!S.sel[id]); }
+      syncBulk();
+      return;
+    }
+    var det = t.closest('[data-detail]');
+    if (det) { e.stopPropagation(); openDetail(det.getAttribute('data-detail')); return; }
+    var st = t.closest('[data-status]');
+    if (st) { e.stopPropagation(); toggleStatus(st.getAttribute('data-status')); return; }
+    var del = t.closest('[data-del]');
+    if (del) {
+      e.stopPropagation();
+      var r = rowById(del.getAttribute('data-del'));
+      if (r) { deleteRows([r]); }
+    }
+  });
+
+  /* 목록에서 바로 고치기 — 업체(select) · 입사일자(date) (v9) */
+  $('#list').addEventListener('change', function (e) {
+    var t = e.target;
+    if (!t || !t.getAttribute) { return; }
+    e.stopPropagation();
+    var vs = t.getAttribute('data-vendor-sel');
+    if (vs) { saveVendor(vs, t.value); return; }
+    var hs = t.getAttribute('data-hire-sel');
+    if (hs) { saveHire(hs, t.value); return; }
+  });
+  $('#list').addEventListener('keydown', function (e) {
+    var t = e.target;
+    if (!t || !t.getAttribute) { return; }
+    var vs = t.getAttribute('data-vendor-sel');
+    var hs = t.getAttribute('data-hire-sel');
+    if (!vs && !hs) { return; }
+    if (e.key === 'Escape') { e.preventDefault(); render(); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (vs) { saveVendor(vs, t.value); } else { saveHire(hs, t.value); } }
+  });
+  /* 그냥 닫으면 저장하지 않고 원래 값으로 돌린다 */
+  $('#list').addEventListener('blur', function (e) {
+    var t = e.target;
+    if (!t || !t.getAttribute) { return; }
+    if (!t.getAttribute('data-vendor-sel') && !t.getAttribute('data-hire-sel')) { return; }
+    setTimeout(function () {
+      var a = document.activeElement;
+      if (a && (a.getAttribute('data-vendor-sel') || a.getAttribute('data-hire-sel') || (a.closest && a.closest('.dinline')))) { return; }
+      if (document.querySelector('[data-vendor-sel],[data-hire-sel]')) { render(); }
+    }, 220);
+  }, true);
+
   $('#btnExcel').addEventListener('click', function () {
     var rows = targets();
     toast(rows.length + '명 엑셀을 만드는 중…', 3000);
@@ -1389,7 +1641,7 @@
   $$('#tabs .tab').forEach(function (b) {
     b.addEventListener('click', function () {
       var t = b.getAttribute('data-tab');
-      S.tab = (t === 'archived' || t === 'all') ? t : 'active';
+      S.tab = (t === 'archived' || t === 'hold' || t === 'all') ? t : 'active';
       S.sel = {};
       $$('#tabs .tab').forEach(function (x) { x.classList.toggle('on', x === b); });
       render();
@@ -1413,43 +1665,6 @@
     var d = this.value.replace(/\D/g, '').slice(0, 13);
     this.value = d.length > 6 ? d.slice(0, 6) + '-' + d.slice(6) : d;
   });
-  $('#btnArchive').addEventListener('click', function () {
-    var rows = S.rows.filter(function (r) { return S.sel[r.id]; });
-    if (!rows.length) { toast('취합완료로 옮길 사람을 먼저 체크해 주세요.', 3000); return; }
-    setArchived(rows, true);
-  });
-  $('#btnRestore').addEventListener('click', function () {
-    var rows = S.rows.filter(function (r) { return S.sel[r.id]; });
-    if (!rows.length) { toast('진행중으로 복구할 사람을 먼저 체크해 주세요.', 3000); return; }
-    setArchived(rows, false);
-  });
-  $('#btnDelete').addEventListener('click', function () {
-    var rows = S.rows.filter(function (r) { return S.sel[r.id]; });
-    if (!rows.length) { toast('삭제할 사람을 먼저 체크해 주세요.', 3000); return; }
-    deleteRows(rows);
-  });
-
-  $('#list').addEventListener('click', function (e) {
-    var t = e.target;
-    var chk = t.closest('[data-check]');
-    if (chk) {
-      var id = chk.getAttribute('data-check');
-      if (chk.checked) { S.sel[id] = true; } else { delete S.sel[id]; }
-      var row = chk.closest('.srow');
-      if (row) { row.classList.toggle('sel', !!S.sel[id]); }
-      return;
-    }
-    var det = t.closest('[data-detail]');
-    if (det) { openDetail(det.getAttribute('data-detail')); return; }
-    var st = t.closest('[data-status]');
-    if (st) { toggleStatus(st.getAttribute('data-status')); return; }
-    var del = t.closest('[data-del]');
-    if (del) {
-      var r = rowById(del.getAttribute('data-del'));
-      if (r) { deleteRows([r]); }
-    }
-  });
-
   $('#detailBody').addEventListener('click', function (e) {
     var ms = e.target.closest('[data-metasave]');
     if (ms) { e.preventDefault(); saveMeta(S.detailId); return; }
