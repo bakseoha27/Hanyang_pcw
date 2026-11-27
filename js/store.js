@@ -11,13 +11,17 @@ var KST_MS = 9 * 3600 * 1000;
 var state = {
   ready: false,
   auth: null,                 /* { personId } */
-  role: 'worker',             /* worker | manager | admin  (지금 보고 있는 화면 역할) */
+  role: 'worker',             /* worker | lifting | manager | admin  (지금 보고 있는 화면 역할) */
   teams: [],
   people: [],
   reports: [],
   polls: [],
   notices: [],
   schedules: [],
+  liftSchedules: [],          /* 반입일정 + 지게차일정 (kind: delivery | forklift) */
+  materialOrders: [],         /* 자재주문내역 */
+  sharedTools: [],            /* 공도구리스트 */
+  ppeSigs: [],                /* 보호구 서명지 (sign_date · worker_id 1건) */
   docs: { risk: [], spec: [] },
   draft: null,
   ui: {},
@@ -245,6 +249,7 @@ function mapWorker(w) {
     teamId: w.team_id || null,
     role: w.is_leader ? 'leader' : 'worker',
     admin: !!w.is_admin,
+    lifting: !!w.is_lifting,
     hireDate: w.hire_date || '',
     status: w.status || 'active',
     resign: (w.status === 'resigned')
@@ -276,6 +281,10 @@ function buildState(d) {
     polls: [],
     notices: [],
     schedules: [],
+    liftSchedules: [],
+    materialOrders: [],
+    sharedTools: [],
+    ppeSigs: [],
     docs: { risk: [], spec: [] },
     draft: state.draft,
     ui: state.ui,
@@ -357,6 +366,56 @@ function buildState(d) {
       memo: s.memo || '', by: s.created_by || '', at: kstHM(s.created_at)
     };
   });
+  /* ---- 양중 모드 (2026-11-27) ---- */
+  state.liftSchedules = (d.liftSchedules || []).map(function (s) {
+    return {
+      id: s.id, kind: s.kind === 'forklift' ? 'forklift' : 'delivery',
+      date: s.sched_date, time: s.time_text || '', title: s.title || '',
+      location: s.location || '', memo: s.memo || '', assignee: s.assignee || '', reason: s.reason || '',
+      pre: { briti: !!s.pre_briti, dri: !!s.pre_dri, watcher: !!s.pre_watcher },
+      done: !!s.done, doneAt: s.done_at || '', by: s.created_by || ''
+    };
+  }).sort(byLiftOrder);
+  state.materialOrders = (d.materialOrders || []).map(function (o) {
+    return {
+      id: o.id, date: o.order_date, item: o.item_name || '', qty: o.qty || '',
+      vendor: o.vendor || '', memo: o.memo || '', received: !!o.received,
+      receivedAt: o.received_at || '', by: o.created_by || ''
+    };
+  }).sort(function (a, b) {
+    if (a.date !== b.date) { return a.date < b.date ? 1 : -1; }
+    return a.item < b.item ? -1 : 1;
+  });
+  state.sharedTools = (d.sharedTools || []).map(function (t) {
+    var qn = parseInt(t.quantity, 10);
+    return {
+      id: t.id,
+      name: t.base_name || t.tool_name || '',
+      category: (t.category === '자율점검' || t.category === '소화기') ? t.category : '공도구',
+      quantity: isNaN(qn) ? 1 : qn,
+      trade: t.trade || '설비',
+      company: t.company || '한양이엔지(PCW)',
+      checkDate: t.check_date || '',
+      qty: t.qty || '',
+      location: t.location || '',
+      holder: t.holder || '',
+      status: t.status || '정상',
+      sortOrder: (t.sort_order === null || t.sort_order === undefined) ? 9999 : (+t.sort_order || 0),
+      memo: t.memo || ''
+    };
+  }).sort(function (a, b) {
+    var oa = ['공도구', '자율점검', '소화기'].indexOf(a.category);
+    var ob = ['공도구', '자율점검', '소화기'].indexOf(b.category);
+    if (oa !== ob) { return oa - ob; }
+    if (a.sortOrder !== b.sortOrder) { return a.sortOrder - b.sortOrder; }
+    return a.name.localeCompare(b.name, 'ko');
+  });
+  state.ppeSigs = (d.ppeSigs || []).map(function (s) {
+    return {
+      id: s.id, date: s.sign_date, workerId: s.worker_id, itemKey: s.item_key || 'dust_mask',
+      signed: !!s.signed, at: s.signed_at || '', by: s.signed_by || ''
+    };
+  });
   (d.documents || []).forEach(function (doc) {
     var cat = doc.doc_type === 'spec' ? 'spec' : 'risk';
     state.docs[cat].push({
@@ -388,6 +447,18 @@ function buildState(d) {
     myGsMonth: ui.myGsMonth || todayKey().slice(0, 7),
     hcDate: /^\d{4}-\d{2}-\d{2}$/.test(String(ui.hcDate || '')) ? ui.hcDate : todayKey(),
     hcMonth: ui.hcMonth || todayKey().slice(0, 7),
+    liftingTab: ui.liftingTab || 'all',
+    liftDate: /^\d{4}-\d{2}-\d{2}$/.test(String(ui.liftDate || '')) ? ui.liftDate : todayKey(),
+    liftForkDate: /^\d{4}-\d{2}-\d{2}$/.test(String(ui.liftForkDate || '')) ? ui.liftForkDate : todayKey(),
+    ppeQ: ui.ppeQ || '',
+    ppeIssueQ: ui.ppeIssueQ || '',
+    ppeItem: ui.ppeItem || 'goggles_normal',
+    ppeTeam: ui.ppeTeam || '',
+    ppeUnsignedOnly: !!ui.ppeUnsignedOnly,
+    ppePage: ui.ppePage || 1,
+    ppeExclOpen: !!ui.ppeExclOpen,
+    orderFilter: ui.orderFilter || 'all',
+    toolFilter: ui.toolFilter || 'all',
     bulkDate: ui.bulkDate || todayKey(),
     bulkOpen: !!ui.bulkOpen,
     certFilter: ui.certFilter || '',
@@ -402,6 +473,7 @@ function buildState(d) {
   /* 로그인 세션은 DB에서 사라졌다고 앱이 함부로 지우지 않는다 (부트에서만 정리) */
   if (state.role === 'admin' && !canAdmin()) { state.role = canManage() ? 'manager' : 'worker'; }
   if (state.role === 'manager' && !canManage()) { state.role = 'worker'; }
+  if (state.role === 'lifting' && !canLifting()) { state.role = 'worker'; }
   return state;
 }
 
@@ -420,11 +492,17 @@ function fetchTables() {
     '/rest/v1/notices?select=*&order=created_at.desc',
     '/rest/v1/documents?select=*&order=created_at.desc',
     '/rest/v1/schedules?select=*&order=sched_date.asc',
-    '/rest/v1/early_leaves?select=*&order=work_date.desc,created_at.desc'
+    '/rest/v1/early_leaves?select=*&order=work_date.desc,created_at.desc',
+    /* v21 양중 모드 — 아래 4개는 없을 수도 있는 추가 테이블이라 실패해도 앱을 멈추지 않는다 */
+    '/rest/v1/lifting_schedules?select=*&order=sched_date.asc',
+    '/rest/v1/material_orders?select=*&order=order_date.desc',
+    '/rest/v1/shared_tools?select=*&order=created_at.asc',
+    '/rest/v1/ppe_signatures?select=*&order=sign_date.desc'
   ];
   return Promise.all(q.map(function (path) { return apiGet(path); })).then(function (res) {
-    /* schedules 는 없을 수도 있는 추가 테이블이라 실패해도 앱 전체를 멈추지 않는다 */
-    var bad = res.filter(function (r, i) { return !r.ok && i !== 9 && i !== 10; })[0];
+    /* schedules · early_leaves · 양중 4개 테이블은 실패해도 앱 전체를 멈추지 않는다 */
+    var soft = [9, 10, 11, 12, 13, 14];
+    var bad = res.filter(function (r, i) { return !r.ok && soft.indexOf(i) < 0; })[0];
     if (bad) {
       var e = new Error(bad.error || 'DB 연결 실패');
       e.status = bad.status;
@@ -441,7 +519,11 @@ function fetchTables() {
       notices: res[7].data || [],
       documents: res[8].data || [],
       schedules: (res[9] && res[9].ok && Array.isArray(res[9].data)) ? res[9].data : [],
-      earlyLeaves: (res[10] && res[10].ok && Array.isArray(res[10].data)) ? res[10].data : []
+      earlyLeaves: (res[10] && res[10].ok && Array.isArray(res[10].data)) ? res[10].data : [],
+      liftSchedules: softData(res[11]),
+      materialOrders: softData(res[12]),
+      sharedTools: softData(res[13]),
+      ppeSigs: softData(res[14])
     };
   });
 }
@@ -461,7 +543,11 @@ function saveCache(raw) {
       notices: (raw.notices || []).slice(0, 50),
       documents: raw.documents || [],
       schedules: raw.schedules || [],
-      earlyLeaves: raw.earlyLeaves || []
+      earlyLeaves: raw.earlyLeaves || [],
+      liftSchedules: raw.liftSchedules || [],
+      materialOrders: raw.materialOrders || [],
+      sharedTools: raw.sharedTools || [],
+      ppeSigs: raw.ppeSigs || []
     };
     localStorage.setItem(CACHE_KEY, JSON.stringify({ at: new Date().toISOString(), d: d }));
   } catch (e) { /* 저장 불가 */ }
@@ -568,7 +654,7 @@ function sessionSave(p, role) {
   try {
     localStorage.setItem(AUTH_KEY, JSON.stringify({
       v: 2, personId: p.id, name: p.name,
-      role: role === 'admin' ? 'admin' : (role === 'manager' ? 'manager' : 'worker'),
+      role: (role === 'admin' || role === 'manager' || role === 'lifting') ? role : 'worker',
       at: new Date().toISOString()
     }));
   } catch (e) { /* 저장 불가 */ }
@@ -576,7 +662,7 @@ function sessionSave(p, role) {
 function sessionSetRole(r) {
   var s = sessionRead();
   if (!s) { return; }
-  s.role = r === 'admin' ? 'admin' : (r === 'manager' ? 'manager' : 'worker');
+  s.role = (r === 'admin' || r === 'manager' || r === 'lifting') ? r : 'worker';
   try { localStorage.setItem(AUTH_KEY, JSON.stringify(s)); } catch (e) { /* 저장 불가 */ }
 }
 function sessionClear() {
@@ -756,6 +842,83 @@ function isLeaderOnly() {
   var p = me();
   return !!(p && !p.admin && p.role === 'leader');
 }
+/* ------------------------------------------------------------
+   양중 (2026-11-27) — [양중] 역할/모드
+   · workers.is_lifting = true 인 사람은 로그인하면 양중 화면으로 들어간다.
+   · 관리자는 상단 전환(관리자 ▾)에서 미리보기로 양중 화면을 열 수 있다.
+   ------------------------------------------------------------ */
+function canLifting() {
+  var p = me();
+  return !!(p && (p.lifting || p.admin));
+}
+function isLiftingView() {
+  return state.role === 'lifting' && canLifting();
+}
+/* 추가 테이블 응답 — 실패(테이블 없음·연결 끊김)면 빈 배열 */
+function softData(r) {
+  return (r && r.ok && Array.isArray(r.data)) ? r.data : [];
+}
+function byLiftOrder(a, b) {
+  if (a.date !== b.date) { return a.date < b.date ? -1 : 1; }
+  var ta = a.time || '99:99', tb = b.time || '99:99';
+  if (ta !== tb) { return ta < tb ? -1 : 1; }
+  return String(a.title || '').localeCompare(String(b.title || ''), 'ko');
+}
+function liftListOf(kind, dateKey) {
+  return (state.liftSchedules || []).filter(function (s) { return s.kind === kind && s.date === dateKey; }).sort(byLiftOrder);
+}
+function ppeSigOf(workerId, dateKey) {
+  return (state.ppeSigs || []).filter(function (s) { return s.workerId === workerId && s.date === dateKey; })[0] || null;
+}
+/* 품목별 '오늘' 서명 줄 (item_key) */
+function ppeSigOn(workerId, itemKey, dateKey) {
+  return (state.ppeSigs || []).filter(function (s) {
+    return s.workerId === workerId && s.itemKey === itemKey && s.date === dateKey;
+  })[0] || null;
+}
+/* 보호구 지급 이력 — 그 품목을 마지막으로 받은 기록 (signed=true 중 가장 최근) */
+function ppeGrantOf(workerId, itemKey) {
+  var list = (state.ppeSigs || []).filter(function (s) {
+    return s.workerId === workerId && s.itemKey === itemKey && s.signed;
+  }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+  return list[0] || null;
+}
+/* 공도구 정렬 — 분류 순서(공도구 → 자율점검 → 소화기) · 엑셀 원본 순서(sort_order) · 이름 */
+function sortTools() {
+  state.sharedTools.sort(function (a, b) {
+    var oa = ['공도구', '자율점검', '소화기'].indexOf(a.category);
+    var ob = ['공도구', '자율점검', '소화기'].indexOf(b.category);
+    if (oa !== ob) { return oa - ob; }
+    if ((a.sortOrder || 9999) !== (b.sortOrder || 9999)) { return (a.sortOrder || 9999) - (b.sortOrder || 9999); }
+    return a.name.localeCompare(b.name, 'ko');
+  });
+}
+/* 보호구 서명지 대상 — 오늘 출근(출근·근무중·퇴근 기록 있음) 인원만.
+   휴무(승인·대기)·조퇴(0공수 아님)·미출근(결근) 은 서명 대상에서 빠진다.
+   (휴무자가 잘못 서명해 서명지를 못 쓰는 사고를 막기 위해 화면에서 체크 자체를 막는다) */
+function ppeTargets(dateKey) {
+  var out = { list: [], off: [], absent: [] };
+  activePeople().forEach(function (p) {
+    var lv = leaveOn(p, dateKey);
+    var a = (p.attendance || {})[dateKey];
+    if (lv) {
+      out.off.push({ p: p, kind: 'leave', reason: lv.reason || '', status: lv.status });
+      return;
+    }
+    if (!a || !a.in) {
+      out.absent.push({ p: p, kind: 'absent', reason: '출근 기록 없음' });
+      return;
+    }
+    out.list.push({ p: p, att: a });
+  });
+  out.list.sort(function (x, y) {
+    var ta = x.p.teamId ? teamLabel(x.p.teamId) : '미배정';
+    var tb = y.p.teamId ? teamLabel(y.p.teamId) : '미배정';
+    if (ta !== tb) { return ta.localeCompare(tb, 'ko'); }
+    return x.p.name.localeCompare(y.p.name, 'ko');
+  });
+  return out;
+}
 function adminName() { var p = me(); return p ? p.name : '관리자'; }
 function findReport(tid, date) {
   return state.reports.filter(function (r) { return r.teamId === tid && r.date === date; })[0] || null;
@@ -876,7 +1039,7 @@ function insertWorker(p, label) {
       id: p.id, name: p.name, birth_date: p.birth || null, phone: p.phone || null,
       hire_date: p.hireDate || null,
       job_type: p.job || null, team_id: p.teamId || null, is_leader: p.role === 'leader',
-      is_admin: !!p.admin, daily_rate: p.price || null, certs_json: p.certs || [],
+      is_admin: !!p.admin, is_lifting: !!p.lifting, daily_rate: p.price || null, certs_json: p.certs || [],
       injury_has: !!p.injury.has, injury_date: p.injury.date || null, injury_note: p.injury.note || null,
       memo: p.memo || null, status: p.status || 'active',
       privacy_agreed_at: p.privacyAgreedAt || null, privacy_version: p.privacyVersion || null,

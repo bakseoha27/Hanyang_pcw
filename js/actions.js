@@ -892,6 +892,13 @@ var ACTIONS = {
       state.ui.timeEdit = false;
       sessionSetRole('worker');
       went = true;
+    } else if (r === 'lifting') {
+      if (!canLifting()) { toast('양중 권한이 없습니다.<br>관리자에게 권한 부여를 요청하세요.'); return; }
+      state.role = 'lifting';
+      state.ui.timeEdit = false;
+      state.ui.liftingTab = state.ui.liftingTab || 'all';
+      sessionSetRole('lifting');
+      went = true;
     } else if (r === 'manager') {
       if (!canManage()) { toast('팀장 권한이 없습니다.<br>관리자에게 권한 부여를 요청하세요.'); return; }
       state.role = 'manager';
@@ -908,12 +915,12 @@ var ACTIONS = {
     if (!went) { return; }
     closeSheet();
     render();
-    toast((r === 'admin' ? '관리자' : r === 'manager' ? '팀장' : '기술인') + ' 화면으로 전환했어요');
+    toast((r === 'admin' ? '관리자' : r === 'manager' ? '팀장' : r === 'lifting' ? '양중' : '기술인') + ' 화면으로 전환했어요');
   },
   roleMenu: function () { openRoleMenu(); },
   tab: function (el) {
-    /* 관리자·팀장은 같은 adminTab 을 쓴다 (예전엔 'managerTab' 에 써서 팀장 모드에서 탭이 안 먹었다) */
-    var key = state.role === 'worker' ? 'workerTab' : 'adminTab';
+    /* 관리자·팀장은 같은 adminTab 을, 양중은 liftingTab 을 쓴다 */
+    var key = tabKeyOf(state.role);
     state.ui[key] = el.getAttribute('data-tab');
     state.ui.timeEdit = false;
     render();
@@ -993,6 +1000,33 @@ var ACTIONS = {
       return;
     }
 
+    /* 양중 선택 : is_lifting 인 사람만 통과 · 자동등록 없음 · 관리자만 암호 확인 */
+    if (f.job === LOGIN_LIFTING_LABEL) {
+      if (!found || !found.lifting) {
+        toast('양중 권한이 등록된 인원만 선택할 수 있습니다.<br>먼저 관리자에게 권한 등록을 요청해 주세요.');
+        return;
+      }
+      if (found.status === 'resigned') { toast('퇴사 처리된 인원입니다.<br>관리자에게 문의해 주세요.'); return; }
+      if (found.admin) {
+        var lcode = loginPassValue();
+        if (!lcode) { showLoginPass('관리자 계정은 관리자 암호를 입력해야 로그인할 수 있습니다.'); return; }
+        var lv = await verifyAdminPasscode(lcode);
+        if (!lv.ok) { toast('관리자 암호를 확인하지 못했어요 · 인터넷 연결을 확인해 주세요.'); return; }
+        if (!lv.pass) { toast('관리자 암호가 올바르지 않습니다.'); return; }
+        adminCodeSet(lcode);
+      }
+      state.auth = { personId: found.id };
+      markPrivacyAgree(found);
+      if (sensitiveChecked) { markSensitiveAgree(found); }
+      sessionSave(found, 'lifting');
+      state.role = 'lifting';
+      state.ui.liftingTab = 'all';
+      render();
+      pushSyncToken();
+      toast(found.name + ' 님 양중 로그인 완료 · ' + teamLabel(found.teamId));
+      return;
+    }
+
     /* 관리자 선택 : DB에서 is_admin=true 로 등록된 사람만 통과 · 자동등록 없음 · 암호 필수 */
     if (f.job === LOGIN_ADMIN_LABEL) {
       if (!found || !found.admin) {
@@ -1032,12 +1066,14 @@ var ACTIONS = {
       state.auth = { personId: found.id };
       markPrivacyAgree(found);
       if (sensitiveChecked) { markSensitiveAgree(found); }
-      sessionSave(found, 'worker');
-      state.role = 'worker';
-      state.ui.workerTab = 'home';
+      /* 양중 권한이 있는 직원은 로그인하면 자동으로 양중 화면으로 들어간다 (2026-11-27) */
+      var autoRole = (found.lifting && !found.admin) ? 'lifting' : 'worker';
+      sessionSave(found, autoRole);
+      state.role = autoRole;
+      if (autoRole === 'lifting') { state.ui.liftingTab = 'all'; } else { state.ui.workerTab = 'home'; }
       render();
       pushSyncToken();
-      toast(found.name + ' 님 로그인 완료 · ' + teamLabel(found.teamId));
+      toast(found.name + ' 님 로그인 완료 · ' + teamLabel(found.teamId) + (autoRole === 'lifting' ? ' · 양중 화면' : ''));
       return;
     }
     var near = state.people.filter(function (p) {
@@ -1880,6 +1916,18 @@ var ACTIONS = {
     toast('<b>' + esc(p.name) + '</b> 님 팀장 권한을 ' + (next ? '부여' : '해제') + '했어요' +
       (next ? '<br>상단 <b>팀장</b> 화면에서 현황·일보·일정·공수표를 쓸 수 있습니다' : ''));
   },
+  toggleLifting: function (el) {
+    if (!isAdminView()) { toast('관리자만 양중 권한을 바꿀 수 있습니다.'); return; }
+    var p = personById(el.getAttribute('data-id'));
+    if (!p) { return; }
+    p.lifting = !p.lifting;
+    patchWorker(p.id, { is_lifting: p.lifting }, '양중 권한 변경');
+    if (!canLifting() && state.role === 'lifting') { state.role = 'worker'; }
+    render();
+    openPerson(p.id);
+    toast('<b>' + esc(p.name) + '</b> 님 양중 권한을 ' + (p.lifting ? '부여' : '해제') + '했어요' +
+      (p.lifting ? '<br>로그인 화면에서 <b>[양중]</b> 을 고르면 양중 화면으로 들어갑니다' : ''));
+  },
   restore: function (el) {
     var p = personById(el.getAttribute('data-id'));
     if (!p) { return; }
@@ -2453,8 +2501,527 @@ var ACTIONS = {
     closeSheet();
     render();
     if (backCal) { openSchedSheet(); }
+  },
+
+  /* ----- 양중 (2026-11-27 · v21) ----- */
+  liftDay: function (el) { liftShiftDay('liftDate', el); },
+  liftForkDay: function (el) { liftShiftDay('liftForkDate', el); },
+  liftNew: function (el) { openLiftSheet(el.getAttribute('data-kind') || 'delivery', ''); },
+  liftEdit: function (el) { openLiftSheet(el.getAttribute('data-kind') || 'delivery', el.getAttribute('data-id')); },
+  liftDone: function (el) {
+    if (!liftEditOk()) { return; }
+    var s = liftById(el.getAttribute('data-id'));
+    if (!s) { return; }
+    s.done = !s.done;
+    s.doneAt = s.done ? new Date().toISOString() : '';
+    apiWrite({
+      m: 'PATCH', path: '/rest/v1/lifting_schedules?id=' + sbEq(s.id), prefer: 'return=minimal', label: '일정 완료 체크',
+      body: { done: s.done, done_at: s.done ? s.doneAt : null }
+    });
+    render();
+    toast(s.done ? '✅ <b>' + esc(s.title) + '</b> 완료로 표시했어요' : '<b>' + esc(s.title) + '</b> 완료를 해제했어요');
+  },
+  liftDel: function (el) {
+    if (!liftEditOk()) { return; }
+    var s = liftById(el.getAttribute('data-id'));
+    if (!s) { return; }
+    confirmSheet('일정을 삭제할까요?',
+      '<b>' + esc(s.title) + '</b><br>' + longDate(s.date) + (s.time ? ' · ' + esc(s.time) : '') +
+      '<br>삭제하면 양중·관리자 화면에서도 바로 사라집니다.',
+      '삭제', 'liftDoDel', 'data-id="' + esc(s.id) + '"');
+  },
+  liftDoDel: function (el) {
+    if (!liftEditOk()) { return; }
+    var id = el.getAttribute('data-id');
+    state.liftSchedules = state.liftSchedules.filter(function (x) { return x.id !== id; });
+    apiWrite({ m: 'DELETE', path: '/rest/v1/lifting_schedules?id=' + sbEq(id), label: '일정 삭제' });
+    closeSheet();
+    render();
+    toast('일정을 삭제했어요');
+  },
+  liftSave: function (el) {
+    if (!liftEditOk()) { return; }
+    var kind = el.getAttribute('data-kind') === 'forklift' ? 'forklift' : 'delivery';
+    var isF = kind === 'forklift';
+    var id = el.getAttribute('data-id') || '';
+    var date = ($('#lf_date').value || '').trim();
+    var time = ($('#lf_time').value || '').trim();
+    var title = ($('#lf_title').value || '').trim();
+    var loc = ($('#lf_loc').value || '').trim();
+    var assignee = ($('#lf_assignee') ? $('#lf_assignee').value : '').trim();
+    var memo = ($('#lf_memo').value || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { toast('날짜를 선택해 주세요.'); return; }
+    if (!title) { toast(kind === 'forklift' ? '사용 이유 / 반입 물품을 입력해 주세요.' : '반입 품목을 입력해 주세요.'); return; }
+    if (id) {
+      var s = liftById(id);
+      if (!s) { closeSheet(); render(); return; }
+      s.date = date; s.time = time; s.title = title; s.location = loc; s.assignee = assignee; s.memo = memo;
+      s.reason = isF ? title : '';
+      apiWrite({
+        m: 'PATCH', path: '/rest/v1/lifting_schedules?id=' + sbEq(id), prefer: 'return=minimal', label: '일정 수정',
+        body: { sched_date: date, time_text: time || null, title: title, location: loc || null, assignee: assignee || null, memo: memo || null, reason: isF ? title : null }
+      });
+      toast('일정을 수정했어요');
+    } else {
+      var ns = {
+        id: uuid(), kind: kind, date: date, time: time, title: title, location: loc,
+        memo: memo, assignee: assignee, reason: isF ? title : '',
+        pre: { briti: false, dri: false, watcher: false },
+        done: false, doneAt: '', by: me() ? me().name : ''
+      };
+      state.liftSchedules.push(ns);
+      apiWrite({
+        m: 'POST', path: '/rest/v1/lifting_schedules', prefer: 'return=minimal', label: '일정 등록',
+        body: {
+          id: ns.id, kind: kind, sched_date: date, time_text: time || null, title: title,
+          location: loc || null, memo: memo || null, assignee: assignee || null,
+          reason: isF ? title : null,
+          created_by: ns.by || null
+        }
+      });
+      toast((kind === 'forklift' ? '지게차 일정' : '반입일정') + '을 등록했어요 · ' + shortDate(date) + ' (' + wd(date) + ')' + (time ? ' ' + esc(time) : ''));
+    }
+    state.ui.liftDate = date;
+    state.ui.liftForkDate = date;
+    closeSheet();
+    render();
+  },
+  forkPre: function (el) {
+    if (!liftEditOk()) { return; }
+    var s = liftById(el.getAttribute('data-id'));
+    if (!s) { return; }
+    var k = el.getAttribute('data-k');
+    var col = { briti: 'pre_briti', dri: 'pre_dri', watcher: 'pre_watcher' }[k];
+    if (!col) { return; }
+    s.pre = s.pre || {};
+    s.pre[k] = !s.pre[k];
+    var body = {};
+    body[col] = s.pre[k];
+    apiWrite({ m: 'PATCH', path: '/rest/v1/lifting_schedules?id=' + sbEq(s.id), prefer: 'return=minimal', label: '전날 체크리스트', body: body });
+    render();
+    var n = forkPreCount(s);
+    toast((s.pre[k] ? '☑ ' : '☐ ') + ({ briti: '브리티 업로드', dri: 'DRI 상신', watcher: '장비감시자 신청' })[k] +
+      ' <b>' + (s.pre[k] ? '완료' : '해제') + '</b> · ' + n + '/3' + (n === 3 ? '<br>전날 준비 완료!' : ''));
+  },
+  orderFilter: function (el) { state.ui.orderFilter = el.getAttribute('data-f') || 'all'; render(); },
+  orderNew: function () { openOrderSheet(''); },
+  orderEdit: function (el) { openOrderSheet(el.getAttribute('data-id')); },
+  orderReceived: function (el) {
+    if (!liftEditOk()) { return; }
+    var o = orderById(el.getAttribute('data-id'));
+    if (!o) { return; }
+    o.received = !o.received;
+    o.receivedAt = o.received ? new Date().toISOString() : '';
+    apiWrite({
+      m: 'PATCH', path: '/rest/v1/material_orders?id=' + sbEq(o.id), prefer: 'return=minimal', label: '입고 체크',
+      body: { received: o.received, received_at: o.received ? o.receivedAt : null }
+    });
+    render();
+    toast(o.received ? '✅ <b>' + esc(o.item) + '</b> 입고 완료' : '<b>' + esc(o.item) + '</b> 입고 대기로 되돌렸어요');
+  },
+  orderDel: function (el) {
+    if (!liftEditOk()) { return; }
+    var o = orderById(el.getAttribute('data-id'));
+    if (!o) { return; }
+    confirmSheet('주문 내역을 삭제할까요?', '<b>' + esc(o.item) + '</b><br>' + shortDate(o.date) + (o.qty ? ' · ' + esc(o.qty) : ''), '삭제', 'orderDoDel', 'data-id="' + esc(o.id) + '"');
+  },
+  orderDoDel: function (el) {
+    if (!liftEditOk()) { return; }
+    var id = el.getAttribute('data-id');
+    state.materialOrders = state.materialOrders.filter(function (x) { return x.id !== id; });
+    apiWrite({ m: 'DELETE', path: '/rest/v1/material_orders?id=' + sbEq(id), label: '주문 삭제' });
+    closeSheet();
+    render();
+    toast('주문 내역을 삭제했어요');
+  },
+  orderSave: function (el) {
+    if (!liftEditOk()) { return; }
+    var id = el.getAttribute('data-id') || '';
+    var date = ($('#of_date').value || '').trim();
+    var item = ($('#of_item').value || '').trim();
+    var qty = ($('#of_qty').value || '').trim();
+    var vendor = ($('#of_vendor').value || '').trim();
+    var memo = ($('#of_memo').value || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { toast('주문일을 선택해 주세요.'); return; }
+    if (!item) { toast('품명을 입력해 주세요.'); return; }
+    if (id) {
+      var o = orderById(id);
+      if (!o) { closeSheet(); render(); return; }
+      o.date = date; o.item = item; o.qty = qty; o.vendor = vendor; o.memo = memo;
+      apiWrite({
+        m: 'PATCH', path: '/rest/v1/material_orders?id=' + sbEq(id), prefer: 'return=minimal', label: '주문 수정',
+        body: { order_date: date, item_name: item, qty: qty || null, vendor: vendor || null, memo: memo || null }
+      });
+      toast('주문 내역을 수정했어요');
+    } else {
+      var no = { id: uuid(), date: date, item: item, qty: qty, vendor: vendor, memo: memo, received: false, receivedAt: '', by: me() ? me().name : '' };
+      state.materialOrders.push(no);
+      apiWrite({
+        m: 'POST', path: '/rest/v1/material_orders', prefer: 'return=minimal', label: '주문 등록',
+        body: { id: no.id, order_date: date, item_name: item, qty: qty || null, vendor: vendor || null, memo: memo || null, created_by: no.by || null }
+      });
+      toast('<b>' + esc(item) + '</b> 주문을 등록했어요 · 입고 대기');
+    }
+    state.materialOrders.sort(function (a, b) { return a.date === b.date ? (a.item < b.item ? -1 : 1) : (a.date < b.date ? 1 : -1); });
+    closeSheet();
+    render();
+  },
+  toolFilter: function (el) { state.ui.toolFilter = el.getAttribute('data-f') || 'all'; render(); },
+  toolNew: function () { openToolSheet(''); },
+  toolEdit: function (el) { openToolSheet(el.getAttribute('data-id')); },
+  toolInc: function (el) { toolBump(el.getAttribute('data-id'), 1); },
+  toolDec: function (el) { toolBump(el.getAttribute('data-id'), -1); },
+  toolStatus: function (el) {
+    if (!liftEditOk()) { return; }
+    var t = toolById(el.getAttribute('data-id'));
+    if (!t) { return; }
+    t.status = t.status === '불량' ? '정상' : '불량';
+    apiWrite({
+      m: 'PATCH', path: '/rest/v1/shared_tools?id=' + sbEq(t.id), prefer: 'return=minimal', label: '공도구 상태',
+      body: { status: t.status }
+    });
+    render();
+    toast('<b>' + esc(t.name) + '</b> ' + (t.status === '정상' ? '정상' : '<span style="color:#B42318">불량</span>') + '으로 바꿨어요');
+  },
+  toolQtyEdit: function (el) {
+    if (!liftEditOk()) { return; }
+    var id = el.getAttribute('data-id');
+    var t = toolById(id);
+    if (!t) { return; }
+    el.outerHTML = '<span class="tq-edit" id="tqbox_' + id + '">' +
+      '<input class="tq-in" id="tq_' + id + '" type="number" inputmode="numeric" min="0" step="1" value="' + (t.quantity || 0) + '" aria-label="갯수">' +
+      '<button class="tq-ok" data-act="toolQtySave" data-id="' + id + '">확인</button></span>';
+    var inp = document.getElementById('tq_' + id);
+    if (inp) { try { inp.focus(); inp.select(); } catch (e) { /* noop */ } }
+  },
+  toolQtySave: function (el) {
+    if (!liftEditOk()) { return; }
+    var id = el.getAttribute('data-id');
+    var t = toolById(id);
+    if (!t) { return; }
+    var inp = document.getElementById('tq_' + id);
+    var v = inp ? parseInt(String(inp.value).replace(/[^0-9]/g, ''), 10) : NaN;
+    if (isNaN(v) || v < 0) { toast('갯수를 0 이상 숫자로 넣어 주세요.'); return; }
+    t.quantity = v;
+    apiWrite({
+      m: 'PATCH', path: '/rest/v1/shared_tools?id=' + sbEq(id), prefer: 'return=minimal', label: '공도구 갯수',
+      body: { quantity: v }
+    });
+    render();
+    toast('<b>' + esc(t.name) + '</b> 갯수를 <b>' + v + '개</b>로 저장했어요');
+  },
+  toolDel: function (el) {
+    if (!liftEditOk()) { return; }
+    var t = toolById(el.getAttribute('data-id'));
+    if (!t) { return; }
+    confirmSheet('공도구를 삭제할까요?', '<b>' + esc(t.name) + '</b> · ' + (t.quantity || 0) + '개<br>엑셀 목록에서도 빠집니다.', '삭제', 'toolDoDel', 'data-id="' + esc(t.id) + '"');
+  },
+  toolDoDel: function (el) {
+    if (!liftEditOk()) { return; }
+    var id = el.getAttribute('data-id');
+    state.sharedTools = state.sharedTools.filter(function (x) { return x.id !== id; });
+    apiWrite({ m: 'DELETE', path: '/rest/v1/shared_tools?id=' + sbEq(id), label: '공도구 삭제' });
+    closeSheet();
+    render();
+    toast('공도구를 삭제했어요');
+  },
+  toolSave: function (el) {
+    if (!liftEditOk()) { return; }
+    var id = el.getAttribute('data-id') || '';
+    var category = ($('#tl_cat') ? $('#tl_cat').value : '공도구');
+    var name = ($('#tl_name').value || '').trim();
+    var qtyRaw = ($('#tl_qty').value || '').trim();
+    var memo = ($('#tl_memo') ? $('#tl_memo').value : '').trim();
+    var qn = parseInt(String(qtyRaw).replace(/[^0-9]/g, ''), 10);
+    if (!name) { toast('품명을 입력해 주세요.'); return; }
+    if (isNaN(qn) || qn < 0) { toast('갯수를 숫자로 넣어 주세요.'); return; }
+    if (id) {
+      var t = toolById(id);
+      if (!t) { closeSheet(); render(); return; }
+      t.name = name; t.category = category; t.quantity = qn; t.memo = memo;
+      apiWrite({
+        m: 'PATCH', path: '/rest/v1/shared_tools?id=' + sbEq(id), prefer: 'return=minimal', label: '공도구 수정',
+        body: { tool_name: name, base_name: name, category: category, quantity: qn, memo: memo || null }
+      });
+      toast('<b>' + esc(name) + '</b> 정보를 저장했어요');
+    } else {
+      var nt = {
+        id: uuid(), name: name, category: category, quantity: qn, trade: '설비',
+        company: '한양이엔지(PCW)', checkDate: todayKey(), status: '정상', sortOrder: 9999, memo: memo
+      };
+      state.sharedTools.push(nt);
+      sortTools();
+      apiWrite({
+        m: 'POST', path: '/rest/v1/shared_tools', prefer: 'return=minimal', label: '공도구 등록',
+        body: {
+          id: nt.id, tool_name: name, base_name: name, category: category, quantity: qn,
+          trade: '설비', company: '한양이엔지(PCW)', check_date: todayKey(), status: '정상',
+          memo: memo || null, created_by: me() ? me().name : null
+        }
+      });
+      toast('<b>' + esc(name) + '</b> ' + qn + '개를 ' + esc(category) + '에 추가했어요');
+    }
+    state.ui.toolFilter = category;
+    closeSheet();
+    render();
+  },
+  toolExport: function () {
+    if (!liftEditOk()) { return; }
+    if (typeof XLSX === 'undefined') { toast('엑셀 기능을 불러오지 못했어요.<br>인터넷 연결을 확인하고 새로고침해 주세요.'); return; }
+    try { exportToolsXlsx(); } catch (e) { toast('엑셀을 만들지 못했어요 · ' + esc(e && e.message || e)); }
+  },
+  ppeItem: function (el) {
+    state.ui.ppeItem = el.getAttribute('data-key') || PPE_ITEMS[0].key;
+    render();
+  },
+  ppeTeam: function (el) {
+    state.ui.ppeTeam = el.getAttribute('data-team') || '';
+    state.ui.ppePage = 1;
+    render();
+  },
+  ppeUnsigned: function () {
+    state.ui.ppeUnsignedOnly = !state.ui.ppeUnsignedOnly;
+    state.ui.ppePage = 1;
+    render();
+  },
+  ppePage: function (el) {
+    var d = parseInt(el.getAttribute('data-d'), 10) || 0;
+    state.ui.ppePage = Math.max(1, (state.ui.ppePage || 1) + d);
+    render();
+  },
+  ppeClear: function () {
+    state.ui.ppeQ = '';
+    state.ui.ppePage = 1;
+    render();
+    var inp = $('#ppe_q');
+    if (inp) { try { inp.focus(); } catch (e) { /* noop */ } }
+  },
+  ppeIssueClear: function () {
+    state.ui.ppeIssueQ = '';
+    render();
+    var inp = $('#ppe_issue_q');
+    if (inp) { try { inp.focus(); } catch (e) { /* noop */ } }
+  },
+  /* ① 보호구 지급 기록 */
+  ppeGrant: function (el) {
+    if (!liftEditOk()) { return; }
+    var id = el.getAttribute('data-id');
+    var item = el.getAttribute('data-item') || PPE_ITEMS[0].key;
+    var p = personById(id);
+    if (!p) { return; }
+    var d = todayKey();
+    var at = new Date().toISOString();
+    var by = me() ? me().name : '';
+    var cur = ppeSigOn(id, item, d);
+    if (cur) { cur.signed = true; cur.at = at; cur.by = by; }
+    else { state.ppeSigs.push({ id: uuid(), date: d, workerId: id, itemKey: item, signed: true, at: at, by: by }); }
+    apiWrite({
+      m: 'POST', path: '/rest/v1/ppe_signatures?on_conflict=sign_date,worker_id,item_key',
+      prefer: 'resolution=merge-duplicates,return=minimal', label: '보호구 지급',
+      body: { sign_date: d, worker_id: id, item_key: item, signed: true, signed_at: at, signed_by: by || null }
+    });
+    render();
+    toast('🛡️ <b>' + esc(p.name) + '</b> · ' + esc(ppeItemLabel(item)) + ' <b>' + mdShort(d) + ' 제출함</b>으로 기록했어요');
+  },
+  /* 🔒 지급함 → 재지급(분실·교체) 확인 후 1회 해제 */
+  ppeUnlock: function (el) {
+    if (!liftEditOk()) { return; }
+    var id = el.getAttribute('data-id');
+    var item = el.getAttribute('data-item');
+    var date = el.getAttribute('data-date');
+    var p = personById(id);
+    if (!p) { return; }
+    confirmSheet('재지급으로 처리할까요?',
+      '<b>' + esc(p.name) + '</b> 님은 ' + esc(ppeItemLabel(item)) + '을 <b>' + mdShort(date) + ' 지급함</b>으로 잠겨 있습니다.<br>' +
+      '분실 · 교체 때만 재지급하세요. 확인하면 잠금이 풀려 다시 서명할 수 있습니다.',
+      '재지급', 'ppeReissueDo', 'data-id="' + id + '" data-item="' + item + '" data-date="' + date + '"', true);
+  },
+  ppeReissueDo: function (el) {
+    if (!liftEditOk()) { return; }
+    var id = el.getAttribute('data-id');
+    var item = el.getAttribute('data-item');
+    var date = el.getAttribute('data-date');
+    var row = (state.ppeSigs || []).filter(function (s) {
+      return s.workerId === id && s.itemKey === item && s.date === date && s.signed;
+    })[0];
+    if (row) { row.signed = false; row.at = ''; row.by = ''; }
+    apiWrite({
+      m: 'PATCH', path: '/rest/v1/ppe_signatures?worker_id=' + sbEq(id) + '&item_key=' + sbEq(item) + '&sign_date=' + sbEq(date),
+      prefer: 'return=minimal', label: '보호구 재지급',
+      body: { signed: false, signed_at: null }
+    });
+    closeSheet();
+    render();
+    toast('재지급으로 잠금을 풀었어요 · 다시 <b>서명 체크</b>하면 오늘 날짜로 기록됩니다');
+  },
+  /* ② 방진마스크 일일 서명 */
+  ppeMask: function (el) {
+    if (!liftEditOk()) { return; }
+    var id = el.getAttribute('data-id');
+    var p = personById(id);
+    if (!p) { return; }
+    var d = todayKey();
+    var tg = ppeRoster(d);
+    var allowed = tg.list.filter(function (x) { return x.p.id === id; })[0];
+    if (!allowed) { toast('휴무·결근 인원은 서명 체크할 수 없습니다.'); return; }
+    var cur = ppeSigOn(id, PPE_MASK_KEY, d);
+    var on = !(cur && cur.signed);
+    var at = on ? new Date().toISOString() : '';
+    var by = me() ? me().name : '';
+    if (cur) { cur.signed = on; cur.at = at; cur.by = on ? by : ''; }
+    else { state.ppeSigs.push({ id: uuid(), date: d, workerId: id, itemKey: PPE_MASK_KEY, signed: true, at: at, by: by }); }
+    apiWrite({
+      m: 'POST', path: '/rest/v1/ppe_signatures?on_conflict=sign_date,worker_id,item_key',
+      prefer: 'resolution=merge-duplicates,return=minimal', label: '방진마스크 서명',
+      body: { sign_date: d, worker_id: id, item_key: PPE_MASK_KEY, signed: on, signed_at: on ? at : null, signed_by: by || null }
+    });
+    render();
+    var tg2 = ppeRoster(d);
+    var dn = tg2.list.filter(function (x) { return x.sig && x.sig.signed; }).length;
+    toast((on ? '😷 <b>' + esc(p.name) + '</b> 방진마스크 서명 완료' : '<b>' + esc(p.name) + '</b> 서명을 취소했어요') +
+      '<br>서명 완료 ' + dn + '명 / 미서명 ' + (tg2.list.length - dn) + '명');
   }
 };
+
+/* =========================================================
+   양중 도우미 (2026-11-27)
+   ========================================================= */
+function liftEditOk() {
+  if (!isLiftingView()) { toast('양중 화면에서만 바꿀 수 있습니다.'); return false; }
+  return true;
+}
+function liftById(id) { return (state.liftSchedules || []).filter(function (x) { return x.id === id; })[0] || null; }
+function orderById(id) { return (state.materialOrders || []).filter(function (x) { return x.id === id; })[0] || null; }
+function toolById(id) { return (state.sharedTools || []).filter(function (x) { return x.id === id; })[0] || null; }
+function liftShiftDay(key, el) {
+  var dir = parseInt(el.getAttribute('data-d'), 10);
+  var cur = state.ui[key] || todayKey();
+  state.ui[key] = dir === 0 ? todayKey() : addDays(cur, dir);
+  render();
+}
+function openLiftSheet(kind, id) {
+  if (!liftEditOk()) { return; }
+  var isF = kind === 'forklift';
+  var s = id ? liftById(id) : null;
+  var date = s ? s.date : (state.ui[isF ? 'liftForkDate' : 'liftDate'] || todayKey());
+  var body =
+    '<div class="sect">' +
+    '<label class="field"><span>날짜</span><input type="date" id="lf_date" value="' + esc(date) + '"></label>' +
+    '<label class="field"><span>시간 <span class="muted">(비우면 종일)</span></span><input type="time" id="lf_time" value="' + esc(s ? s.time : '') + '"></label>' +
+    '<label class="field"><span>' + (isF ? '사용 이유 / 반입 물품' : '품목') + '</span><input id="lf_title" value="' + esc(isF && s ? (s.reason || s.title) : (s ? s.title : '')) + '" placeholder="' + (isF ? '예) 3톤 자재 하차 · 배관 자재 반입' : '예) 배관 자재 · 2톤') + '"></label>' +
+    '<label class="field"><span>' + (isF ? '사용 위치' : '장소') + '</span><input id="lf_loc" value="' + esc(s ? s.location : '') + '" placeholder="' + (isF ? '예) A동 1층' : '예) 정문 하차장') + '"></label>' +
+    (isF ? '<label class="field"><span>담당자</span><input id="lf_assignee" value="' + esc(s ? s.assignee : '') + '" placeholder="예) 김한솔"></label>' : '') +
+    '<label class="field"><span>비고</span><input id="lf_memo" value="' + esc(s ? s.memo : '') + '" placeholder="예) 10시 이후 반입"></label>' +
+    '</div>' +
+    '<div class="hint">등록하면 양중·관리자 화면에 바로 반영됩니다. 완료되면 목록에서 <b>완료</b>를 눌러 주세요.</div>';
+  openSheet((isF ? '🚜 지게차일정 ' : '🏗️ 반입일정 ') + (id ? '수정' : '등록'), body,
+    '<button class="btn btn-ghost" data-act="closeSheet">취소</button>' +
+    '<button class="btn btn-primary" data-act="liftSave" data-kind="' + kind + '" data-id="' + (id || '') + '">저장</button>');
+}
+function openOrderSheet(id) {
+  if (!liftEditOk()) { return; }
+  var o = id ? orderById(id) : null;
+  var body =
+    '<div class="sect">' +
+    '<label class="field"><span>주문일</span><input type="date" id="of_date" value="' + esc(o ? o.date : todayKey()) + '"></label>' +
+    '<label class="field"><span>품명</span><input id="of_item" value="' + esc(o ? o.item : '') + '" placeholder="예) 엘보 90A"></label>' +
+    '<label class="field"><span>수량</span><input id="of_qty" value="' + esc(o ? o.qty : '') + '" placeholder="예) 20개"></label>' +
+    '<label class="field"><span>업체</span><input id="of_vendor" value="' + esc(o ? o.vendor : '') + '" placeholder="예) ○○산업"></label>' +
+    '<label class="field"><span>비고</span><input id="of_memo" value="' + esc(o ? o.memo : '') + '" placeholder="예) 급한 건"></label>' +
+    '</div>' +
+    '<div class="hint">등록하면 <b>입고 대기</b>로 들어가고, 물건이 오면 목록에서 <b>✅ 입고 완료</b>로 바꿔 주세요.</div>';
+  openSheet('📦 자재 주문 ' + (id ? '수정' : '등록'), body,
+    '<button class="btn btn-ghost" data-act="closeSheet">취소</button>' +
+    '<button class="btn btn-primary" data-act="orderSave" data-id="' + (id || '') + '">저장</button>');
+}
+function openToolSheet(id) {
+  if (!liftEditOk()) { return; }
+  var t = id ? toolById(id) : null;
+  var cat = t ? t.category : (state.ui.toolFilter !== 'all' ? state.ui.toolFilter : '공도구');
+  var opts = TOOL_CATS.map(function (x) {
+    return '<option value="' + x + '"' + (cat === x ? ' selected' : '') + '>' + x + '</option>';
+  }).join('');
+  var body =
+    '<div class="sect big-form">' +
+    '<label class="field big"><span>분류</span><select id="tl_cat">' + opts + '</select></label>' +
+    '<label class="field big"><span>품명</span><input id="tl_name" value="' + esc(t ? t.name : '') + '" placeholder="예) 수동 용접기"></label>' +
+    '<label class="field big"><span>갯수</span><input id="tl_qty" type="number" inputmode="numeric" min="0" step="1" value="' + (t ? (t.quantity || 0) : '1') + '" placeholder="예) 4"></label>' +
+    '<label class="field"><span>비고 <span class="muted">(선택)</span></span><input id="tl_memo" value="' + esc(t ? t.memo : '') + '" placeholder="예) 케이블 교체 필요"></label>' +
+    '</div>' +
+    '<div class="hint">같은 품목이 여러 개면 <b>품명</b> 하나에 <b>갯수</b>만 넣으면 됩니다. (예: 수동 용접기 · 4개)</div>';
+  openSheet('🧰 공도구 ' + (id ? '수정' : '추가'), body,
+    '<button class="btn btn-ghost" data-act="closeSheet">취소</button>' +
+    (id ? '<button class="btn btn-danger" data-act="toolDel" data-id="' + id + '">삭제</button>' : '') +
+    '<button class="btn btn-primary" data-act="toolSave" data-id="' + (id || '') + '">저장</button>');
+}
+
+function toolBump(id, d) {
+  if (!liftEditOk()) { return; }
+  var t = toolById(id);
+  if (!t) { return; }
+  var v = Math.max(0, (t.quantity || 0) + d);
+  if (v === t.quantity) { return; }
+  t.quantity = v;
+  apiWrite({
+    m: 'PATCH', path: '/rest/v1/shared_tools?id=' + sbEq(id), prefer: 'return=minimal', label: '공도구 갯수',
+    body: { quantity: v }
+  });
+  render();
+}
+
+/* 원본 엑셀(3장) 양식으로 내보내기 — 갯수만큼 품명-1 ~ 품명-N 으로 펼친다 */
+function exportToolsXlsx() {
+  var wb = XLSX.utils.book_new();
+  var widths = [{ wch: 6.13 }, { wch: 10.76 }, { wch: 11.38 }, { wch: 15 }, { wch: 15.76 }, { wch: 6.51 }, { wch: 5.76 }, { wch: 28.13 }, { wch: 10.26 }];
+  TOOL_CATS.forEach(function (cat) {
+    var meta = TOOL_META[cat] || { sheet: cat, title: cat + ' LIST' };
+    var list = state.sharedTools.filter(function (t) { return t.category === cat; });
+    var aoa = [
+      [meta.title, '', '', '', '', '', '', '', ''],
+      [],
+      ['점검위치', '', '', TOOL_HEAD.loc, '', '신청자', '', TOOL_HEAD.applicant, '(서명)'],
+      ['점검시간', '', '', TOOL_HEAD.time, '', '점검자', '', '', '(서명)'],
+      [],
+      ['No.', '점검일', '공종', '업체명', '품명', '정상', '불량', '지적내용', '조치여부']
+    ];
+    var n = 0;
+    var dateCells = [];
+    list.forEach(function (t) {
+      var q = Math.max(1, parseInt(t.quantity, 10) || 0);
+      for (var i = 1; i <= q; i++) {
+        n++;
+        var r = aoa.length;
+        aoa.push([
+          n, t.checkDate ? new Date(t.checkDate + 'T00:00:00') : new Date(),
+          t.trade || '설비', t.company || '한양이엔지(PCW)',
+          t.name + '-' + i,
+          t.status === '불량' ? '' : 'O',
+          t.status === '불량' ? 'O' : '',
+          t.status === '불량' ? (t.memo || '') : '',
+          ''
+        ]);
+        dateCells.push('B' + (r + 1));
+      }
+    });
+    if (!n) { aoa.push(['', '', '', '', '(등록된 품목 없음)', '', '', '', '']); }
+    var ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = widths;
+    ws['!rows'] = [{ hpt: 27.75 }, {}, {}, { hpt: 17.25 }];
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 2 } },
+      { s: { r: 2, c: 3 }, e: { r: 2, c: 4 } },
+      { s: { r: 2, c: 5 }, e: { r: 2, c: 6 } },
+      { s: { r: 3, c: 0 }, e: { r: 3, c: 2 } },
+      { s: { r: 3, c: 5 }, e: { r: 3, c: 6 } }
+    ];
+    dateCells.forEach(function (ref) {
+      if (ws[ref]) { ws[ref].z = 'mm-dd-yy'; }
+    });
+    XLSX.utils.book_append_sheet(wb, ws, meta.sheet.slice(0, 31));
+  });
+  XLSX.writeFile(wb, '한양이엔지(PCW) 공도구 점검 리스트_' + todayKey().replace(/-/g, '') + '.xlsx');
+}
 
 /* =========================================================
    이벤트 · 시작
@@ -2494,6 +3061,21 @@ function onInput(e) {
     var clr = document.querySelector('[data-act="searchClear"][data-search="' + key + '"]');
     if (clr) { clr.classList.toggle('hide', !el.value); }
     applyNameFilters();
+    return;
+  }
+  if (el.id === 'ppe_q') {
+    state.ui.ppeQ = el.value;
+    state.ui.ppePage = 1;
+    render();
+    var pq = document.getElementById('ppe_q');
+    if (pq) { try { pq.focus(); pq.setSelectionRange(pq.value.length, pq.value.length); } catch (e) { /* noop */ } }
+    return;
+  }
+  if (el.id === 'ppe_issue_q') {
+    state.ui.ppeIssueQ = el.value;
+    render();
+    var iq = document.getElementById('ppe_issue_q');
+    if (iq) { try { iq.focus(); iq.setSelectionRange(iq.value.length, iq.value.length); } catch (e) { /* noop */ } }
     return;
   }
   if (el.id === 'pf_tin' || el.id === 'pf_tout') { pfAttPreview(); }
@@ -2560,6 +3142,12 @@ function onChange(e) {
 function onKey(e) {
   if (e.key !== 'Enter') { return; }
   var id = e.target && e.target.id;
+  if (id && /^tq_/.test(id)) {
+    e.preventDefault();
+    var btn = document.querySelector('[data-act="toolQtySave"][data-id="' + id.slice(3) + '"]');
+    if (btn) { btn.click(); }
+    return;
+  }
   if (id && /^li_(name|birth|phone)$/.test(id)) {
     e.preventDefault();
     ACTIONS.loginSubmit();
@@ -2607,6 +3195,11 @@ async function boot() {
   } else if (state.auth && sess && sess.role === 'manager' && canManage() && state.role === 'worker') {
     /* 관리자 계정이 팀장 화면으로 두고 나갔던 경우도 그대로 복원 */
     state.role = 'manager';
+    state.ui.timeEdit = false;
+    render();
+  } else if (state.auth && sess && sess.role === 'lifting' && canLifting() && state.role === 'worker') {
+    /* 양중 화면으로 두고 나갔던 경우도 그대로 복원 */
+    state.role = 'lifting';
     state.ui.timeEdit = false;
     render();
   }

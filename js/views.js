@@ -2,11 +2,20 @@
    화면 렌더링
    ========================================================= */
 var ADMIN_TABS = [['dash', '전체 현황', '📊'], ['teams', '팀·조', '🧩'], ['reports', '작업일보함', '📥'], ['docs', '현장자료', '📁']];
+/* 양중 모드 — PC 에서는 상단 탭, 모바일에서는 하단 탭 4개 */
+var LIFTING_TABS = [['all', '전체보기', '🏗️'], ['forklift', '지게차일정', '🚜'], ['orders', '자재주문내역', '📦'], ['tools', '공도구리스트', '🧰']];
 var TABS = {
   worker: [['home', '근태', '🕒'], ['report', '작업일보', '📝']],
+  lifting: LIFTING_TABS,
   admin: ADMIN_TABS,
   manager: ADMIN_TABS
 };
+/* 화면 역할별로 기억하는 탭 키 */
+function tabKeyOf(role) {
+  if (role === 'worker') { return 'workerTab'; }
+  if (role === 'lifting') { return 'liftingTab'; }
+  return 'adminTab';
+}
 
 function render() {
   if (!state.ready) {
@@ -28,14 +37,15 @@ function render() {
   }
   if (state.role === 'admin' && !canAdmin()) { state.role = canManage() ? 'manager' : 'worker'; }
   if (state.role === 'manager' && !canManage()) { state.role = 'worker'; }
+  if (state.role === 'lifting' && !canLifting()) { state.role = 'worker'; }
 
   renderTop();
-  var key = state.role === 'worker' ? 'workerTab' : 'adminTab';
+  var key = tabKeyOf(state.role);
   var valid = TABS[state.role].map(function (t) { return t[0]; });
   if (valid.indexOf(state.ui[key]) < 0) { state.ui[key] = valid[0]; }
-  var html = state.role === 'worker' ? workerView() : adminView();
+  var html = state.role === 'worker' ? workerView() : (state.role === 'lifting' ? liftingView() : adminView());
   /* 화면 폭 기준 (PC 최적화용) — 모바일은 이 클래스로 달라지는 것이 없다 */
-  $('#screen').className = state.role === 'worker' ? 'screen-worker' : 'screen-admin';
+  $('#screen').className = state.role === 'worker' ? 'screen-worker' : (state.role === 'lifting' ? 'screen-admin screen-lift' : 'screen-admin');
   $('#screen').innerHTML = html;
   renderTabs();
   renderSync();
@@ -111,9 +121,20 @@ function renderTop() {
 /* 지금 계정이 고를 수 있는 화면 목록 [역할키, 표시이름, 설명] */
 function roleChoices(p) {
   if (!p) { return []; }
+  var liftOpt = ['lifting', '양중', '반입·지게차·자재·공도구·보호구 서명 (단가 없음)'];
   if (p.admin) {
     return [['admin', '관리자', '모든 기능 · 단가 · 권한 · 암호'],
       ['manager', '팀장', '현황 · 일보 · 일정 · 공수표 (단가 제외)'],
+      liftOpt,
+      ['worker', '기술인', '내 근태 · 작업일보 · 내 정보']];
+  }
+  if (p.lifting && p.role === 'leader') {
+    return [['manager', '팀장', '현황 · 일보 · 일정 · 공수표 (단가 제외)'],
+      liftOpt,
+      ['worker', '기술인', '내 근태 · 작업일보 · 내 정보']];
+  }
+  if (p.lifting) {
+    return [liftOpt,
       ['worker', '기술인', '내 근태 · 작업일보 · 내 정보']];
   }
   if (p.role === 'leader') {
@@ -139,7 +160,7 @@ function openRoleMenu() {
 
 function renderTabs() {
   var list = TABS[state.role];
-  var key = state.role === 'worker' ? 'workerTab' : 'adminTab';
+  var key = tabKeyOf(state.role);
   var cur = state.ui[key];
   var html = list.map(function (t) {
     var on = cur === t[0] ? ' active' : '';
@@ -286,8 +307,10 @@ function jobOptionsHTML(sel) {
 /* 로그인 화면 전용 : 직종 + 맨 아래 [관리자] 선택칸 */
 var LOGIN_ADMIN_LABEL = '관리자';
 var LOGIN_MANAGER_LABEL = '팀장';
+var LOGIN_LIFTING_LABEL = '양중';
 function loginJobOptionsHTML(sel) {
   return jobOptionsHTML(sel) +
+    '<option value="' + LOGIN_LIFTING_LABEL + '"' + (sel === LOGIN_LIFTING_LABEL ? ' selected' : '') + '>' + LOGIN_LIFTING_LABEL + '</option>' +
     '<option value="' + LOGIN_MANAGER_LABEL + '"' + (sel === LOGIN_MANAGER_LABEL ? ' selected' : '') + '>' + LOGIN_MANAGER_LABEL + '</option>' +
     '<option value="' + LOGIN_ADMIN_LABEL + '"' + (sel === LOGIN_ADMIN_LABEL ? ' selected' : '') + '>' + LOGIN_ADMIN_LABEL + '</option>';
 }
@@ -333,7 +356,7 @@ function loginView() {
     '</div>' +
     '<button class="btn btn-primary block" style="margin-top:12px" data-act="loginSubmit">로그인</button>' +
     '<div class="hint">등록된 <b>이름 · 생년월일 · 전화번호</b>가 같으면 바로 로그인됩니다. 처음이면 기술인으로 자동 등록돼요.</div>' +
-    '<div class="hint"><b>팀장</b>은 팀장 권한을, <b>관리자</b>는 관리자 권한을 등록받은 분만 선택할 수 있습니다.<br>팀장은 관리자 암호 없이, 관리자 계정은 관리자 암호를 한 번 더 넣고 로그인합니다.</div>' +
+    '<div class="hint"><b>팀장</b>은 팀장 권한을, <b>양중</b>은 양중 권한을, <b>관리자</b>는 관리자 권한을 등록받은 분만 선택할 수 있습니다.<br>팀장·양중은 암호 없이, 관리자 계정은 관리자 암호를 한 번 더 넣고 로그인합니다.</div>' +
     '<div class="hint">로그인은 이 휴대폰에 저장돼 <b>앱을 닫아도 풀리지 않습니다</b>. 로그아웃은 <b>⚙️ 내 정보</b>에서 직접 눌러야 해요.</div>' +
     '</div>' +
     '<div class="foot-note">한양 pcw팀<br>입력한 정보는 현장 Supabase DB에 저장됩니다</div>';
@@ -1985,7 +2008,7 @@ function adminTodayBody() {
      모바일에서는 .dash-col{display:contents} 로 위에서 아래로 지금과 같은 순서로 흐른다. */
   return '<div class="dash-grid">' +
     '<div class="dash-col dash-col-l">' +
-      noticeBannerHTML('admin') + schedSummaryHTML() + adminHeadcountCard() + tbmAlertHTML() +
+      noticeBannerHTML('admin') + schedSummaryHTML() + adminHeadcountCard() + tbmAlertHTML() + adminLiftCard() +
     '</div>' +
     '<div class="dash-col dash-col-r">' +
       statCard + leaveCard + avgCard + peopleCard +
@@ -2456,6 +2479,7 @@ function openPerson(id) {
     '<div style="flex:1"><div class="sheet-name">' + esc(p.name) + ' ' +
     (p.role === 'leader' ? '<span class="tag tag-leader">반장</span>' : '<span class="tag tag-job">기술인</span>') +
     (p.admin ? ' <span class="tag tag-admin">관리자 권한</span>' : '') +
+    (p.lifting ? ' <span class="tag tag-lift">양중</span>' : '') +
     (p.status === 'resigned' ? ' <span class="badge b-res">퇴사</span>' : '') + '</div>' +
     '<div class="muted">' + teamLabel(p.teamId) + ' · ' + esc(p.job) + ' · ' + (p.status === 'resigned' ? '퇴사자 보관함' : statusOf(p)) + '</div></div>' +
     '</div>' +
@@ -2510,7 +2534,10 @@ function openPerson(id) {
     '<div class="kv" style="margin-top:11px"><span>팀장 권한</span><b>' + (p.role === 'leader' ? '있음' : '없음') + '</b></div>' +
     '<button class="btn ' + (p.role === 'leader' ? 'btn-danger' : 'btn-line') + ' sm block" style="margin-top:6px" data-act="toggleLeader" data-id="' + p.id + '">' +
     (p.role === 'leader' ? '팀장 권한 해제' : '팀장 권한 부여') + '</button>' +
-    '<div class="hint">팀장은 전체 현황 · 팀·조 · 일보함 · 일정 · 공수표를 쓰지만 <b>단가·관리자 권한·암호</b>는 볼 수 없습니다. 관리자 권한이 있으면 상단 <b>관리자</b> 버튼도 생깁니다.</div>' +
+    '<div class="kv" style="margin-top:11px"><span>양중 권한</span><b>' + (p.lifting ? '있음' : '없음') + '</b></div>' +
+    '<button class="btn ' + (p.lifting ? 'btn-danger' : 'btn-line') + ' sm block" style="margin-top:6px" data-act="toggleLifting" data-id="' + p.id + '">' +
+    (p.lifting ? '양중 권한 해제' : '양중 권한 부여') + '</button>' +
+    '<div class="hint">팀장은 전체 현황 · 팀·조 · 일보함 · 일정 · 공수표를 쓰지만 <b>단가·관리자 권한·암호</b>는 볼 수 없습니다. 관리자 권한이 있으면 상단 <b>관리자</b> 버튼도 생깁니다.<br><b>양중</b> 권한이 있으면 로그인할 때 <b>[양중]</b> 을 고를 수 있고, 로그인하면 양중 화면(반입·지게차·자재·공도구·보호구 서명)으로 들어갑니다. <b>단가는 양중 화면에 나오지 않습니다.</b></div>' +
     '</div>' : '') +
 
     '<div class="sect">' +
@@ -2529,4 +2556,399 @@ function openPerson(id) {
     (p.status === 'resigned' ? '' : '<button class="btn btn-primary" data-act="savePerson" data-id="' + p.id + '">저장</button>');
 
   openSheet('인원 상세', body, footer);
+}
+
+/* =========================================================
+   양중 화면 (2026-11-27 · v21)
+   · [양중] 역할 — 반입일정 · 지게차일정 · 자재주문내역 · 공도구리스트 · 보호구 서명지
+   · 이 화면에는 단가·평균단가·일당 등 어떤 금액도 그리지 않는다.
+   ========================================================= */
+function liftingView() {
+  var p = me();
+  if (!p) { return ''; }
+  var tab = state.ui.liftingTab || 'all';
+  var body = tab === 'forklift' ? liftForkliftView() :
+    tab === 'orders' ? liftOrdersView() :
+      tab === 'tools' ? liftToolsView() : liftAllView();
+  return '<div class="hello lift-hello">' +
+    '<span class="av lg">' + esc(p.name.slice(0, 1)) + '</span>' +
+    '<div><div class="h-name">' + esc(p.name) + ' 님 · 양중 <span class="tag tag-lift">양중</span></div>' +
+    '<div class="muted">' + longDate(todayKey()) + ' · 반입 · 지게차 · 자재 · 공도구 · 보호구 서명</div></div></div>' +
+    body;
+}
+
+function liftDateNav(act, key) {
+  var d = state.ui[key] || todayKey();
+  return '<div class="date-nav">' +
+    '<button data-act="' + act + '" data-d="-1" aria-label="이전 날짜">‹</button>' +
+    '<div class="d-mid"><b>' + longDate(d) + '</b><div class="muted">' +
+    (d === todayKey() ? '오늘' : wd(d) + '요일') + '</div></div>' +
+    '<button data-act="' + act + '" data-d="1" aria-label="다음 날짜">›</button>' +
+    '</div>' +
+    (d === todayKey() ? '' : '<button class="lift-today" data-act="' + act + '" data-d="0">오늘로</button>');
+}
+
+/* 전체보기 — 요약 · 반입일정 · 보호구 서명지 */
+function liftAllView() {
+  var d = todayKey();
+  var dl = liftListOf('delivery', d);
+  var fk = liftListOf('forklift', d);
+  var wait = state.materialOrders.filter(function (o) { return !o.received; }).length;
+  var tg = ppeRoster(d);
+  var done = 0;
+  tg.list.forEach(function (x) { if (x.sig && x.sig.signed) { done++; } });
+  var left = tg.list.length - done;
+
+  var sum = '<div class="card lift-sum-card"><div class="lift-sum">' +
+    '<div class="ls"><b>' + dl.length + '</b><span>오늘 반입</span></div>' +
+    '<div class="ls"><b>' + fk.length + '</b><span>지게차 일정</span></div>' +
+    '<div class="ls"><b>' + wait + '</b><span>자재 입고 대기</span></div>' +
+    '<div class="ls"><b class="' + (left ? 'warn' : 'ok') + '">' + left + '</b><span>보호구 미서명</span></div>' +
+    '</div></div>';
+
+  var delivery = '<div class="card">' +
+    '<div class="card-head"><div><div class="sec-t">🏗️ 반입일정</div>' +
+    '<div class="muted">양중 · 자재 반입 일정 — 기술인 화면에는 보이지 않습니다</div></div>' +
+    '<button class="lift-add" data-act="liftNew" data-kind="delivery">＋ 등록</button></div>' +
+    liftDateNav('liftDay', 'liftDate') +
+    '<div class="lift-list">' +
+    (dl.length ? dl.map(function (s) { return liftRowHTML(s, 'delivery'); }).join('') :
+      '<div class="empty"><span class="e-ic">🏗️</span>이 날짜에 반입일정이 없습니다.<br><b>＋ 등록</b>으로 반입 품목 · 시간을 넣어 주세요.</div>') +
+    '</div></div>';
+
+  return sum + '<div class="lift-cols">' + delivery + ppeCardHTML(tg) + '</div>' +
+    '<div class="foot-note">양중 화면 · 20초마다 자동 새로고침 · 저장은 Supabase 에 바로 반영됩니다</div>';
+}
+
+function liftRowHTML(s, kind) {
+  if (kind === 'forklift') { return forkRowHTML(s); }
+  var sub = [];
+  if (s.location) { sub.push('📍 ' + esc(s.location)); }
+  if (s.memo) { sub.push(esc(s.memo)); }
+  return '<div class="lift-row' + (s.done ? ' done' : '') + '">' +
+    '<div class="lr-time">' + esc(s.time || '종일') + '</div>' +
+    '<div class="lr-main">' +
+    '<div class="lr-title">' + esc(s.title) + (s.done ? ' <span class="badge b-out">완료</span>' : '') + '</div>' +
+    '<div class="lr-sub">' + (sub.length ? sub.join(' · ') : '—') + '</div>' +
+    '</div>' +
+    '<div class="lr-acts">' +
+    '<button class="lift-chk' + (s.done ? ' on' : '') + '" data-act="liftDone" data-id="' + s.id + '" aria-label="완료 체크">' +
+    (s.done ? '✅ 완료' : '완료') + '</button>' +
+    '<button class="lift-ic" data-act="liftEdit" data-kind="' + kind + '" data-id="' + s.id + '" aria-label="수정">✎</button>' +
+    '<button class="lift-ic del" data-act="liftDel" data-kind="' + kind + '" data-id="' + s.id + '" aria-label="삭제">🗑</button>' +
+    '</div></div>';
+}
+
+/* 지게차 일정 카드 — 사용 위치 · 사용 이유/반입 물품 + 전날 체크리스트 3종 */
+var FORK_PRE = [['briti', '브리티 업로드'], ['dri', 'DRI 상신'], ['watcher', '장비감시자 신청']];
+function forkPreCount(s) {
+  var pre = s.pre || {};
+  return (pre.briti ? 1 : 0) + (pre.dri ? 1 : 0) + (pre.watcher ? 1 : 0);
+}
+function forkRowHTML(s) {
+  var pre = s.pre || {};
+  var n = forkPreCount(s);
+  var tomorrow = s.date === todayKeyAdd(1);
+  var warn = tomorrow && n < 3;
+  var sub = [];
+  if (s.location) { sub.push('📍 ' + esc(s.location)); }
+  if (s.assignee) { sub.push('👤 ' + esc(s.assignee)); }
+  if (s.memo) { sub.push(esc(s.memo)); }
+  var chips = FORK_PRE.map(function (k) {
+    var on = !!pre[k[0]];
+    return '<button class="fp-chip' + (on ? ' on' : '') + '" data-act="forkPre" data-id="' + s.id + '" data-k="' + k[0] + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
+      (on ? '☑' : '☐') + ' ' + k[1] + '</button>';
+  }).join('');
+  return '<div class="lift-row fork' + (s.done ? ' done' : '') + '">' +
+    '<div class="fork-top">' +
+    '<div class="lr-time">' + esc(s.time || '종일') + '</div>' +
+    '<div class="lr-main"><div class="lr-title">' + esc(s.reason || s.title) + (s.done ? ' <span class="badge b-out">완료</span>' : '') + '</div>' +
+    '<div class="lr-sub">' + (sub.length ? sub.join(' · ') : '—') + '</div></div>' +
+    '<div class="lr-acts">' +
+    '<button class="lift-chk' + (s.done ? ' on' : '') + '" data-act="liftDone" data-id="' + s.id + '" aria-label="완료 체크">' +
+    (s.done ? '✅ 완료' : '완료') + '</button>' +
+    '<button class="lift-ic" data-act="liftEdit" data-kind="forklift" data-id="' + s.id + '" aria-label="수정">✎</button>' +
+    '<button class="lift-ic del" data-act="liftDel" data-kind="forklift" data-id="' + s.id + '" aria-label="삭제">🗑</button>' +
+    '</div></div>' +
+    '<div class="fork-pre' + (n === 3 ? ' ok' : '') + '">' +
+    '<div class="fp-head"><span class="fp-t">전날 체크리스트 <b>' + n + '/3</b></span>' +
+    (warn ? '<span class="fp-warn">전날 준비 미완료 (' + n + '/3)</span>' : '') +
+    (n === 3 ? '<span class="fp-ok">준비 완료</span>' : '') +
+    '<span class="fp-due">전날 20:00까지</span></div>' +
+    '<div class="fp-btns">' + chips + '</div>' +
+    '</div></div>';
+}
+
+/* 🛡️ 보호구 서명지 — ① 안전보호구·시설물 지급(중복 방지) ② 방진마스크 일일 서명 */
+var PPE_ITEMS = [
+  { key: 'goggles_normal', label: '일반보안경' },
+  { key: 'goggles_glasses', label: '안경보안경' },
+  { key: 'goggles_goggle', label: '고글보안경' },
+  { key: 'helmet_tech', label: '안전모(기술인)' },
+  { key: 'helmet_admin', label: '안전모(관리자)' },
+  { key: 'belt', label: '안전벨트' },
+  { key: 'shoes', label: '안전화' },
+  { key: 'facility', label: '시설물' }
+];
+var PPE_MASK_KEY = 'dust_mask';
+function ppeItemLabel(key) {
+  for (var i = 0; i < PPE_ITEMS.length; i++) { if (PPE_ITEMS[i].key === key) { return PPE_ITEMS[i].label; } }
+  return '방진마스크';
+}
+/* 방진마스크 대장 번호 — 오늘 출근자만 팀 순서 → 가나다순으로 1번부터 (종이 대장 25줄 = 1장) */
+function ppeRoster(dateKey) {
+  var tg = ppeTargets(dateKey);
+  var order = {};
+  state.teams.forEach(function (t, i) { order[t.id] = i; });
+  tg.list.sort(function (a, b) {
+    var oa = a.p.teamId ? (order[a.p.teamId] === undefined ? 90 : order[a.p.teamId]) : 99;
+    var ob = b.p.teamId ? (order[b.p.teamId] === undefined ? 90 : order[b.p.teamId]) : 99;
+    if (oa !== ob) { return oa - ob; }
+    var ta = teamLabel(a.p.teamId), tb = teamLabel(b.p.teamId);
+    if (ta !== tb) { return ta.localeCompare(tb, 'ko'); }
+    return a.p.name.localeCompare(b.p.name, 'ko');
+  });
+  tg.list.forEach(function (x, i) {
+    x.no = i + 1;
+    x.sig = ppeSigOn(x.p.id, PPE_MASK_KEY, dateKey);
+  });
+  return tg;
+}
+function mdShort(k) {
+  var p = String(k).split('-');
+  return parseInt(p[1], 10) + '/' + parseInt(p[2], 10);
+}
+
+function ppeCardHTML(tg) {
+  var d = todayKey();
+  tg = tg || ppeRoster(d);
+  var item = state.ui.ppeItem || PPE_ITEMS[0].key;
+  if (!PPE_ITEMS.filter(function (x) { return x.key === item; }).length) { item = PPE_ITEMS[0].key; }
+
+  /* ① 안전보호구 · 시설물 — 품목 탭 + 이름 검색 → 제출함(잠금) / 미제출(서명 완료) */
+  var itemTabs = '<div class="ppe2-tabs">' + PPE_ITEMS.map(function (x) {
+    return '<button class="ppe2-tab' + (item === x.key ? ' on' : '') + '" data-act="ppeItem" data-key="' + x.key + '">' + x.label + '</button>';
+  }).join('') + '</div>';
+  var iq = normNameQ(state.ui.ppeIssueQ || '');
+  var issueSrc = iq ? activePeople().map(function (p) { return { p: p }; }) : tg.list.map(function (x) { return { p: x.p }; });
+  var issueList = issueSrc.filter(function (x) {
+    return !iq || normNameQ(x.p.name).indexOf(iq) >= 0;
+  }).sort(function (a, b) {
+    var ta = teamLabel(a.p.teamId), tb = teamLabel(b.p.teamId);
+    if (ta !== tb) { return ta.localeCompare(tb, 'ko'); }
+    return a.p.name.localeCompare(b.p.name, 'ko');
+  });
+  var issueRows = issueList.map(function (x) {
+    var g = ppeGrantOf(x.p.id, item);
+    return '<div class="ppe2-row' + (g ? ' got' : '') + '" data-name="' + esc(x.p.name) + '">' +
+      '<div class="ppe2-main"><div class="ppe2-name">' + esc(x.p.name) + '</div>' +
+      (g ? '' : '<div class="ppe2-sub">미제출 (낸 적 없음)</div>') +
+      '</div>' +
+      (g
+        ? '<button class="ppe2-lock" data-act="ppeUnlock" data-id="' + x.p.id + '" data-item="' + item + '" data-date="' + g.date + '" aria-label="재지급">🔒 ' + mdShort(g.date) + ' 제출함</button>'
+        : '<button class="ppe2-go" data-act="ppeGrant" data-id="' + x.p.id + '" data-item="' + item + '">서명 완료</button>') +
+      '</div>';
+  }).join('');
+
+  /* ② 방진마스크 일일 서명 — 검색 · 팀 필터 · 미서명만 · 25명씩 페이지 */
+  var q = normNameQ(state.ui.ppeQ || '');
+  var teamF = state.ui.ppeTeam || '';
+  var onlyUns = !!state.ui.ppeUnsignedOnly;
+  var done = tg.list.filter(function (x) { return x.sig && x.sig.signed; }).length;
+  var vis = tg.list.filter(function (x) {
+    if (teamF && String(x.p.teamId || '') !== teamF) { return false; }
+    if (onlyUns && x.sig && x.sig.signed) { return false; }
+    if (q && normNameQ(x.p.name).indexOf(q) < 0) { return false; }
+    return true;
+  });
+  var PER = 25;
+  var pages = Math.max(1, Math.ceil(vis.length / PER));
+  var page = Math.min(Math.max(1, state.ui.ppePage || 1), pages);
+  var chunk = vis.slice((page - 1) * PER, page * PER);
+  var range = chunk.length ? (chunk[0].no + '~' + chunk[chunk.length - 1].no + '번') : '0명';
+
+  var teamChips = '<div class="ppe2-teams">' +
+    '<button class="ppe2-team' + (teamF === '' ? ' on' : '') + '" data-act="ppeTeam" data-team="">전체</button>' +
+    state.teams.map(function (t) {
+      return '<button class="ppe2-team' + (teamF === t.id ? ' on' : '') + '" data-act="ppeTeam" data-team="' + t.id + '">' + esc(t.name) + '</button>';
+    }).join('') + '</div>';
+
+  var maskRows = chunk.map(function (x) {
+    var signed = !!(x.sig && x.sig.signed);
+    var st = statusOf(x.p);
+    return '<div class="ppe2-row' + (signed ? ' ok' : '') + '" data-name="' + esc(x.p.name) + '">' +
+      '<span class="ppe2-no">' + x.no + '</span>' +
+      '<div class="ppe2-main"><div class="ppe2-name">' + esc(x.p.name) + '</div>' +
+      '<div class="ppe2-sub">' + esc(teamLabel(x.p.teamId)) + ' · ' + esc(st) + ' · ' + (signed ? '오늘 마스크 수령' : '아직 서명 안 함') + '</div></div>' +
+      (signed
+        ? '<button class="ppe2-done" data-act="ppeMask" data-id="' + x.p.id + '" aria-pressed="true">서명 완료</button>'
+        : '<button class="ppe2-go" data-act="ppeMask" data-id="' + x.p.id + '">서명 완료하기</button>') +
+      '</div>';
+  }).join('');
+
+  var nav = '<div class="ppe2-pager">' +
+    '<button data-act="ppePage" data-d="-1"' + (page <= 1 ? ' disabled' : '') + ' aria-label="이전 25명">‹</button>' +
+    '<span class="pp-lab"><b>' + page + '페이지</b> · ' + range + '<em>전체 ' + vis.length + '명</em></span>' +
+    '<button data-act="ppePage" data-d="1"' + (page >= pages ? ' disabled' : '') + ' aria-label="다음 25명">›</button>' +
+    '</div>';
+
+  var exclRows = tg.off.map(function (x) {
+    return '<div class="ppe2-xrow"><span class="ppe2-name">' + esc(x.p.name) + ' (휴무)</span>' +
+      '<span class="ppe2-xsub">' + esc(x.reason || '휴무') + ' · 종이 대장에 적으면 안 됨!</span>' +
+      '<span class="ppe2-xbadge">제외됨</span></div>';
+  }).join('') + tg.absent.map(function (x) {
+    return '<div class="ppe2-xrow"><span class="ppe2-name">' + esc(x.p.name) + ' (미출근 / 결근)</span>' +
+      '<span class="ppe2-xsub">출근 기록 없음 · 종이 대장에 적으면 안 됨!</span>' +
+      '<span class="ppe2-xbadge">제외됨</span></div>';
+  }).join('');
+
+  return '<div class="card ppe2-card" id="ppeCard">' +
+    '<div class="ppe2-head"><div class="sec-t">1. 안전보호구 · 시설물 <span class="ppe2-cap">(중복 지급 방지)</span></div>' +
+    '<div class="muted">이미 받은 품목은 날짜가 뜨고 자동으로 잠겨요</div></div>' +
+    itemTabs +
+    '<label class="name-search ppe2-search" style="margin-top:6px"><span class="ns-ic">🔍</span>' +
+    '<input id="ppe_issue_q" class="ns-in" placeholder="이름으로 찾기" value="' + esc(state.ui.ppeIssueQ || '') + '">' +
+    '<button class="ns-x' + (state.ui.ppeIssueQ ? '' : ' hide') + '" data-act="ppeIssueClear" aria-label="검색 지우기">×</button></label>' +
+    '<div class="ppe2-list" id="ppeIssueList">' + (issueRows || '<div class="empty"><span class="e-ic">🛡️</span>' + (iq ? '검색 결과가 없습니다.' : '오늘 출근한 사람이 없습니다.') + '</div>') + '</div>' +
+    '<div class="ppe2-item-hint">🔒 제출함을 누르면 <b>재지급</b>(분실·교체) 확인 후 다시 제출할 수 있습니다.</div>' +
+
+    '<div class="ppe2-head" style="margin-top:16px"><div class="sec-t">2. 방진마스크 일일 서명 (' + shortDate(d) + ' 출근자만)</div>' +
+    '<div class="muted">휴무 · 결근자는 빼서 종이 대장 적을 때 실수 0%</div></div>' +
+    '<div class="ppe2-toolbar">' +
+    '<label class="name-search ppe2-search"><span class="ns-ic">🔍</span>' +
+    '<input id="ppe_q" class="ns-in" placeholder="이름으로 찾기" value="' + esc(state.ui.ppeQ || '') + '">' +
+    '<button class="ns-x' + (state.ui.ppeQ ? '' : ' hide') + '" data-act="ppeClear" aria-label="검색 지우기">×</button></label>' +
+    '<button class="ppe2-uns' + (onlyUns ? ' on' : '') + '" data-act="ppeUnsigned" aria-pressed="' + (onlyUns ? 'true' : 'false') + '">미서명만 보기</button>' +
+    '</div>' +
+    teamChips +
+    '<div class="ppe2-counts"><span class="ok">서명 완료 <b>' + done + '</b></span><span class="no">미서명 <b>' + (tg.list.length - done) + '</b></span></div>' +
+    nav +
+    '<div class="ppe2-list" id="ppeList">' + (maskRows || '<div class="empty"><span class="e-ic">🛡️</span>조건에 맞는 출근자가 없습니다.<br>검색어 · 팀 필터를 바꿔 보세요.</div>') + '</div>' +
+    (tg.off.length + tg.absent.length ?
+      '<div class="ppe2-xbox"><div class="ppe2-xt">⛔ 제외됨 <b>' + (tg.off.length + tg.absent.length) + '명</b> — 서명 체크 불가</div>' + exclRows + '</div>'
+      : '') +
+    '<div class="ppe2-note">번호는 <b>오늘 출근자</b>를 팀 · 가나다순으로 1번부터 매긴 것입니다. 종이 대장 <b>25줄 = 1장</b>과 맞춰 보세요. 한 사람당 하루 1번만 서명됩니다(중복은 DB에서 차단).</div>' +
+    '</div>';
+}
+
+/* 지게차일정 */
+function liftForkliftView() {
+  var d = state.ui.liftForkDate || todayKey();
+  var list = liftListOf('forklift', d);
+  var pending = list.filter(function (s) { return !s.done; }).length;
+  return '<div class="card">' +
+    '<div class="card-head"><div><div class="sec-t">🚜 지게차일정</div>' +
+    '<div class="muted">' + (pending ? '미완료 ' + pending + '건 · ' : '') + '날짜 · 작업 구역 · 담당자</div></div>' +
+    '<button class="lift-add" data-act="liftNew" data-kind="forklift">＋ 등록</button></div>' +
+    liftDateNav('liftForkDay', 'liftForkDate') +
+    '<div class="lift-list">' +
+    (list.length ? list.map(function (s) { return liftRowHTML(s, 'forklift'); }).join('') :
+      '<div class="empty"><span class="e-ic">🚜</span>이 날짜에 지게차 일정이 없습니다.<br><b>＋ 등록</b>으로 작업 구역 · 내용을 넣어 주세요.</div>') +
+    '</div></div>' +
+    '<div class="foot-note">완료 체크하면 목록에 완료로 표시되고 다른 사람 화면에도 바로 반영됩니다</div>';
+}
+
+/* 자재주문내역 */
+function liftOrdersView() {
+  var f = state.ui.orderFilter || 'all';
+  var list = state.materialOrders.slice();
+  if (f === 'wait') { list = list.filter(function (o) { return !o.received; }); }
+  if (f === 'done') { list = list.filter(function (o) { return o.received; }); }
+  var wait = state.materialOrders.filter(function (o) { return !o.received; }).length;
+  var chips = [['all', '전체'], ['wait', '입고 대기'], ['done', '입고 완료']];
+  var rows = list.map(function (o) {
+    return '<div class="lift-row order' + (o.received ? ' done' : '') + '">' +
+      '<div class="lr-time">' + shortDate(o.date) + '</div>' +
+      '<div class="lr-main"><div class="lr-title">' + esc(o.item) + (o.qty ? ' <span class="tag tag-job">' + esc(o.qty) + '</span>' : '') + '</div>' +
+      '<div class="lr-sub">' + esc(o.vendor || '업체 미입력') + (o.memo ? ' · ' + esc(o.memo) : '') + '</div></div>' +
+      '<div class="lr-acts"><button class="lift-chk' + (o.received ? ' on' : '') + '" data-act="orderReceived" data-id="' + o.id + '" aria-pressed="' + (o.received ? 'true' : 'false') + '">' +
+      (o.received ? '✅ 입고 완료' : '입고 대기') + '</button>' +
+      '<button class="lift-ic" data-act="orderEdit" data-id="' + o.id + '" aria-label="수정">✎</button>' +
+      '<button class="lift-ic del" data-act="orderDel" data-id="' + o.id + '" aria-label="삭제">🗑</button></div></div>';
+  }).join('');
+  return '<div class="card">' +
+    '<div class="card-head"><div><div class="sec-t">📦 자재주문내역</div>' +
+    '<div class="muted">입고 대기 <b>' + wait + '</b>건 · 들어오면 <b>입고 완료</b>로 바꿔 주세요</div></div>' +
+    '<button class="lift-add" data-act="orderNew">＋ 등록</button></div>' +
+    '<div class="filter-row">' + chips.map(function (c) {
+      return '<button class="fchip' + (f === c[0] ? ' on' : '') + '" data-act="orderFilter" data-f="' + c[0] + '">' + c[1] + '</button>';
+    }).join('') + '</div>' +
+    '<div class="lift-list">' + (rows || '<div class="empty"><span class="e-ic">📦</span>주문 내역이 없습니다.<br><b>＋ 등록</b>으로 품명 · 수량을 넣어 주세요.</div>') + '</div></div>' +
+    '<div class="foot-note">입고 여부는 이 화면에서 바로 바꿀 수 있습니다</div>';
+}
+
+/* 공도구리스트 — 실제 엑셀(공도구 · 자율점검 · 소화기) 기준 · 공구장님용 큰 UI */
+var TOOL_CATS = ['공도구', '자율점검', '소화기'];
+var TOOL_META = {
+  '공도구': { sheet: '갱신 공도구 점검', title: '갱신 공도구 반입 점검 LIST(P5 FAB1 PH1 FAB)' },
+  '자율점검': { sheet: '갱신 자율 점검', title: '갱신 자율 점검 LIST(P5 FAB1 PH1 FAB)' },
+  '소화기': { sheet: '갱신 소화기 점검 필증', title: '갱신 소화기 점검 필증 LIST(P5 FAB1 PH1 FAB)' }
+};
+var TOOL_HEAD = { loc: 'P5 4F A-B 49-50', applicant: '모화수 (010-9640-8223)', time: '08:30:00' };
+function toolCatCount(cat) {
+  return state.sharedTools.filter(function (t) { return cat === 'all' || t.category === cat; }).length;
+}
+function toolQtyTotal(cat) {
+  return state.sharedTools.filter(function (t) { return cat === 'all' || t.category === cat; })
+    .reduce(function (n, t) { return n + (t.quantity || 0); }, 0);
+}
+
+function liftToolsView() {
+  var f = state.ui.toolFilter || 'all';
+  var list = state.sharedTools.filter(function (t) { return f === 'all' || t.category === f; });
+  var cats = [['all', '전체']].concat(TOOL_CATS.map(function (c) { return [c, c]; }));
+  var chips = '<div class="tool-cats">' + cats.map(function (c) {
+    return '<button class="tool-cat' + (f === c[0] ? ' on' : '') + '" data-act="toolFilter" data-f="' + c[0] + '">' +
+      '<b>' + c[1] + '</b><span>' + toolCatCount(c[0]) + '종 · ' + toolQtyTotal(c[0]) + '개</span></button>';
+  }).join('') + '</div>';
+
+  var rows = list.map(function (t) {
+    var ok = t.status !== '불량';
+    return '<div class="tool-row' + (ok ? '' : ' bad') + '" data-id="' + t.id + '" data-name="' + esc(t.name) + '">' +
+      '<div class="tr-main"><div class="tr-name">' + esc(t.name) + '</div>' +
+      '<div class="tr-sub">' + esc(t.category) + ' · ' + esc(t.company || '한양이엔지(PCW)') +
+      (t.checkDate ? ' · 점검 ' + shortDate(t.checkDate) : '') + '</div></div>' +
+      '<button class="tool-status' + (ok ? ' ok' : ' bad') + '" data-act="toolStatus" data-id="' + t.id + '" aria-pressed="' + (!ok) + '">' +
+      (ok ? '정상' : '불량') + '</button>' +
+      '<div class="tool-qty-ctl">' +
+      '<button class="tq-btn" data-act="toolDec" data-id="' + t.id + '" aria-label="하나 줄이기">－</button>' +
+      '<button class="tq-num" data-act="toolQtyEdit" data-id="' + t.id + '" aria-label="갯수 수정">' + (t.quantity || 0) + '개</button>' +
+      '<button class="tq-btn" data-act="toolInc" data-id="' + t.id + '" aria-label="하나 늘리기">＋</button>' +
+      '</div>' +
+      '<button class="lift-ic" data-act="toolEdit" data-id="' + t.id + '" aria-label="이름 · 정보 수정">✎</button>' +
+      '</div>';
+  }).join('');
+
+  return '<div class="card tool-card">' +
+    '<div class="card-head"><div><div class="sec-t">🧰 공도구리스트</div>' +
+    '<div class="muted">' + (f === 'all' ? '전체 ' + toolCatCount('all') + '종 · ' + toolQtyTotal('all') + '개' : esc(f) + ' ' + toolCatCount(f) + '종 · ' + toolQtyTotal(f) + '개') +
+    ' · 갯수를 눌러 바로 고칠 수 있습니다</div></div></div>' +
+    chips +
+    '<button class="tool-add-big" data-act="toolNew">＋ 공도구 추가</button>' +
+    '<div class="tool-list">' + (rows || '<div class="empty"><span class="e-ic">🧰</span>이 분류에 등록된 공도구가 없습니다.<br><b>＋ 공도구 추가</b>를 눌러 주세요.</div>') + '</div>' +
+    '<button class="tool-export" data-act="toolExport">📊 엑셀 내보내기 <span>원본 양식 3장</span></button>' +
+    '<div class="hint">엑셀은 <b>공도구 · 자율점검 · 소화기</b> 3장으로 나오고, 갯수만큼 <b>품명-1 ~ 품명-N</b> 으로 펼쳐집니다.</div>' +
+    '</div>' +
+    '<div class="foot-note">공구장님 화면 · 갯수는 − / ＋ 또는 숫자를 눌러 수정 · 상태는 정상/불량</div>';
+}
+
+/* 관리자 전체 현황에 붙는 양중 요약 (4탭 UX 는 그대로) */
+function adminLiftCard() {
+  if (!isAdminView()) { return ''; }
+  var d = todayKey();
+  var dl = liftListOf('delivery', d).length;
+  var fk = liftListOf('forklift', d).length;
+  var wait = state.materialOrders.filter(function (o) { return !o.received; }).length;
+  var tg = ppeTargets(d);
+  var done = 0;
+  tg.list.forEach(function (x) { var s = ppeSigOn(x.p.id, PPE_MASK_KEY, d); if (s && s.signed) { done++; } });
+  return '<div class="card lift-admin">' +
+    '<div class="card-head"><div class="sec-t">🏗️ 양중</div>' +
+    '<span class="pill-mini">오늘</span></div>' +
+    '<div class="lift-mini">' +
+    '<span>반입 <b>' + dl + '</b></span><span>지게차 <b>' + fk + '</b></span>' +
+    '<span>입고 대기 <b>' + wait + '</b></span>' +
+    '<span>보호구 미서명 <b>' + (tg.list.length - done) + '</b></span></div>' +
+    '<button class="btn btn-line sm block" style="margin-top:10px" data-act="role" data-role="lifting">양중 화면 열기 ›</button>' +
+    '</div>';
 }
