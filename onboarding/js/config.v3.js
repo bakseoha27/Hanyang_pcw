@@ -13,7 +13,7 @@ var DOC_TYPES = [
   { key: 'edu',     label: '기초이수증', icon: '📜', required: true },
   { key: 'bank',    label: '통장사본',   icon: '🏦', required: true },
   { key: 'photo',   label: '증명사진',   icon: '🙂', required: true },
-  { key: 'health',  label: '건강검진',   icon: '🏥', required: true },
+  { key: 'health',  label: '건강검진',   icon: '🏥', required: false },
   { key: 'opinion', label: '소견서',     icon: '🗒️', required: false },
   { key: 'medicine', label: '약봉투',   icon: '💊', required: false },
   { key: 'career',  label: '경력증명서', icon: '📄', required: true }

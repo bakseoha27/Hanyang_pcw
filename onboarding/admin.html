@@ -7,7 +7,7 @@
 <title>신규입사자 서류 관리 · 한양 pcw팀</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="../icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="css/app.v2.css">
+<link rel="stylesheet" href="css/app.v3.css">
 <style>
   body{background:#EEF2F8;}
   .login-wrap{max-width:430px;margin:0 auto;padding:26px 16px 40px;min-height:100vh;}
@@ -56,6 +56,13 @@
 
   <div class="abody">
     <div class="panel">
+      <div class="tabs" id="tabs">
+        <button type="button" class="tab on" data-tab="active">진행중 <b id="cntActive">0</b></button>
+        <button type="button" class="tab" data-tab="archived">취합완료 <b id="cntArchived">0</b></button>
+      </div>
+    </div>
+
+    <div class="panel">
       <div class="pb">
         <div class="stat3">
           <div class="s"><small>전체 제출</small><b id="statAll">0</b></div>
@@ -66,6 +73,8 @@
           <button class="btn grow" id="btnExcel">📊 엑셀 취합 다운로드</button>
           <button class="btn grow green" id="btnZip">📦 서류 ZIP 다운로드</button>
           <button class="btn grow gray" id="btnRefresh">🔄 새로고침</button>
+          <button class="btn grow" id="btnArchive">✅ 취합완료로 이동</button>
+          <button class="btn grow gray" id="btnRestore" style="display:none">↩ 진행중으로 복구</button>
           <button class="btn grow red" id="btnDelete">🗑️ 입사취소 삭제</button>
         </div>
       </div>
@@ -80,7 +89,7 @@
         </label>
       </div>
       <div class="pb">
-        <div id="listNotice" class="sub" style="margin:0 0 10px;color:#98A2B3;font-size:11.5px">선택한 사람이 없으면 전체 인원으로 처리됩니다. (삭제는 반드시 선택 후)</div>
+        <div id="listNotice" class="sub" style="margin:0 0 10px;color:#98A2B3;font-size:11.5px">선택한 사람이 없으면 이 탭의 전체 인원으로 처리됩니다. (삭제·취합완료 이동은 반드시 선택 후)</div>
         <div class="list" id="list"></div>
         <div id="empty" class="hide" style="text-align:center;color:#98A2B3;font-size:13px;padding:28px 0">아직 제출된 서류가 없습니다.</div>
       </div>
@@ -101,7 +110,7 @@
 
 <script src="vendor/exceljs.min.js"></script>
 <script src="vendor/jszip.min.js"></script>
-<script src="js/config.v2.js"></script>
-<script src="js/admin.v2.js"></script>
+<script src="js/config.v3.js"></script>
+<script src="js/admin.v3.js"></script>
 </body>
 </html>

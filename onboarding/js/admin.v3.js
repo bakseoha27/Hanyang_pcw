@@ -13,6 +13,7 @@
     rows: [],
     sel: {},
     q: '',
+    tab: 'active',
     busy: false,
     detailId: null
   };
@@ -54,6 +55,12 @@
     if (!iso) { return ''; }
     var d = new Date(iso);
     return isNaN(d) ? '' : d;
+  }
+  function isNum(v) { return v != null && String(v).trim() !== '' && !isNaN(Number(String(v).replace(/,/g, ''))); }
+  function wageText(v) {
+    var s = String(v == null ? '' : v).trim();
+    if (!s) { return ''; }
+    return isNum(s) ? Number(String(s).replace(/,/g, '')).toLocaleString('ko-KR') + '원' : s;
   }
   function filesOf(row) {
     var arr = Array.isArray(row.files_json) ? row.files_json : [];
@@ -170,22 +177,37 @@
   }
 
   /* ---------------- 렌더 ---------------- */
+  function isArchived(r) { return !!r.archived_at; }
+  function tabRows() {
+    var want = S.tab === 'archived';
+    return S.rows.filter(function (r) { return isArchived(r) === want; });
+  }
   function filtered() {
+    var rows = tabRows();
     var q = S.q.trim().toLowerCase();
-    if (!q) { return S.rows; }
-    return S.rows.filter(function (r) {
-      return [r.name, r.phone, r.job_role, r.bank].join(' ').toLowerCase().indexOf(q) >= 0;
+    if (!q) { return rows; }
+    return rows.filter(function (r) {
+      return [r.name, r.phone, r.job_role, r.bank, r.referrer].join(' ').toLowerCase().indexOf(q) >= 0;
     });
   }
 
   function render() {
     var rows = filtered();
     var list = $('#list');
-    var all = S.rows;
-    $('#statAll').textContent = all.length;
-    $('#statMiss').textContent = all.filter(function (r) { return missingOf(r).length > 0; }).length;
+    var tab = tabRows();
+
+    // 탭 인원 수 + 현재 탭 기준 통계
+    $('#cntActive').textContent = S.rows.filter(function (r) { return !isArchived(r); }).length;
+    $('#cntArchived').textContent = S.rows.filter(function (r) { return isArchived(r); }).length;
+    $('#statAll').textContent = tab.length;
+    $('#statMiss').textContent = tab.filter(function (r) { return missingOf(r).length > 0; }).length;
     var t = new Date(); t.setHours(0, 0, 0, 0);
-    $('#statToday').textContent = all.filter(function (r) { return new Date(r.created_at) >= t; }).length;
+    $('#statToday').textContent = tab.filter(function (r) { return new Date(r.created_at) >= t; }).length;
+
+    var arch = S.tab === 'archived';
+    $('#btnArchive').style.display = arch ? 'none' : '';
+    $('#btnRestore').style.display = arch ? '' : 'none';
+    $('#empty').textContent = arch ? '취합완료된 인원이 없습니다.' : '아직 제출된 서류가 없습니다.';
 
     if (!rows.length) {
       list.innerHTML = '';
@@ -203,6 +225,7 @@
       }).join('');
       var tags = '<span class="tag job">' + esc(r.job_role || '직종 미기재') + '</span>';
       if (r.status === 'hired') { tags += '<span class="tag hired">입사확정</span>'; }
+      if (isArchived(r)) { tags += '<span class="tag hired">취합완료</span>'; }
       if (miss.length) { tags += '<span class="tag miss">미비 ' + miss.length + '</span>'; }
       return ''
         + '<div class="srow' + (S.sel[r.id] ? ' sel' : '') + '" data-id="' + r.id + '">'
@@ -210,6 +233,7 @@
         + '<div class="grow">'
         + '<div class="nm"><b>' + esc(r.name) + '</b>' + tags + '</div>'
         + '<div class="ln">' + esc(fmtPhone(r.phone)) + ' · ' + esc(dstr(r.created_at)) + '</div>'
+        + (isArchived(r) ? '<div class="ln" style="color:#1D4ED8">취합 ' + esc(dstr(r.archived_at)) + '</div>' : '')
         + (miss.length ? '<div class="ln" style="color:#B42318">미제출: ' + esc(miss.join(', ')) + '</div>' : '')
         + '<div class="dots">' + dots + '</div>'
         + '</div>'
@@ -230,9 +254,10 @@
   }
 
   function targets() {
+    var rows = filtered();
     var ids = Object.keys(S.sel).filter(function (k) { return S.sel[k]; });
-    if (!ids.length) { return S.rows.slice(); }
-    return S.rows.filter(function (r) { return S.sel[r.id]; });
+    if (!ids.length) { return rows; }
+    return rows.filter(function (r) { return S.sel[r.id]; });
   }
 
   /* 상세 — 파일 이름 · 검진일/종류 수정 */
@@ -323,8 +348,9 @@
       ['본인 명의', r.phone_self_owned],
       ['숙소', r.housing],
       ['은행 / 계좌', (r.bank || '') + ' ' + (r.account_number || '')],
+      ['입금자명(예금주)', r.account_holder],
       ['직종', r.job_role],
-      ['단가', r.daily_wage ? Number(r.daily_wage).toLocaleString('ko-KR') + '원' : ''],
+      ['단가', wageText(r.daily_wage)],
       ['총 경력', r.total_career],
       ['반도체 경력', r.semi_career],
       ['이메일', r.email],
@@ -332,9 +358,11 @@
       ['조끼 / 안전화', (r.vest_size || '') + ' / ' + (r.shoe_size || '')],
       ['보안경', r.glasses_type],
       ['보유 자격', (Array.isArray(r.certs) ? r.certs.join(', ') : '')],
+      ['소개자', r.referrer],
       ['건강검진', examText(r, map)],
       ['제출일', dstr(r.created_at)],
-      ['상태', r.status === 'hired' ? '입사확정' : '제출'],
+      ['취합완료', r.archived_at ? dstr(r.archived_at) : ''],
+      ['상태', isArchived(r) ? '취합완료' : (r.status === 'hired' ? '입사확정' : '제출')],
       ['동의', '개인정보 ' + dstr(r.agreed_privacy_at) + ' · 고유식별 ' + dstr(r.agreed_unique_id_at) + ' · 민감정보 ' + dstr(r.agreed_sensitive_at)]
     ];
     var h = '<dl class="kv">';
@@ -421,6 +449,7 @@
     { key: 'daily_wage',    w: 9.5,  t: '월급/일당',       a: 'right' },
     { key: 'bank',          w: 11.0, t: '은행명',          a: 'center' },
     { key: 'account_number',w: 18.9, t: '계좌번호',        a: 'center' },
+    { key: 'account_holder',w: 13.0, t: '입금자명',       a: 'center' },
     { key: 'job_role',      w: 13.0, t: '직종',           a: 'center' },
     { key: 'housing',       w: 12.5, t: '숙소',           a: 'center' },
     { key: 'total_career',  w: 10.4, t: '총경력',          a: 'center' },
@@ -431,6 +460,7 @@
     { key: 'shoe_size',     w: 12.4, t: '안전화 사이즈',    a: 'center' },
     { key: 'glasses_type',  w: 16.1, t: '보안경(일반/안경)', a: 'center' },
     { key: 'certs',         w: 24.3, t: '보유 자격 현황',   a: 'left' },
+    { key: 'referrer',      w: 14.0, t: '소개자',          a: 'center' },
     /* ↓ 여기부터 서류 제출 현황 (온보딩에서 추가) */
     { key: 'd_idcard',      w: 8.0,  t: '신분증',          a: 'center' },
     { key: 'd_edu',         w: 9.0,  t: '기초이수증',       a: 'center' },
@@ -459,9 +489,10 @@
       address: r.address || '',
       phone_os: r.phone_os || '',
       phone: fmtPhone(r.phone),
-      daily_wage: r.daily_wage ? Number(r.daily_wage) : null,
+      daily_wage: isNum(r.daily_wage) ? Number(String(r.daily_wage).replace(/,/g, '')) : (r.daily_wage || ''),
       bank: r.bank || '',
       account_number: r.account_number || '',
+      account_holder: r.account_holder || '',
       job_role: r.job_role || '',
       housing: r.housing || '',
       total_career: r.total_career || '',
@@ -472,11 +503,12 @@
       shoe_size: r.shoe_size ? Number(r.shoe_size) : null,
       glasses_type: r.glasses_type || '',
       certs: Array.isArray(r.certs) ? r.certs.join(', ') : '',
+      referrer: r.referrer || '',
       d_idcard: yn('idcard'), d_edu: yn('edu'), d_bank: yn('bank'), d_photo: yn('photo'),
       d_health: yn('health'), d_opinion: yn('opinion'), d_medicine: yn('medicine'), d_career: yn('career'),
       exam: examText(r, map),
       created: dstr(r.created_at),
-      status: r.status === 'hired' ? '입사확정' : '제출',
+      status: isArchived(r) ? '취합완료' : (r.status === 'hired' ? '입사확정' : '제출'),
       ag1: dstr(r.agreed_privacy_at),
       ag2: dstr(r.agreed_unique_id_at),
       ag3: dstr(r.agreed_sensitive_at)
@@ -604,6 +636,24 @@
     } catch (e) { toast(e.message || '변경하지 못했습니다.', 3000); }
   }
 
+  async function setArchived(rows, on) {
+    if (!rows.length) { return; }
+    var names = rows.map(function (r) { return r.name; }).join(', ');
+    var ask = on
+      ? '취합완료로 옮길까요?\n\n대상: ' + names + '\n\n· [취합완료] 탭으로 이동합니다. 서류는 그대로 보관됩니다.'
+      : '진행중으로 되돌릴까요?\n\n대상: ' + names;
+    if (!confirm(ask)) { return; }
+    try {
+      var d = await call(on ? 'archive' : 'unarchive', { ids: rows.map(function (r) { return r.id; }) });
+      var n = (d.results || []).filter(function (x) { return x.ok; }).length;
+      S.sel = {};
+      await refresh(true);
+      toast((on ? '취합완료로 옮겼습니다' : '진행중으로 복구했습니다') + ' (' + n + '명)');
+    } catch (e) {
+      toast(e.message || '변경하지 못했습니다.', 3200);
+    }
+  }
+
   async function deleteRows(rows) {
     if (!rows.length) { return; }
     var names = rows.map(function (r) { return r.name; }).join(', ');
@@ -643,6 +693,24 @@
   $('#btnZip').addEventListener('click', function () {
     var rows = targets();
     exportZip(rows).catch(function (e) { toast((e && e.message) || 'ZIP을 만들지 못했습니다.', 3600); });
+  });
+  $$('#tabs .tab').forEach(function (b) {
+    b.addEventListener('click', function () {
+      S.tab = b.getAttribute('data-tab') === 'archived' ? 'archived' : 'active';
+      S.sel = {};
+      $$('#tabs .tab').forEach(function (x) { x.classList.toggle('on', x === b); });
+      render();
+    });
+  });
+  $('#btnArchive').addEventListener('click', function () {
+    var rows = S.rows.filter(function (r) { return S.sel[r.id]; });
+    if (!rows.length) { toast('취합완료로 옮길 사람을 먼저 체크해 주세요.', 3000); return; }
+    setArchived(rows, true);
+  });
+  $('#btnRestore').addEventListener('click', function () {
+    var rows = S.rows.filter(function (r) { return S.sel[r.id]; });
+    if (!rows.length) { toast('진행중으로 복구할 사람을 먼저 체크해 주세요.', 3000); return; }
+    setArchived(rows, false);
   });
   $('#btnDelete').addEventListener('click', function () {
     var rows = S.rows.filter(function (r) { return S.sel[r.id]; });

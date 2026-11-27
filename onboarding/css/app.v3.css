@@ -123,6 +123,14 @@ main{padding:14px 14px 0;}
 .d2box .d2acts .btn{height:40px;font-size:13px;border-radius:11px;}
 .field.d2need .file{border-color:#F04438;border-style:solid;background:#FFF7F6;box-shadow:0 0 0 3px rgba(240,68,56,.10);}
 .field.d2need > label{color:#B42318;}
+
+/* D2 토글 */
+.d2ask{margin:14px 0 13px;}
+.d2ask .chips span{padding:8px 13px;font-size:12.5px;}
+.d2ask .chips input:checked + span{border-color:#F04438;background:#FFF1F0;color:#B42318;}
+.d2ask .sub{margin:7px 0 0;}
+.d2ask .sub b{color:#B42318;}
+input.sync{background:#F4F7FF;color:#475467;}
 .hfile.bad{border-color:#FDA29B;background:#FFF7F6;}
 .hfile.bad .hstat{color:#912018;font-weight:900;}
 .note{margin:8px 0 12px;padding:10px 12px;border-radius:12px;background:#FFF8EC;color:#93370D;font-size:12.5px;line-height:1.5;}
@@ -238,6 +246,15 @@ main{padding:14px 14px 0;}
 .feditform label{display:block;font-size:11px;font-weight:900;color:#475467;margin-bottom:4px;}
 .feditform input,.feditform select{width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:9px;font-size:13px;background:#fff;}
 .hide{display:none !important;}
+
+/* 구역 소제목 · 관리자 탭 */
+.zh{margin:16px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line);font-size:13.5px;font-weight:900;color:#344054;letter-spacing:-.2px;}
+.card h2 + .zh{margin-top:2px;}
+.tabs{display:flex;gap:8px;padding:11px 13px;}
+.tab{flex:1;height:42px;border:1.5px solid var(--line);border-radius:12px;background:#fff;color:#475467;
+  font-size:13.5px;font-weight:900;letter-spacing:-.2px;cursor:pointer;}
+.tab b{font-weight:900;margin-left:2px;}
+.tab.on{border-color:var(--blue);background:var(--blue-soft);color:var(--blue);}
 .mono{font-family:"D2Coding","Roboto Mono",monospace;font-size:12px;}
 
 /* guide */

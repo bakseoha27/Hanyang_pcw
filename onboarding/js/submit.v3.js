@@ -66,6 +66,12 @@
     return String(s || '').replace(/[\\/:*?"<>|\r\n\t]/g, '').replace(/\s+/g, ' ').trim();
   }
 
+  /* 화면 표시용 파일명 줄이기 (저장·다운로드 이름은 그대로) */
+  function shortFile(n) {
+    var v = String(n || '');
+    return v.length > 24 ? v.slice(0, 22) + '…' : v;
+  }
+
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -82,11 +88,10 @@
   }
 
   /* ---------------- 입력 자동 서식 ---------------- */
-  var rrn = $('#rrn'), phone = $('#phone'), account = $('#account_number'), wage = $('#daily_wage'), shoe = $('#shoe_size');
+  var rrn = $('#rrn'), phone = $('#phone'), account = $('#account_number'), shoe = $('#shoe_size');
   rrn.addEventListener('input', function () { this.value = fmtRRN(this.value); updateProgress(); });
   phone.addEventListener('input', function () { this.value = fmtPhone(this.value); updateProgress(); });
   account.addEventListener('input', function () { this.value = String(this.value).replace(/[^\d-]/g, '').slice(0, 20); });
-  wage.addEventListener('input', function () { this.value = fmtWon(this.value); });
   shoe.addEventListener('input', function () { this.value = digitsOnly(this.value, 3); });
 
   $$('input[type=text], input[type=email], input[type=date], select, textarea').forEach(function (el) {
@@ -97,16 +102,34 @@
     el.addEventListener('change', updateProgress);
   });
 
+  /* 입금자명(예금주) — '본인 명의' 체크 시 성명을 실시간 동기화 */
+  var nameField = $('#name'), holderField = $('#account_holder'), holderSelf = $('#holder_self');
+  function holderIsSelf() { return !!(holderSelf && holderSelf.checked); }
+  function syncHolder() {
+    if (!holderField) { return; }
+    var on = holderIsSelf();
+    holderField.readOnly = on;
+    holderField.classList.toggle('sync', on);
+    if (on) { holderField.value = String((nameField && nameField.value) || '').replace(/\s+/g, ' ').trim(); }
+  }
+  if (holderSelf) {
+    holderSelf.addEventListener('change', function () {
+      syncHolder();
+      if (!holderIsSelf() && holderField) { holderField.focus(); }
+      updateProgress();
+    });
+  }
+  if (nameField) { nameField.addEventListener('input', syncHolder); }
+
   /* 직종 — 용접공 여부만 */
   function jobRole() {
     var w = $('#is_welder');
     return (w && w.checked) ? '용접공' : '';
   }
   function careerHint() {
+    // 카드에는 짧은 이름만 보여 준다. (용접공) 변환 이름은 저장·다운로드 때만 쓴다.
     var el = $('#careerName');
-    if (!el) { return; }
-    var j = jobRole();
-    el.textContent = '성명 경력증명서' + (j ? '(' + j + ')' : '') + '.pdf';
+    if (el) { el.textContent = '경력증명서'; }
   }
   var welderBox = $('#is_welder');
   if (welderBox) {
@@ -226,7 +249,10 @@
     var nameEl = row.querySelector('[data-name]');
     var thumb = row.querySelector('[data-thumb]');
     row.classList.add('done');
-    nameEl.textContent = (extra && extra.display) || (file.name + ' · ' + (file.size / 1048576).toFixed(1) + 'MB');
+    // 기술인 화면에는 원본 파일명만(길면 줄임) — 변환된 저장 이름은 보여 주지 않는다
+    var orig = String((file && file.name) || '');
+    if (orig.length > 24) { orig = orig.slice(0, 22) + '…'; }
+    nameEl.textContent = orig ? '첨부 완료 ✓ ' + orig : '첨부 완료 ✓';
     var pick = row.querySelector('[data-pick]');
     if (pick) { pick.textContent = '변경'; }
     if (thumb) {
@@ -322,7 +348,7 @@
         try {
           var blob = await imageToJpeg(file, 1400, 0.92);
           state.files[key] = { file: file, blob: blob, ext: 'jpg', mime: 'image/jpeg', converted: 'jpg' };
-          setFileRow(key, file, { display: file.name + ' → JPG 변환 완료 · ' + (blob.size / 1048576).toFixed(2) + 'MB' });
+          setFileRow(key, file);
           updateProgress();
         } catch (e) { alert(e.message || '사진 변환에 실패했어요.'); }
         return;
@@ -352,7 +378,7 @@
         try {
           var jpg = await imageToJpeg(file, 2000, 0.95);
           state.files[key] = { file: file, blob: jpg, ext: 'jpg', mime: 'image/jpeg', converted: 'jpg' };
-          setFileRow(key, file, { display: file.name + ' → JPG 변환 완료' });
+          setFileRow(key, file);
           updateProgress();
         } catch (e) { alert('아이폰 사진(HEIC)을 변환하지 못했어요. 사진첩에서 JPG로 저장한 뒤 올려 주세요.'); }
         return;
@@ -388,27 +414,52 @@
   function d2needed() {
     return state.health.some(function (h) { return !!h.d2; });
   }
+  /* 'D2 판정이신가요?' 체크 여부 — 소견서 필수·업로드 칸을 이 값으로 결정 */
+  function d2declared() {
+    var el = $('#d2Declare');
+    return !!(el && el.checked);
+  }
+  function d2required() {
+    return d2needed() || d2declared();
+  }
 
   function updateD2(announce) {
-    var need = d2needed();
+    var auto = d2needed();
+    var decl = d2declared();
+    var need = auto || decl;
     var box = $('#d2Box');
+    var fields = $('#d2Fields');
     var fo = $('#field-opinion');
     var fm = $('#field-medicine');
     var req = $('#opinionReq');
     var opt = $('#opinionOpt');
+    var hint = $('#d2AskHint');
     var hasOpinion = !!state.files.opinion;
 
+    // 업로드 칸은 'D2 판정이신가요?' 체크(또는 PDF 자동 감지로 켜진 체크)일 때만 펼친다
+    if (fields) { fields.classList.toggle('hide', !decl); }
     if (fo) { fo.classList.toggle('d2need', need && !hasOpinion); }
-    if (fm) { fm.classList.toggle('d2need', need); }
+    if (fm) { fm.classList.toggle('d2need', need && decl); }
+    // PDF에서 D2가 감지된 경우엔 체크를 풀어도 소견서는 계속 필수
     if (req) { req.classList.toggle('hide', !need); }
     if (opt) { opt.textContent = need ? 'D2 판정 — 필수' : 'D2 판정을 받은 경우 필수'; }
+    if (hint) {
+      hint.innerHTML = auto
+        ? '검진 결과지(PDF)에서 <b>D2 판정</b>이 확인되어 자동으로 체크했습니다. 소견서는 필수입니다.'
+        : (decl
+          ? '소견서(<b>필수</b>) · 약봉투(선택) 올리는 칸이 열렸습니다.'
+          : 'D2 판정을 받으셨다면 체크해 주세요. 소견서(필수) · 약봉투(선택) 올리는 칸이 열립니다.');
+    }
     if (!box) { return; }
-    if (!need) { box.classList.add('hide'); return; }
+    if (!auto) { box.classList.add('hide'); return; }
 
     box.classList.remove('hide');
     var b = box.querySelector('b');
     var p = box.querySelector('p');
-    if (hasOpinion) {
+    if (!decl) {
+      if (b) { b.textContent = '⚠️ 검진 결과지에서 D2 판정이 확인되었습니다'; }
+      if (p) { p.textContent = '소견서는 필수입니다. 아래 버튼을 누르면 올리는 칸이 열립니다.'; }
+    } else if (hasOpinion) {
       if (b) { b.textContent = '✅ 소견서가 첨부되었습니다'; }
       if (p) { p.textContent = '복용 중인 약봉투 사진이 있으면 함께 올려 주세요. 없으면 넘어가셔도 됩니다.'; }
     } else {
@@ -431,7 +482,6 @@
 
   function renderHealth() {
     if (!healthList) { return; }
-    var nm = safeName(val('#name')) || '성명';
 
     if (!state.health.length) {
       healthList.innerHTML = '<div class="hfile busy" style="text-align:center;color:#98A2B3;font-size:12.5px;padding:16px 12px">아직 올린 검진 파일이 없습니다.</div>';
@@ -460,8 +510,8 @@
         + '<div class="' + cls + '" data-huid="' + esc(h.uid) + '">'
         + '<div class="hrow">'
         + '<div class="thumb">🏥</div>'
-        + '<div class="meta"><b>' + esc(ExamPDF.fileName(nm, h.date, h.type)) + '</b>'
-        + '<small>원본 ' + esc(h.file.name) + ' · ' + (h.blob.size / 1048576).toFixed(1) + 'MB</small></div>'
+        + '<div class="meta"><b>' + esc(shortFile(h.file.name)) + '</b>'
+        + '<small>첨부 완료 ✓ · ' + (h.blob.size / 1048576).toFixed(1) + 'MB</small></div>'
         + '<button type="button" class="hdel" data-hdel="' + esc(h.uid) + '" aria-label="삭제">✕</button>'
         + '</div>'
         + '<div class="hstat">' + stat + '</div>';
@@ -528,7 +578,12 @@
     updateProgress();
 
     for (var k = 0; k < made.length; k++) { await readHealth(made[k]); }
-    updateD2(made.some(function (m) { return m.d2; }));
+    var gotD2 = made.some(function (m) { return m.d2; });
+    // PDF에서 D2가 감지되면 'D2 판정이신가요?'를 자동으로 켜서 업로드 칸을 펼친다
+    var declEl = $('#d2Declare');
+    if (gotD2 && declEl) { declEl.checked = true; }
+    updateD2(gotD2);
+    updateProgress();
   }
 
   if (healthInput) {
@@ -584,19 +639,20 @@
   }
 
   function healthReady() {
-    return state.health.length > 0 && state.health.every(function (h) { return h.date && h.type && !expired(h); });
+    // 건강검진은 선택 — 올리지 않아도 되고, 올린 파일만 날짜·종류·유효기간을 본다
+    return state.health.every(function (h) { return h.date && h.type && !expired(h); });
   }
 
   function requiredState() {
     return [
       !!val('#name'), digitsOnly(val('#rrn')).length === 13, !!val('#address'),
       !!radio('phone_os'), digitsOnly(val('#phone')).length >= 10, !!radio('phone_self_owned'),
-      !!val('#bank'), !!digitsOnly(val('#account_number')), !!val('#daily_wage'),
+      !!val('#bank'), !!digitsOnly(val('#account_number')), !!val('#account_holder'), !!val('#daily_wage'),
       !!val('#total_career'), !!val('#semi_career'), !!val('#email'),
       !!val('#blood_type'), !!radio('vest_size'), !!val('#shoe_size'),
       !!radio('glasses_type'),
       !!state.files.idcard, !!state.files.edu, !!state.files.bank, !!state.files.photo,
-      healthReady(), (!d2needed() || !!state.files.opinion), !!state.files.career,
+      healthReady(), (!d2required() || !!state.files.opinion), !!state.files.career,
       agrees.every(function (a) { return a.checked; })
     ];
   }
@@ -631,6 +687,8 @@
       housing: null,
       bank: val('#bank'),
       account_number: val('#account_number'),
+      account_holder: val('#account_holder'),
+      referrer: val('#referrer'),
       job_role: jobRole(),
       daily_wage: digitsOnly(val('#daily_wage')),
       total_career: val('#total_career'),
@@ -676,6 +734,7 @@
     else if (!radio('phone_self_owned')) { problems.push(['#seg-owned', '본인 명의 휴대폰 여부를 골라 주세요.']); }
     else if (!val('#bank')) { problems.push(['#bank', '은행을 적어 주세요.']); }
     else if (!digitsOnly(val('#account_number'))) { problems.push(['#account_number', '계좌번호를 적어 주세요.']); }
+    else if (!val('#account_holder')) { problems.push(['#account_holder', '입금자명(예금주)을 적어 주세요.']); }
     else if (!val('#daily_wage')) { problems.push(['#daily_wage', '단가를 적어 주세요.']); }
     else if (!val('#total_career')) { problems.push(['#total_career', '총 경력을 적어 주세요.']); }
     else if (!val('#semi_career')) { problems.push(['#semi_career', '반도체 경력을 적어 주세요. 없으면 “없음”이라고 적어 주세요.']); }
@@ -689,11 +748,10 @@
     else if (!state.files.edu) { problems.push(['[data-file=edu]', '기초안전보건교육 이수증을 올려 주세요.']); }
     else if (!state.files.bank) { problems.push(['[data-file=bank]', '통장사본을 올려 주세요.']); }
     else if (!state.files.photo) { problems.push(['[data-file=photo]', '증명사진을 올려 주세요.']); }
-    else if (!state.health.length) { problems.push(['#healthAdd', '건강검진 결과지 PDF를 올려 주세요.']); }
     else if (state.health.some(function (h) { return h.state === 'reading'; })) { problems.push(['#healthList', '검진 PDF를 읽는 중입니다. 잠시 뒤 다시 눌러 주세요.']); }
     else if (state.health.some(function (h) { return !h.date || !h.type; })) { problems.push(['#healthList', '검진일자·종류를 읽지 못한 파일이 있어요. 날짜와 종류를 골라 주세요.']); }
     else if (state.health.some(expired)) { problems.push(['#healthList', '❌ 검진일로부터 1년이 지난 서류는 사용할 수 없습니다. 최근 1년 이내 검진 결과지(PDF)를 올려 주세요.']); }
-    else if (d2needed() && !state.files.opinion) { problems.push(['#field-opinion', 'D2 판정입니다. 소견서 PDF를 올려 주세요.']); }
+    else if (d2required() && !state.files.opinion) { problems.push(['#field-opinion', 'D2 판정입니다. 소견서 PDF를 올려 주세요.']); }
     else if (!state.files.career) { problems.push(['[data-file=career]', '경력증명서 PDF를 올려 주세요.']); }
     else if (!agrees.every(function (a) { return a.checked; })) { problems.push(['#agreeAll', '개인정보 동의 3가지를 모두 체크해 주세요.']); }
     return problems;
@@ -758,6 +816,10 @@
     var problems = validate();
     if (problems.length) {
       var first = problems[0];
+      if (first[0] === '#field-opinion' && !d2declared()) {
+        var dEl = $('#d2Declare');
+        if (dEl) { dEl.checked = true; updateD2(false); }
+      }
       toast(first[1], 3200);
       var el = document.querySelector(first[0]);
       if (el && el.scrollIntoView) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
@@ -819,12 +881,12 @@
   function showDone(row, files) {
     $('#doneName').textContent = row.name + ' 님' + (row.job_role ? ' · ' + row.job_role : '');
     var byType = {};
-    files.forEach(function (f) { (byType[f.type] = byType[f.type] || []).push(f.name); });
+    files.forEach(function (f) { (byType[f.type] = byType[f.type] || []).push(f); });
     var h = '';
     DOC_TYPES.forEach(function (d) {
-      var names = byType[d.key] || [];
-      if (names.length) {
-        names.forEach(function (n) { h += '<div>✅ ' + esc(n) + '</div>'; });
+      var arr = byType[d.key] || [];
+      if (arr.length) {
+        h += '<div>✅ ' + esc(d.label) + (arr.length > 1 ? ' ' + arr.length + '개' : '') + '</div>';
       } else {
         h += '<div>⬜ ' + esc(d.label) + ' — 없음</div>';
       }
@@ -851,13 +913,29 @@
   /* D2 안내의 바로 올리기 버튼 */
   $$('[data-jump]').forEach(function (b) {
     b.addEventListener('click', function () {
+      var dEl = $('#d2Declare');
+      if (dEl && !dEl.checked) { dEl.checked = true; updateD2(false); }
       var row = $('[data-file="' + b.getAttribute('data-jump') + '"]');
       var inp = row && row.querySelector('input[type=file]');
       if (inp) { inp.click(); }
     });
   });
 
+  /* 'D2 판정이신가요?' 체크 → 소견서·약봉투 칸 펼침 */
+  var d2DeclareEl = $('#d2Declare');
+  if (d2DeclareEl) {
+    d2DeclareEl.addEventListener('change', function () {
+      updateD2(false);
+      updateProgress();
+      if (this.checked) {
+        var f = $('#d2Fields');
+        if (f) { try { f.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* 무시 */ } }
+      }
+    });
+  }
+
   careerHint();
+  syncHolder();
   updateD2(false);
 
   updateProgress();
