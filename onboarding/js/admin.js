@@ -448,11 +448,15 @@
     if (!window.JSZip) { toast('압축 라이브러리를 불러오지 못했어요.', 3200); return; }
     var zip = new JSZip();
     var items = [];
+    var nameCount = {};
     rows.forEach(function (r) {
       var map = filesOf(r);
+      var base = r.name || '이름없음';
+      nameCount[base] = (nameCount[base] || 0) + 1;
+      var folder = nameCount[base] === 1 ? base : base + '(' + nameCount[base] + ')';
       DOC_TYPES.forEach(function (d) {
         var f = map[d.key];
-        if (f && f.path) { items.push({ id: r.id, path: f.path, name: f.name, person: r.name || '이름없음' }); }
+        if (f && f.path) { items.push({ id: r.id, path: f.path, name: f.name, person: folder }); }
       });
     });
     if (!items.length) { toast('내려받을 서류가 없습니다.'); return; }
