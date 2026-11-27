@@ -231,7 +231,7 @@
     if (form) { form.classList.remove('hide'); }
     if (bar) { bar.classList.remove('hide'); }
 
-    // 게스트 미리보기 — 필드를 잠그지 않고, 제출도 막는다 (submit.v10.js 가 window.GUEST_MODE 를 본다)
+    // 게스트 미리보기 — 필드를 잠그지 않고, 제출도 막는다 (submit.v12.js 가 window.GUEST_MODE 를 본다)
     if (guest) {
       window.GUEST_MODE = true;
       var badge = $('#guestBadge');
