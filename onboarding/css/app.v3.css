@@ -255,6 +255,24 @@ input.sync{background:#F4F7FF;color:#475467;}
   font-size:13.5px;font-weight:900;letter-spacing:-.2px;cursor:pointer;}
 .tab b{font-weight:900;margin-left:2px;}
 .tab.on{border-color:var(--blue);background:var(--blue-soft);color:var(--blue);}
+
+/* 관리자 목록 표 */
+.tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.tbl{width:100%;min-width:760px;border-collapse:collapse;font-size:12.5px;}
+.tbl th{background:#F7FAFF;color:#475467;font-weight:900;font-size:11.5px;padding:9px 8px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--line);}
+.tbl td{padding:9px 8px;border-bottom:1px solid #EEF2F8;vertical-align:middle;white-space:nowrap;color:#344054;}
+.tbl tr.sel td{background:#F7FAFF;}
+.tbl .c-chk{width:28px;}
+.tbl .c-chk input{width:18px;height:18px;accent-color:var(--blue);}
+.tbl .c-name b{font-size:13.5px;font-weight:900;color:#101828;}
+.tbl .c-name .tag{margin-left:4px;}
+.tbl td.num{text-align:right;}
+.tbl .c-act button{font-size:11.5px;font-weight:900;color:var(--blue);text-decoration:underline;padding:1px 3px;white-space:nowrap;}
+.tbl .c-act button.del{color:var(--red);}
+.tag.out{background:#FFF1F0;color:#B42318;}
+.metaform{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0 4px;}
+.metaform .field{margin:0;}
+.metaform label{font-size:11.5px;}
 .mono{font-family:"D2Coding","Roboto Mono",monospace;font-size:12px;}
 
 /* guide */

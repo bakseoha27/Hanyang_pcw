@@ -670,6 +670,16 @@
   }
 
   /* ---------------- 제출 ---------------- */
+  /* 주민등록번호 뒷자리 첫 글자로 성별 계산 (2·4·6·8·0 = 여, 1·3·5·7·9 = 남) */
+  function genderFromRrn(rrnv) {
+    var d = digitsOnly(rrnv);
+    if (d.length < 7) { return ''; }
+    var g = d.charAt(6);
+    if (g === '1' || g === '3' || g === '5' || g === '7' || g === '9') { return '남'; }
+    if (g === '2' || g === '4' || g === '6' || g === '8' || g === '0') { return '여'; }
+    return '';
+  }
+
   function buildRow() {
     var name = safeName(val('#name'));
     var rrnv = fmtRRN(val('#rrn'));
@@ -680,6 +690,7 @@
       name: name,
       rrn: rrnv,
       birth6: birth6,
+      gender: genderFromRrn(rrnv),
       address: val('#address'),
       phone_os: radio('phone_os'),
       phone: fmtPhone(val('#phone')),
