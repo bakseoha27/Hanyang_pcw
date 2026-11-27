@@ -131,6 +131,10 @@ main{padding:14px 14px 0;}
 .d2ask .sub{margin:7px 0 0;}
 .d2ask .sub b{color:#B42318;}
 input.sync{background:#F4F7FF;color:#475467;}
+.warnline{margin:7px 0 0;font-size:12px;font-weight:900;color:#B42318;letter-spacing:-.2px;}
+.field.badholder #account_holder{border-color:#F04438;background:#FFF7F6;}
+.field.badholder > label{color:#B42318;}
+.sub.bad{color:#B42318;font-weight:800;}
 .hfile.bad{border-color:#FDA29B;background:#FFF7F6;}
 .hfile.bad .hstat{color:#912018;font-weight:900;}
 .note{margin:8px 0 12px;padding:10px 12px;border-radius:12px;background:#FFF8EC;color:#93370D;font-size:12.5px;line-height:1.5;}

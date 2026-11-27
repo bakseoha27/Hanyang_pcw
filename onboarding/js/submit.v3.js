@@ -105,6 +105,25 @@
   /* 입금자명(예금주) — '본인 명의' 체크 시 성명을 실시간 동기화 */
   var nameField = $('#name'), holderField = $('#account_holder'), holderSelf = $('#holder_self');
   function holderIsSelf() { return !!(holderSelf && holderSelf.checked); }
+  function normName(s) { return String(s == null ? '' : s).replace(/\s+/g, '').trim(); }
+  /* 입금자명(예금주)이 성명과 같은지 — 가족·타인 명의 계좌 차단 */
+  function holderMatches() {
+    var n = normName(val('#account_holder'));
+    return !!n && n === normName(val('#name'));
+  }
+  function holderOk() { return holderIsSelf() || holderMatches(); }
+  function holderWarn() {
+    var bad = !!val('#account_holder') && !!val('#name') && !holderMatches();
+    var f = holderField && holderField.closest ? holderField.closest('.field') : null;
+    if (f) { f.classList.toggle('badholder', bad); }
+    var hint = $('#holderHint');
+    if (hint) {
+      hint.classList.toggle('bad', bad);
+      hint.innerHTML = bad
+        ? '입금자명이 성명과 다릅니다. <b>본인 명의 계좌만</b> 입사할 수 있습니다.'
+        : '체크하면 위 <b>성명</b>과 똑같이 자동 입력됩니다. 체크를 풀면 직접 적을 수 있지만, <b>성명과 다른 이름은 제출되지 않습니다.</b>';
+    }
+  }
   function syncHolder() {
     if (!holderField) { return; }
     var on = holderIsSelf();
@@ -647,7 +666,7 @@
     return [
       !!val('#name'), digitsOnly(val('#rrn')).length === 13, !!val('#address'),
       !!radio('phone_os'), digitsOnly(val('#phone')).length >= 10, !!radio('phone_self_owned'),
-      !!val('#bank'), !!digitsOnly(val('#account_number')), !!val('#account_holder'), !!val('#daily_wage'),
+      !!val('#bank'), !!digitsOnly(val('#account_number')), !!val('#account_holder') && holderOk(), !!val('#daily_wage'),
       !!val('#total_career'), !!val('#semi_career'), !!val('#email'),
       !!val('#blood_type'), !!radio('vest_size'), !!val('#shoe_size'),
       !!radio('glasses_type'),
@@ -658,6 +677,7 @@
   }
 
   function updateProgress() {
+    holderWarn();
     var s = requiredState();
     var done = s.filter(Boolean).length;
     var pct = Math.round((done / s.length) * 100);
@@ -746,6 +766,7 @@
     else if (!val('#bank')) { problems.push(['#bank', '은행을 적어 주세요.']); }
     else if (!digitsOnly(val('#account_number'))) { problems.push(['#account_number', '계좌번호를 적어 주세요.']); }
     else if (!val('#account_holder')) { problems.push(['#account_holder', '입금자명(예금주)을 적어 주세요.']); }
+    else if (!holderOk()) { problems.push(['#account_holder', '본인 명의 계좌만 입사할 수 있습니다. 입금자명(예금주)을 성명과 같게 적어 주세요.']); }
     else if (!val('#daily_wage')) { problems.push(['#daily_wage', '단가를 적어 주세요.']); }
     else if (!val('#total_career')) { problems.push(['#total_career', '총 경력을 적어 주세요.']); }
     else if (!val('#semi_career')) { problems.push(['#semi_career', '반도체 경력을 적어 주세요. 없으면 “없음”이라고 적어 주세요.']); }
