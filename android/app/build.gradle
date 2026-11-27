@@ -5,7 +5,7 @@ plugins {
 
 // 빌드 번호: GitHub Actions 실행 번호를 쓰면 매 빌드마다 자동으로 올라가 덮어설치됩니다.
 // +100 은 기존 배포본(versionCode 1)보다 항상 큰 번호가 되게 하는 안전 여유분입니다.
-def buildNo = (System.getenv('PCW_VERSION_CODE') ?: project.findProperty('PCW_VERSION_CODE') ?: '1').toString().toInteger() + 100
+def buildNo = (System.getenv('PCW_VERSION_CODE') ?: project.findProperty('PCW_VERSION_CODE') ?: '2').toString().toInteger() + 100
 
 // 릴리스 서명 키 (android/keystore/hanyang-pcw.jks) — 같은 키로 계속 서명해야 업데이트 설치가 됩니다.
 def ksPath = project.findProperty('PCW_STORE_FILE') ?: 'keystore/hanyang-pcw.jks'
@@ -17,12 +17,13 @@ def hasKeystore = ksFileObj.exists()
 
 android {
     namespace 'com.hanyang.pcw'
-    compileSdk 34
+    compileSdk 36
+    buildToolsVersion '36.0.0'
 
     defaultConfig {
         applicationId 'com.hanyang.pcw'
         minSdk 24
-        targetSdk 34
+        targetSdk 36
         versionCode buildNo
         versionName '1.0.' + buildNo
     }

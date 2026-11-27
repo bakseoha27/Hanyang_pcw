@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -16,6 +17,7 @@ import android.os.Environment;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
 import android.webkit.ValueCallback;
@@ -29,6 +31,8 @@ import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
@@ -75,6 +79,12 @@ public class MainActivity extends Activity {
         root.addView(web);
         root.addView(buildSplash());
         setContentView(root);
+
+        /* 안드로이드 15+ 는 화면이 상태바·내비게이션바 뒤까지 그려진다(끌 수 없음).
+           시스템 바 높이만큼 안쪽으로 밀어 내용이 가려지지 않게 한다. */
+        applySystemBarInsets(root);
+        /* 안드로이드 13+ 예측형 뒤로가기 — onBackPressed 가 불리지 않으므로 따로 등록 */
+        setupBackHandling();
 
         configureWebView();
 
@@ -472,13 +482,47 @@ public class MainActivity extends Activity {
     /* ---------------------------------------------------------------
        생명주기·뒤로가기
        --------------------------------------------------------------- */
-    @Override
-    public void onBackPressed() {
+
+    /** 시스템 바(상태바·내비바·노치)와 키보드 높이만큼 안쪽 여백을 준다 (엣지투엣지 대응) */
+    private void applySystemBarInsets(View root) {
+        root.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override
+            public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
+                Insets bars = insets.getInsets(
+                        WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                Insets ime = insets.getInsets(WindowInsets.Type.ime());
+                v.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
+                return insets;
+            }
+        });
+        root.requestApplyInsets();
+    }
+
+    /** 안드로이드 13+ 예측형 뒤로가기 콜백 등록 (targetSdk 36 부터 onBackPressed 는 불리지 않음) */
+    private void setupBackHandling() {
+        if (Build.VERSION.SDK_INT < 33) return;
+        getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                new OnBackInvokedCallback() {
+                    @Override
+                    public void onBackInvoked() {
+                        handleBack();
+                    }
+                });
+    }
+
+    /** 웹 화면에 이전 페이지가 있으면 뒤로, 없으면 앱 종료 */
+    private void handleBack() {
         if (web != null && web.canGoBack()) {
             web.goBack();
         } else {
-            super.onBackPressed();
+            finish();
         }
+    }
+
+    @Override
+    public void onBackPressed() {
+        handleBack();
     }
 
     @Override
