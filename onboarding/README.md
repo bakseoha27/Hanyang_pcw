@@ -13,6 +13,7 @@
 | 구분 | 권한 |
 |---|---|
 | `anon` (브라우저 공개 키) | `onboarding_submissions` **INSERT 만** · Storage `onboarding-docs` **업로드만** |
+| `onboarding_otps` (인증번호) | `anon` 접근 불가 (정책 없음 + 권한 회수, Edge Function 만) |
 | 조회 / 내려받기 / 삭제 | `anon` 불가 (정책·권한 없음) |
 | 관리자 | Edge Function `onboarding-admin` (서비스롤 키는 함수 안에서만) |
 
@@ -26,19 +27,54 @@
 insert into public.onboarding_admins (name, phone) values ('이름', '010-0000-0000');
 ```
 
+## 휴대폰 문자 본인인증 (2026-11-27 v6)
+
+사이트에 들어오면 **맨 처음 본인인증 화면**이 뜹니다. 인증을 마쳐야 서류 작성 폼이 열립니다.
+
+```
+이름        [            ]
+전화번호    [ 010-0000-0000 ]
+            [ 인증번호 받기 ]
+  → 문자 발송 후
+  인증번호 6자리 [ 123456 ]   ⏱ 5:00        [다시 받기]
+            [ 인증 확인 ]
+
+            🔐 관리자로 로그인하기
+```
+
+- **인증번호 받기**: 솔라피 문자 `[한양 pcw팀] 본인확인 인증번호는 [123456]입니다. (5분 이내 입력)`
+  - 같은 번호 **60초 쿨다운**, 번호당 **1시간 5건**, 전체 **1시간 40건** 제한 (솔라피 하루 50건 보호)
+  - 발송은 고정 IP 서버의 프록시(`SOLAPI_PROXY_URL`)만 거칩니다. API Secret 은 브라우저·Edge Function 어디에도 없습니다.
+- **인증 확인**: 6자리가 맞으면 일회용 `otp_token`(2시간)을 발급합니다. 5번 틀리면 다시 받아야 합니다.
+- **인증 통과 후**: 기존 서류 폼이 열리고 **성명·휴대폰 번호가 인증된 값으로 채워져 잠깁니다**(`readOnly`).
+  제출할 때 `otp_token` 을 함께 보내고, DB 트리거가 **토큰 유효성 + 이름·전화번호 일치**를 확인한 뒤 토큰을 소모합니다.
+  (그래서 가짜 이름·남의 번호로는 제출 자체가 거부됩니다.)
+- **새로고침**: 같은 탭에서는 `sessionStorage` 의 토큰으로 폼이 유지됩니다(문자를 다시 받지 않음). 탭을 닫으면 다시 인증합니다.
+- **🔐 관리자로 로그인하기**: 문자 인증 없이 이름·전화번호·관리자 암호를 확인하고 `admin.html` 로 바로 이동합니다.
+  (통과하면 `admin.html` 이 자동 로그인 상태로 열립니다.)
+
+| 구성 | 설명 |
+|---|---|
+| `public.onboarding_otps` | `phone`·`name`·`code_hash`(sha256)·`expires_at`(5분)·`attempts`·`verified_token`·`token_expires_at`(2시간)·`used_at` |
+| `public.onboarding_require_otp()` | 제출 INSERT 전 검증 트리거 (서비스롤 등록은 통과) |
+| `onboarding_submissions` | `otp_token`(저장 안 함) · `otp_verified_at`(인증 시각) |
+| Edge Function `onboarding-otp` | `action: send` / `verify` (`verify_jwt: false`, `SOLAPI_PROXY_URL`·`SOLAPI_PROXY_TOKEN` Secret 사용) |
+| `js/otp.v6.js` | 첫 화면 게이트 · 타이머 · 재발송 쿨다운 · 관리자 바로 로그인 |
+
 ## 구성
 
 | 파일 | 설명 |
 |---|---|
-| `index.html` · `js/submit.v5.js` | 신규입사자 제출 폼 (모바일 우선) · 사진 편집(여백 자르기·회전·자르기) |
+| `index.html` · `js/submit.v6.js` | 신규입사자 제출 폼 (모바일 우선) · 사진 편집(여백 자르기·회전·자르기) · **본인인증 후 성명·번호 잠금** |
+| `js/otp.v6.js` | 첫 화면 휴대폰 본인인증(OTP) · 관리자 바로 로그인 |
 | `js/exam.js` · `vendor/pdfjs/` | 건강검진 PDF 자동 인식 (PDF.js 로컬 번들 + cmaps) |
 | `js/guide.js` · `assets/guide/stepN.jpg` | 카톡에서 검진 PDF 찾는 법 (STEP 1~7) |
-| `admin.html` · `js/admin.v5.js` | 관리자 조회 · 엑셀 취합 · ZIP · 입사취소 파기 · 파일 이름/검진일 수정 · [전체] 다중 필터 · 업체 · 특이사항 |
-| `js/config.v5.js` | Supabase URL · anon 키 · 서류 종류 |
+| `admin.html` · `js/admin.v6.js` | 관리자 조회 · 엑셀 취합 · ZIP · 입사취소 파기 · 파일 이름/검진일 수정 · [전체] 다중 필터 · 업체 · 특이사항 |
+| `js/config.v6.js` | Supabase URL · anon 키 · 서류 종류 · Edge Function 경로 |
 | `vendor/` | ExcelJS · JSZip · PDF.js (CDN 대신 저장소에 포함 → 오프라인·차단망에서도 동작) |
 
-> 파일 이름 뒤의 `.v5` 는 서비스워커(`/sw.js`) 캐시를 피하려고 붙였습니다. 안에 있는 파일을 고칠 때는
-> 이름을 올리고(`v6`) HTML 의 `<link>`·`<script>` 도 같이 바꿔 주세요. HTML 은 네트워크 우선이라 그대로 반영됩니다.
+> 파일 이름 뒤의 `.v6` 는 서비스워커(`/sw.js`) 캐시를 피하려고 붙였습니다. 안에 있는 파일을 고칠 때는
+> 이름을 올리고(`v7`) HTML 의 `<link>`·`<script>` 도 같이 바꿔 주세요. HTML 은 네트워크 우선이라 그대로 반영됩니다.
 
 ## 파일 이름 규칙 (자동 변환)
 
@@ -159,6 +195,8 @@ cd work/gh-hanyang-pcw && git add onboarding && git commit -m "..." && git push
 # 엣지 함수를 고쳤을 때
 python3 projects/onboarding-portal/deploy_fn.py onboarding-admin \
   projects/onboarding-portal/edge-functions/onboarding-admin/index.ts
+python3 projects/onboarding-portal/deploy_fn.py onboarding-otp \
+  projects/onboarding-portal/edge-functions/onboarding-otp/index.ts
 ```
 
 DB·스토리지·함수 정의는 `projects/onboarding-portal/supabase-onboarding.sql` 과

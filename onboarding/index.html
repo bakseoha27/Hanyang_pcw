@@ -7,7 +7,7 @@
 <title>한양 pcw팀 신규입사자 서류 제출</title>
 <meta name="description" content="한양 pcw팀 신규입사자 서류 제출 — 기본 정보 입력과 서류 업로드">
 <link rel="icon" href="../icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="css/app.v5.css">
+<link rel="stylesheet" href="css/app.v6.css">
 </head>
 <body>
 <div class="wrap">
@@ -22,7 +22,51 @@
     <div class="progress"><i id="prog"></i></div>
   </header>
 
-  <main id="formArea">
+  <!-- 0. 휴대폰 본인인증 (첫 화면) — 인증을 마쳐야 서류 작성 폼이 열립니다 -->
+  <main id="gateArea">
+    <section class="card gate">
+      <h2><span class="step">📲</span> 휴대폰 본인인증</h2>
+      <p class="hint">서류를 작성하기 전에 <b>본인 확인</b>을 먼저 해 주세요.<br>인증한 <b>이름</b>과 <b>휴대폰 번호</b>로 제출되며, 그 값은 바꿀 수 없습니다.</p>
+
+      <div class="field">
+        <label for="vName">이름<span class="req">*</span></label>
+        <input type="text" id="vName" autocomplete="name" placeholder="홍길동">
+      </div>
+
+      <div class="field">
+        <label for="vPhone">전화번호<span class="req">*</span></label>
+        <input type="tel" id="vPhone" inputmode="numeric" autocomplete="tel" placeholder="010-0000-0000" maxlength="13">
+      </div>
+
+      <p class="otperr hide" id="otpErr"></p>
+
+      <button type="button" class="btn" id="otpSendBtn">인증번호 받기</button>
+
+      <div class="otpbox hide" id="otpCodeBox">
+        <div class="field">
+          <label for="otpCode">인증번호 6자리<span class="req">*</span></label>
+          <input type="tel" id="otpCode" class="otpcode" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" maxlength="6">
+          <p class="sub" id="otpHint">문자로 받은 6자리 숫자를 입력해 주세요.</p>
+        </div>
+        <div class="otprow">
+          <span class="otptimer" id="otpTimer">5:00</span>
+          <button type="button" class="linkbtn" id="otpResendBtn">다시 받기</button>
+        </div>
+        <button type="button" class="btn" id="otpVerifyBtn">인증 확인</button>
+      </div>
+    </section>
+
+    <div class="gatefoot">
+      <button type="button" class="adminlink" id="adminGateBtn">🔐 관리자로 로그인하기</button>
+    </div>
+  </main>
+
+  <main id="formArea" class="hide">
+    <div class="verifiedbar hide" id="verifiedBar">
+      ✅ <b id="verifiedWho"></b> 님 · <span id="verifiedPhone"></span> 인증 완료
+      <small>이름과 휴대폰 번호는 문자 인증으로 확인된 값이라 수정할 수 없습니다.</small>
+    </div>
+
     <!-- 1. 기본 정보 -->
     <section class="card">
       <h2><span class="step">1</span> 기본 정보</h2>
@@ -347,7 +391,7 @@
     </p>
   </main>
 
-  <div class="submitbar">
+  <div class="submitbar hide" id="submitbar">
     <div class="inner">
       <button class="btn" id="submitBtn">서류 제출하기</button>
     </div>
@@ -390,6 +434,31 @@
   </div>
 </div>
 
+<!-- 관리자 로그인 (문자 인증 없이 바로) -->
+<div class="modal" id="adminLoginModal">
+  <div class="bg" data-close></div>
+  <div class="sheet">
+    <div class="head"><b>관리자 로그인</b><button type="button" data-close>✕</button></div>
+    <div class="body">
+      <p style="margin:0 0 12px;font-size:12.5px;color:#667085;line-height:1.55">지정된 관리자만 들어갈 수 있습니다.<br>이름 · 전화번호 · 관리자 암호가 맞으면 <b>문자 인증 없이</b> 바로 관리자 페이지로 이동합니다.</p>
+      <p class="otperr hide" id="adminErr"></p>
+      <div class="field">
+        <label for="gAdminName">이름</label>
+        <input type="text" id="gAdminName" autocomplete="name" placeholder="예) 박서하">
+      </div>
+      <div class="field">
+        <label for="gAdminPhone">전화번호</label>
+        <input type="tel" id="gAdminPhone" inputmode="numeric" placeholder="010-0000-0000" maxlength="13">
+      </div>
+      <div class="field">
+        <label for="gAdminPass">관리자 암호</label>
+        <input type="password" id="gAdminPass" autocomplete="current-password" placeholder="관리자 암호">
+      </div>
+      <button class="btn" id="gAdminLogin">관리자 페이지로 들어가기</button>
+    </div>
+  </div>
+</div>
+
 <!-- 사진 편집 (여백 자동 자르기 · 흐릿함 경고 · 90° 회전 · 직접 자르기) -->
 <div class="modal photoedit" id="photoEditModal">
   <div class="bg" data-pe-cancel></div>
@@ -428,10 +497,11 @@
 
 <div id="toast"></div>
 
-<script src="js/config.v5.js"></script>
+<script src="js/config.v6.js"></script>
+<script src="js/otp.v6.js"></script>
 <script src="js/guide.js"></script>
 <script src="vendor/pdfjs/pdf.min.js"></script>
 <script src="js/exam.js"></script>
-<script src="js/submit.v5.js"></script>
+<script src="js/submit.v6.js"></script>
 </body>
 </html>

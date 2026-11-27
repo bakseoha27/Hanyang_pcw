@@ -5,6 +5,7 @@ var CFG = {
   bucket: 'onboarding-docs',
   table: 'onboarding_submissions',
   adminFn: '/functions/v1/onboarding-admin',
+  otpFn: '/functions/v1/onboarding-otp',
   maxFileMB: 25
 };
 

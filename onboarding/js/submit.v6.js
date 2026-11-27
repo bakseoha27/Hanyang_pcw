@@ -1176,6 +1176,7 @@
       health_exam_date: (state.health[0] && state.health[0].date) || null,
       health_exam_type: (state.health[0] && state.health[0].type) || null,
       files_json: [],
+      otp_token: (window.OB_OTP && window.OB_OTP.token()) || null,
       agreed_privacy_at: now,
       agreed_unique_id_at: now,
       agreed_sensitive_at: now,
@@ -1288,6 +1289,12 @@
 
   async function submit() {
     if (state.busy || state.submitted) { return; }
+    // 휴대폰 문자 인증을 먼저 마쳐야 한다 (이름·번호가 인증 값으로 잠김)
+    if (!window.OB_OTP || !window.OB_OTP.isVerified()) {
+      toast('휴대폰 본인인증을 먼저 해 주세요.', 3200);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     var problems = validate();
     if (problems.length) {
       var first = problems[0];
@@ -1335,9 +1342,12 @@
       if (!res.ok) {
         var msg = '';
         try { msg = await res.text(); } catch (e) { msg = ''; }
+        var data = null;
+        try { data = JSON.parse(msg); } catch (e) { data = null; }
         // 같은 id로 이미 저장된 경우(재시도)는 성공으로 본다
         if (!(res.status === 409 || /duplicate key/i.test(msg))) {
-          throw new Error('저장에 실패했어요. (' + res.status + ') 잠시 뒤 다시 시도해 주세요.');
+          // 본인인증 토큰 오ퟂ 등 서버(DB 트리거) 검사 메시지는 그대로 보여 준다
+          throw new Error((data && data.message) || ('저장에 실패했어요. (' + res.status + ') 잠시 뒤 다시 시도해 주세요.'));
         }
       }
 
