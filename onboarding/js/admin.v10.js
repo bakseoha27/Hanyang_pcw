@@ -22,6 +22,9 @@
     fStatus: {},
     fGender: {},
     fVendor: {},
+    sort: { key: '', dir: 0 },
+    dateField: '',
+    dateVal: '',
     busy: false,
     detailId: null
   };
@@ -71,7 +74,7 @@
     return r.is_outsource ? '외주' : '';
   }
   function isResigned(r) {
-    return !!String(r.resign_date || '').trim() || r.status === 'resigned';
+    return !!String(r.resign_date || '').trim() || r.status === 'resigned' || !!String(r.resigned_at || '').trim();
   }
   // 입사예정 / 근무중 / 입사보류 / 퇴사 — DB status 대신 퇴사일자까지 함께 본다 (v8)
   function stateOf(r) {
@@ -357,16 +360,18 @@
   /* ---------------- 렌더 ---------------- */
   function isArchived(r) { return !!r.archived_at; }
 
-  /* 탭 분류 (v9) — 한 사람은 반드시 한 탭에만 들어간다
-     · 진행중   : 입사예정(submitted) + 취합 전 + 퇴사일 없음
-     · 보류     : 입사보류(hold) + 퇴사일 없음 (archived_at 과 무관)
-     · 취합완료 : 취합완료로 넘긴 사람 · 근무중(hired) · 퇴사
-     · 전체     : 모두 */
+  /* 탭 분류 (v10) — 한 사람은 반드시 한 탭에만 들어간다
+     · 퇴사    : status='resigned' 또는 퇴사일/퇴사처리일이 있음
+     · 보류    : 입사보류(hold)
+     · 확정    : 근무중(hired)
+     · 취합완료: 입사예정(submitted) + 취합완료(archived_at)
+     · 진행중  : 입사예정(submitted) + 취합 전
+     · 전체    : 모두 */
   function tabOf(r) {
-    var st = stateOf(r);
-    if (st === 'hold') { return 'hold'; }
-    if (st === 'plan' && !isArchived(r)) { return 'active'; }
-    return 'archived';
+    if (isResigned(r)) { return 'resigned'; }
+    if (r.status === 'hold') { return 'hold'; }
+    if (r.status === 'hired') { return 'hired'; }
+    return isArchived(r) ? 'archived' : 'active';
   }
   function tabRows() {
     if (S.tab === 'all') { return S.rows.slice(); }
@@ -386,12 +391,62 @@
   function filtered() {
     var rows = tabRows();
     if (S.tab === 'all') { rows = rows.filter(matchesFilters); }
+    // 특정 일자만 골라 보기 (v10)
+    if (S.dateField && S.dateVal) {
+      rows = rows.filter(function (r) { return dateValOf(r, S.dateField) === S.dateVal; });
+    }
     var q = S.q.trim().toLowerCase();
-    if (!q) { return rows; }
-    return rows.filter(function (r) {
-      return [r.name, r.phone, r.job_role, r.bank, r.referrer, vendorOf(r), notesText(r)]
-        .join(' ').toLowerCase().indexOf(q) >= 0;
+    if (q) {
+      rows = rows.filter(function (r) {
+        return [r.name, r.phone, r.job_role, r.bank, r.referrer, vendorOf(r), notesText(r)]
+          .join(' ').toLowerCase().indexOf(q) >= 0;
+      });
+    }
+    return applySort(rows);
+  }
+
+  /* ---------------- 날짜 정렬 (v10) — 기본 → 최신순(↓) → 오래된순(↑) ---------------- */
+  var SORT_LABEL = { hire: '한양교육일자', iris: '홍채등록일자', resign: '퇴사일자' };
+  function dateValOf(r, key) {
+    if (key === 'hire') { return String(r.hire_date || ''); }
+    if (key === 'iris') { return String(r.iris_date || ''); }
+    if (key === 'resign') { return String(r.resign_date || ''); }
+    return '';
+  }
+  function applySort(rows) {
+    var s = S.sort;
+    if (!s || !s.key || !s.dir) { return rows; }
+    var has = [], none = [];
+    rows.forEach(function (r) { (dateValOf(r, s.key) ? has : none).push(r); });
+    has.sort(function (a, b) {
+      var x = dateValOf(a, s.key);
+      var y = dateValOf(b, s.key);
+      if (x === y) { return 0; }
+      return s.dir > 0 ? (x < y ? 1 : -1) : (x < y ? -1 : 1);
     });
+    return has.concat(none);   // 날짜가 없는 사람은 항상 뒤로
+  }
+  function renderSortMarks() {
+    $$('.tbl thead th[data-sort]').forEach(function (th) {
+      var k = th.getAttribute('data-sort');
+      var on = S.sort.key === k && S.sort.dir !== 0;
+      th.classList.toggle('sorted', on);
+      var ar = th.querySelector('.sar');
+      if (ar) { ar.textContent = on ? (S.sort.dir > 0 ? ' ↓' : ' ↑') : ''; }
+      th.title = SORT_LABEL[k] + ' 정렬 (' + (on ? (S.sort.dir > 0 ? '최신순' : '오래된순') : '누를 때마다 기본→최신순→오래된순') + ')';
+    });
+    var sel = $('#sortSel');
+    if (sel) {
+      var v = S.sort.key && S.sort.dir ? (S.sort.key + ':' + S.sort.dir) : '';
+      sel.value = v;
+    }
+  }
+  function cycleSort(key) {
+    if (!key) { return; }
+    if (S.sort.key !== key) { S.sort = { key: key, dir: 1 }; }
+    else if (S.sort.dir === 1) { S.sort = { key: key, dir: -1 }; }
+    else { S.sort = { key: '', dir: 0 }; }
+    render();
   }
 
   // 필터 칩(상태·성별·업체) 다시 그리기 — 인원 수는 [전체] 탭 기준
@@ -463,15 +518,17 @@
     var list = $('#list');
     var tab = tabRows();
 
-    // 탭 인원 수 + 현재 탭 기준 통계 (v9: 진행중 / 취합완료 / 보류 합계 = 전체)
-    var nActive = 0, nArchived = 0, nHold = 0;
+    // 탭 인원 수 (v10: 진행중 · 취합완료 · 보류 · 확정 · 전체 · 퇴사)
+    var cnt = { active: 0, archived: 0, hold: 0, hired: 0, resigned: 0 };
     S.rows.forEach(function (r) {
       var k = tabOf(r);
-      if (k === 'hold') { nHold++; } else if (k === 'archived') { nArchived++; } else { nActive++; }
+      cnt[k] = (cnt[k] || 0) + 1;
     });
-    $('#cntActive').textContent = nActive;
-    $('#cntArchived').textContent = nArchived;
-    $('#cntHold').textContent = nHold;
+    $('#cntActive').textContent = cnt.active;
+    $('#cntArchived').textContent = cnt.archived;
+    $('#cntHold').textContent = cnt.hold;
+    $('#cntHired').textContent = cnt.hired;
+    $('#cntResigned').textContent = cnt.resigned;
     $('#cntAll').textContent = S.rows.length;
     $('#statAll').textContent = tab.length;
     $('#statMiss').textContent = tab.filter(function (r) { return missingOf(r).length > 0; }).length;
@@ -480,15 +537,30 @@
 
     $('#empty').textContent = S.tab === 'archived' ? '취합완료된 인원이 없습니다.'
       : (S.tab === 'hold' ? '입사보류 인원이 없습니다.'
-        : (S.tab === 'all' ? '등록된 인원이 없습니다.' : '입사예정인 인원이 없습니다.'));
+        : (S.tab === 'hired' ? '확정(근무중) 인원이 없습니다.'
+          : (S.tab === 'resigned' ? '퇴사자가 없습니다.'
+            : (S.tab === 'all' ? '등록된 인원이 없습니다.' : '입사예정인 인원이 없습니다.'))));
+    // 퇴사 탭에서만 표의 특이사항 열을 보여 준다 (v10)
+    var tbl = $('.tbl');
+    if (tbl) { tbl.classList.toggle('show-notes', S.tab === 'resigned'); }
     renderFilters();
     renderIris();
+    renderSortMarks();
+    var dfb = $('#dfilter');
+    if (dfb) {
+      var act = !!(S.dateField && S.dateVal);
+      dfb.classList.toggle('on', act);
+      var dl = dfb.querySelector('.dl');
+      if (dl) { dl.textContent = act ? (SORT_LABEL[S.dateField] + ' ' + S.dateVal + ' · ' + rows.length + '명') : '날짜 검색'; }
+    }
 
     if (!rows.length) {
       list.innerHTML = '';
       $('#empty').classList.remove('hide');
-      $('#empty').textContent = (S.tab === 'all' && picked(S.fStatus).length + picked(S.fGender).length + picked(S.fVendor).length)
-        ? '조건에 맞는 인원이 없습니다.' : $('#empty').textContent;
+      if ((S.tab === 'all' && picked(S.fStatus).length + picked(S.fGender).length + picked(S.fVendor).length)
+        || (S.dateField && S.dateVal)) {
+        $('#empty').textContent = '조건에 맞는 인원이 없습니다.';
+      }
       $('#chkAll').checked = false;
       syncBulk();
       return;
@@ -519,6 +591,9 @@
         + '<td class="num c-wage"><button type="button" class="wbtn' + (r.daily_wage ? '' : ' none')
         + '" data-wage-edit="' + r.id + '" title="단가 바로 고치기">' + esc(wageNum(r.daily_wage) || '—') + '</button></td>'
         + '<td class="c-gender">' + esc(genderOf(r)) + '</td>'
+        + '<td class="c-note">' + (notesOf(r).length
+          ? '<span class="nsum" title="' + esc(notesText(r)) + '">' + esc(notesText(r).split('\n')[0]) + '</span>'
+          : '<span style="color:#98A2B3">—</span>') + '</td>'
         + '<td class="c-act">'
         + '<button type="button" data-detail="' + r.id + '">상세</button>'
         + '<button type="button" class="del" data-del="' + r.id + '">삭제</button>'
@@ -621,10 +696,56 @@
   function runBulk(act) {
     var rows = selRows();
     if (!rows.length) { toast('처리할 인원을 먼저 체크해 주세요.', 2600); syncBulk(); return; }
+    if (act === 'hired') { bulkHired(rows); return; }
     if (act === 'archive') { setArchived(rows, true); return; }
     if (act === 'hold') { bulkHold(rows); return; }
     if (act === 'plan') { bulkPlan(rows); return; }
+    if (act === 'resigned') { bulkResign(rows); return; }
     if (act === 'delete') { deleteRows(rows); return; }
+  }
+
+  /* ✅ 확정(근무중) — 고른 인원을 한 번에 근무중으로 (v10) */
+  async function bulkHired(rows) {
+    var names = rows.map(function (r) { return r.name; }).join(', ');
+    if (!confirm('선택한 인원을 확정(근무중)으로 바꿈까요?\n\n대상(' + rows.length + '명): ' + names
+      + '\n\n· [확정] 탭으로 이동합니다.')) { return; }
+    try {
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        await call('set_status', { id: r.id, status: 'hired' });
+        r.status = 'hired';
+        if (String(r.resign_date || '').trim()) {
+          await call('update_meta', { id: r.id, meta: { resign_date: '' } });
+          r.resign_date = '';
+        }
+      }
+      S.sel = {};
+      await refresh(true);
+      toast(rows.length + '명을 확정(근무중)으로 바꿈었습니다.', 3200);
+    } catch (e) {
+      toast(e.message || '확정으로 바꾸지 못했습니다.', 3200);
+    }
+  }
+
+  /* 🚪 퇴사 처리 — 퇴사일이 비어 있으면 오늘(KST) (v10) */
+  async function bulkResign(rows) {
+    var names = rows.map(function (r) { return r.name; }).join(', ');
+    if (!confirm('선택한 인원을 퇴사 처리할까요?\n\n대상(' + rows.length + '명): ' + names
+      + '\n\n· 퇴사일이 비어 있으면 오늘로 저장하고 [퇴사] 탭으로 이동합니다.')) { return; }
+    try {
+      for (var i = 0; i < rows.length; i++) {
+        var d = await call('set_status', { id: rows[i].id, status: 'resigned' });
+        var p = (d && d.patch) || {};
+        rows[i].status = 'resigned';
+        if ('resign_date' in p) { rows[i].resign_date = p.resign_date || ''; }
+        if ('resigned_at' in p) { rows[i].resigned_at = p.resigned_at || ''; }
+      }
+      S.sel = {};
+      await refresh(true);
+      toast(rows.length + '명을 퇴사 처리했습니다.', 3200);
+    } catch (e) {
+      toast(e.message || '퇴사 처리하지 못했습니다.', 3200);
+    }
   }
 
   /* ---------------- 목록에서 바로 고치기 (v9) — 업체 · 입사일자 ---------------- */
@@ -1986,6 +2107,15 @@
       : '진행중으로 되돌릴까요?\n\n대상: ' + names;
     if (!confirm(ask)) { return; }
     try {
+      // 취합완료 = 서류접수완료 이므로 상태도 입사예정(submitted)으로 맞춤춥니다 (v10)
+      if (on) {
+        for (var i = 0; i < rows.length; i++) {
+          if (rows[i].status !== 'submitted') {
+            await call('set_status', { id: rows[i].id, status: 'submitted' });
+            rows[i].status = 'submitted';
+          }
+        }
+      }
       var d = await call(on ? 'archive' : 'unarchive', { ids: rows.map(function (r) { return r.id; }) });
       var n = (d.results || []).filter(function (x) { return x.ok; }).length;
       S.sel = {};
@@ -2044,6 +2174,35 @@
   $('#logoutBtn').addEventListener('click', logout);
   $('#btnRefresh').addEventListener('click', function () { refresh(false); });
   $('#q').addEventListener('input', function () { S.q = this.value; render(); });
+  /* 날짜 정렬 (v10) — 헤더 클릭 · 모바일 드롭다운 */
+  $$('.tbl thead th[data-sort]').forEach(function (th) {
+    th.addEventListener('click', function () { cycleSort(th.getAttribute('data-sort')); });
+  });
+  var ssort = $('#sortSel');
+  if (ssort) {
+    ssort.addEventListener('change', function () {
+      var v = this.value;
+      if (!v) { S.sort = { key: '', dir: 0 }; } else {
+        var p = v.split(':');
+        S.sort = { key: p[0], dir: Number(p[1]) || 1 };
+      }
+      render();
+    });
+  }
+  /* 날짜만 골라 보기 (v10) */
+  var dff = $('#dfField');
+  if (dff) { dff.addEventListener('change', function () { S.dateField = this.value; render(); }); }
+  var dfd = $('#dfDate');
+  if (dfd) { dfd.addEventListener('change', function () { S.dateVal = this.value; render(); }); }
+  var dfc = $('#dfClear');
+  if (dfc) {
+    dfc.addEventListener('click', function () {
+      S.dateField = ''; S.dateVal = '';
+      if (dff) { dff.value = ''; }
+      if (dfd) { dfd.value = ''; }
+      render();
+    });
+  }
   $('#chkAll').addEventListener('change', function () {
     var on = this.checked;
     filtered().forEach(function (r) { if (on) { S.sel[r.id] = true; } else { delete S.sel[r.id]; } });
@@ -2196,7 +2355,7 @@
   $$('#tabs .tab').forEach(function (b) {
     b.addEventListener('click', function () {
       var t = b.getAttribute('data-tab');
-      S.tab = (t === 'archived' || t === 'hold' || t === 'all') ? t : 'active';
+      S.tab = ['archived', 'hold', 'hired', 'all', 'resigned'].indexOf(t) >= 0 ? t : 'active';
       S.sel = {};
       $$('#tabs .tab').forEach(function (x) { x.classList.toggle('on', x === b); });
       render();

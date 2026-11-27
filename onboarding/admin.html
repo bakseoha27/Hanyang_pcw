@@ -57,10 +57,12 @@
   <div class="abody">
     <div class="panel">
       <div class="tabs" id="tabs">
-        <button type="button" class="tab on" data-tab="active">진행중 <b id="cntActive">0</b></button>
-        <button type="button" class="tab" data-tab="archived">취합완료 <b id="cntArchived">0</b></button>
-        <button type="button" class="tab" data-tab="hold">보류 <b id="cntHold">0</b></button>
-        <button type="button" class="tab" data-tab="all">전체 <b id="cntAll">0</b></button>
+        <button type="button" class="tab on" data-tab="active">진행중 <b id="cntActive">0</b><small>서류수집중</small></button>
+        <button type="button" class="tab" data-tab="archived">취합완료 <b id="cntArchived">0</b><small>서류접수완료</small></button>
+        <button type="button" class="tab" data-tab="hold">보류 <b id="cntHold">0</b><small>서류보류</small></button>
+        <button type="button" class="tab" data-tab="hired">확정 <b id="cntHired">0</b><small>근무중인원</small></button>
+        <button type="button" class="tab" data-tab="all">전체 <b id="cntAll">0</b><small>전체인원</small></button>
+        <button type="button" class="tab" data-tab="resigned">퇴사 <b id="cntResigned">0</b><small>퇴사자</small></button>
       </div>
     </div>
 
@@ -119,6 +121,17 @@
       <div class="ph">
         <b>제출 현황</b>
         <input type="text" id="q" placeholder="이름·연락처·직종 검색" style="flex:1 1 130px;min-width:120px;padding:9px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:13.5px">
+        <div class="dfilter" id="dfilter">
+          <span class="dl">날짜 검색</span>
+          <select id="dfField" title="날짜 기준">
+            <option value="">기준 ▾</option>
+            <option value="hire">한양교육일</option>
+            <option value="iris">홍채등록일</option>
+            <option value="resign">퇴사일</option>
+          </select>
+          <input type="date" id="dfDate" title="기준 날짜">
+          <button type="button" id="dfClear" title="날짜 검색 초기화">✕</button>
+        </div>
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:#475467">
           <input type="checkbox" id="chkAll" style="width:17px;height:17px;accent-color:#2F6BFF"> 전체 선택
         </label>
@@ -126,11 +139,22 @@
       <div class="pb">
         <div class="listbar">
           <div id="listNotice" class="sub">인원을 체크하면 오른쪽 <b>[선택한 인원 처리]</b>가 열립니다. (엑셀·ZIP은 체크가 없으면 이 탭 전체)</div>
+        <select id="sortSel" class="sortsel" title="정렬">
+          <option value="">정렬: 기본</option>
+          <option value="hire:1">한양교육 최신순 ↓</option>
+          <option value="hire:-1">한양교육 오래된순 ↑</option>
+          <option value="iris:1">홍채등록 최신순 ↓</option>
+          <option value="iris:-1">홍채등록 오래된순 ↑</option>
+          <option value="resign:1">퇴사일 최신순 ↓</option>
+          <option value="resign:-1">퇴사일 오래된순 ↑</option>
+        </select>
           <select id="bulkSel" class="bulksel" disabled title="선택한 인원 처리">
             <option value="">선택한 인원 처리 ▾</option>
-            <option value="archive">✅ 취합완료로 이동</option>
-            <option value="hold">⏸️ 입사보류로 이동</option>
-            <option value="plan">▶️ 입사예정으로 복귀</option>
+            <option value="hired">✅ 확정(근무중)</option>
+            <option value="archive">📁 취합완료</option>
+            <option value="hold">⏸️ 입사보류</option>
+            <option value="plan">▶️ 진행중 복귀</option>
+            <option value="resigned">🚪 퇴사 처리</option>
             <option value="delete">🗑️ 입사취소 삭제</option>
           </select>
         </div>
@@ -142,11 +166,12 @@
                 <th class="c-name">이름</th>
                 <th>생년월일</th>
                 <th>연락처</th>
-                <th>한양교육일자</th>
-                <th>홍채등록일자</th>
-                <th>퇴사일자</th>
+                <th class="c-date sortable" data-sort="hire" title="누리면 정렬 (최신순/오래된순)">한양교육일자<span class="sar"></span></th>
+                <th class="c-date sortable" data-sort="iris" title="누르면 정렬 (최신순/오래된순)">홍채등록일자<span class="sar"></span></th>
+                <th class="sortable" data-sort="resign" title="누르면 정렬 (최신순/오래된순)">퇴사일자<span class="sar"></span></th>
                 <th class="c-wage">단가</th>
                 <th class="c-gender">성별</th>
+                <th class="c-note">특이사항</th>
                 <th class="c-act"></th>
               </tr>
             </thead>
