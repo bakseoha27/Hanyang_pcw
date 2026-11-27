@@ -7,7 +7,7 @@
 <title>신규입사자 서류 관리 · 한양 pcw팀</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="../icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="css/app.v6.css">
+<link rel="stylesheet" href="css/app.v7.css">
 <style>
   body{background:#EEF2F8;}
   .login-wrap{max-width:430px;margin:0 auto;padding:26px 16px 40px;min-height:100vh;}
@@ -146,6 +146,20 @@
   </div>
 </div>
 
+<!-- 서류 보기 (👁️) -->
+<div class="modal viewer" id="viewModal">
+  <div class="bg" data-close></div>
+  <div class="sheet">
+    <div class="head"><b id="viewTitle">서류 보기</b>
+      <span class="vacts">
+        <a id="viewOpen" href="#" target="_blank" rel="noopener">새 창</a>
+        <button type="button" data-close>✕</button>
+      </span>
+    </div>
+    <div class="body" id="viewBody"></div>
+  </div>
+</div>
+
 <!-- 신규자 직접 추가 -->
 <div class="modal" id="addModal">
   <div class="bg" data-close></div>
@@ -203,6 +217,12 @@
         </div>
       </div>
       <div class="field">
+        <label for="m_job">직종</label>
+        <select id="m_job" data-jobsel></select>
+        <input type="text" id="m_job_custom" data-jobcustom maxlength="20" placeholder="직종 직접 입력 (예) 공사관리자" autocomplete="off" style="margin-top:6px;display:none">
+        <p class="sub">비워 두면 <b>미정</b>으로 저장되고, 관리자 상세에서 언제든 고칠 수 있습니다.</p>
+      </div>
+      <div class="field">
         <label for="m_note">특이사항</label>
         <textarea id="m_note" rows="2" placeholder="예) 12/1 첫 출근, 안전교육 이수 (적은 관리자 이름이 자동으로 붙습니다)"></textarea>
       </div>
@@ -216,7 +236,9 @@
 
 <script src="vendor/exceljs.min.js"></script>
 <script src="vendor/jszip.min.js"></script>
-<script src="js/config.v6.js"></script>
-<script src="js/admin.v6.js"></script>
+<script src="vendor/pdfjs/pdf.min.js"></script>
+<script src="js/exam.js"></script>
+<script src="js/config.v7.js"></script>
+<script src="js/admin.v7.js"></script>
 </body>
 </html>

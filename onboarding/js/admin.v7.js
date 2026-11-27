@@ -137,6 +137,28 @@
     return isNum(s) ? Number(String(s).replace(/,/g, '')).toLocaleString('ko-KR') : s;
   }
 
+  /* 직종 — 미정 / 보통인부 · 배관공 · 용접공 · 품질관리자 / 직접입력 (v7) */
+  var JOB_LIST = ['보통인부', '배관공', '용접공', '품질관리자'];
+  function jobSplit(cur) {
+    var c = String(cur == null ? '' : cur).trim();
+    if (!c) { return { sel: '', custom: '' }; }
+    if (JOB_LIST.indexOf(c) >= 0) { return { sel: c, custom: '' }; }
+    return { sel: '__custom', custom: c };
+  }
+  function jobOptions(cur) {
+    var j = jobSplit(cur);
+    var h = '<option value=""' + (j.sel === '' ? ' selected' : '') + '>미정</option>';
+    h += JOB_LIST.map(function (v) {
+      return '<option value="' + v + '"' + (j.sel === v ? ' selected' : '') + '>' + v + '</option>';
+    }).join('');
+    h += '<option value="__custom"' + (j.sel === '__custom' ? ' selected' : '') + '>직접입력</option>';
+    return h;
+  }
+  function jobText(r) {
+    var c = String((r && r.job_role) || '').trim();
+    return c;
+  }
+
   function filesOf(row) {
     var arr = Array.isArray(row.files_json) ? row.files_json : [];
     var map = {};
@@ -396,6 +418,7 @@
 
   /* 상세 — 파일 이름 · 검진일/종류 수정 */
   var EDIT = { key: '' };
+  var UP = { id: null, items: [] };   // 상세 시트에서 올릴 서류(대기 목록)
 
   function examText(row, map) {
     var arr = map.health || [];
@@ -484,7 +507,7 @@
       ['숙소', r.housing],
       ['은행 / 계좌', (r.bank || '') + ' ' + (r.account_number || '')],
       ['입금자명(예금주)', r.account_holder],
-      ['직종', r.job_role],
+      ['직종', jobText(r)],
       ['단가', wageText(r.daily_wage)],
       ['총 경력', r.total_career],
       ['반도체 경력', r.semi_career],
@@ -527,6 +550,10 @@
       + '<div class="field"><label>퇴사일자</label><input type="date" data-meta="resign_date" value="' + esc(r.resign_date || '') + '">'
       + '<button type="button" class="btn sm gray" data-resign="1" style="width:100%;height:32px;font-size:11.5px;margin-top:4px;border-radius:8px">오늘 퇴사 처리</button></div>'
       + '<div class="field"><label>단가</label><input type="text" data-meta="daily_wage" value="' + esc(r.daily_wage || '') + '" placeholder="예) 180000 / 미기재"></div>'
+      + '<div class="field"><label>직종</label>'
+      + '<select data-meta="job_role" data-jobsel>' + jobOptions(jobText(r)) + '</select>'
+      + '<input type="text" data-jobcustom value="' + esc(jobSplit(jobText(r)).custom) + '" placeholder="직종 직접 입력" maxlength="20"'
+      + (jobSplit(jobText(r)).sel === '__custom' ? '' : ' style="display:none"') + '></div>'
       + '</div>'
       + '<button type="button" class="btn sm gray" data-metasave style="width:auto;padding:0 16px;height:38px;margin:2px 0 12px">기본 정보 저장</button>';
 
@@ -563,12 +590,33 @@
         h += '<div class="fline">'
           + '<a href="#" data-dl="' + esc(f.path) + '" data-dlname="' + esc(f.name) + '" data-id="' + esc(r.id) + '">'
           + '<span class="ic">' + d.icon + '</span><span style="flex:1;min-width:0;word-break:break-all">' + esc(f.name) + when + '</span><span>⬇</span></a>'
+          + '<button type="button" class="fview" data-fview="' + idx + '" title="보기">👁️</button>'
           + '<button type="button" data-fedit="' + idx + '" title="파일 이름 수정">✎</button>'
           + '</div>';
         if (EDIT.key === r.id + ':' + idx) { h += editForm(r, idx, f); }
       });
     });
     h += '</div>';
+
+    /* 서류 추가 · 교체 (관리자 직접 업로드) */
+    var otherDocs = DOC_TYPES.filter(function (d) { return d.key !== 'health'; });
+    h += '<div class="upbox">'
+      + '<div class="uh"><b>📤 서류 추가 · 교체</b><span>같은 종류는 새 파일로 바뀝니다</span></div>'
+      + '<div class="upbtns">'
+      + '<button type="button" class="btn sm gray" data-uphealth="1">+ 검진 PDF 추가</button>'
+      + '<button type="button" class="btn sm gray" data-upother="1">+ 다른 서류 올리기</button>'
+      + '</div>'
+      + '<div class="upform hide" id="upOtherForm">'
+      + '<select id="upType">' + otherDocs.map(function (d) {
+        return '<option value="' + d.key + '">' + esc(d.icon + ' ' + d.label) + '</option>';
+      }).join('') + '</select>'
+      + '<button type="button" class="btn sm" data-uppick="1">파일 선택</button>'
+      + '</div>'
+      + '<div class="uplist" id="upList"></div>'
+      + '<button type="button" class="btn" id="upGo" data-upgo="1" style="display:none">올리기</button>'
+      + '<input type="file" id="upHealthIn" accept="application/pdf,.pdf" multiple hidden>'
+      + '<input type="file" id="upOtherIn" accept="application/pdf,.pdf,image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden>'
+      + '</div>';
 
     h += '<div class="toolbar" style="margin-top:14px">'
       + '<button class="btn sm gray" data-dlall="' + esc(r.id) + '" style="width:auto;padding:0 14px">📦 이 사람 서류 ZIP</button>'
@@ -577,8 +625,33 @@
 
     $('#detailTitle').textContent = r.name + ' 님 제출 정보';
     S.detailId = id;
+    if (UP.id !== id) { UP = { id: id, items: [] }; }
     $('#detailBody').innerHTML = h;
+    /* 직종 [직접입력] 을 고르면 입력칸이 열린다 */
+    var jobSel = $('#detailBody [data-jobsel]');
+    if (jobSel) {
+      jobSel.addEventListener('change', function () { jobCustomToggle('#detailBody'); });
+    }
+    renderUpList();
     openModal('detailModal');
+  }
+
+  function jobCustomToggle(scope) {
+    var sel = $(scope + ' [data-jobsel]');
+    var inp = $(scope + ' [data-jobcustom]');
+    if (!sel || !inp) { return; }
+    var on = sel.value === '__custom';
+    inp.style.display = on ? '' : 'none';
+    if (on) { inp.focus(); }
+  }
+
+  /* 선택값 + 직접입력값 → 저장할 직종 한 줄 */
+  function jobPick(scope) {
+    var sel = $(scope + ' [data-jobsel]');
+    var inp = $(scope + ' [data-jobcustom]');
+    if (!sel) { return ''; }
+    if (sel.value !== '__custom') { return sel.value; }
+    return String((inp && inp.value) || '').replace(/[\r\n\t]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 20);
   }
 
   async function saveMeta(id) {
@@ -587,8 +660,10 @@
     var meta = {};
     $$('#detailBody [data-meta]').forEach(function (el) {
       var k = el.getAttribute('data-meta');
+      if (k === 'job_role') { return; }
       meta[k] = (el.type === 'checkbox') ? el.checked : String(el.value || '').trim();
     });
+    meta.job_role = jobPick('#detailBody');
     try {
       await call('update_meta', { id: id, meta: meta });
       Object.keys(meta).forEach(function (k) { r[k] = meta[k]; });
@@ -602,6 +677,256 @@
       toast(meta.resign_date ? '저장했습니다. 퇴사일자가 있어 상태가 퇴사로 표시됩니다.' : '기본 정보를 저장했습니다.');
     } catch (e) {
       toast(e.message || '저장하지 못했습니다.', 3200);
+    }
+  }
+
+  /* =========================================================
+     서류 보기 (👁️) — 서명 URL 로 모달 안에서 바로 본다
+     ========================================================= */
+  function extOf(f) {
+    var n = String((f && f.name) || (f && f.path) || '').toLowerCase();
+    var m = /\.([a-z0-9]+)$/.exec(n);
+    var e = m ? m[1] : '';
+    if (e === 'jpeg') { e = 'jpg'; }
+    if (!e) {
+      var t = String((f && f.type) || '');
+      if (t === 'application/pdf') { e = 'pdf'; }
+      else if (t === 'image/png') { e = 'png'; }
+      else if (t === 'image/webp') { e = 'webp'; }
+      else if (t === 'image/jpeg') { e = 'jpg'; }
+    }
+    return e;
+  }
+  function mimeOf(ext) {
+    if (ext === 'pdf') { return 'application/pdf'; }
+    if (ext === 'png') { return 'image/png'; }
+    if (ext === 'webp') { return 'image/webp'; }
+    return 'image/jpeg';
+  }
+  function kb(n) {
+    var v = Number(n || 0);
+    if (v >= 1024 * 1024) { return (v / 1024 / 1024).toFixed(1) + 'MB'; }
+    return Math.max(1, Math.round(v / 1024)) + 'KB';
+  }
+  function basePath() {
+    var tag = document.querySelector('script[src*="js/admin.v7.js"]');
+    return (tag && tag.src) ? tag.src.replace(/js\/admin\.v7\.js.*$/, '') : '';
+  }
+
+  async function openView(id, idx) {
+    var r = rowById(id);
+    var all = Array.isArray(r && r.files_json) ? r.files_json : [];
+    var f = all[idx];
+    if (!f) { return; }
+    $('#viewTitle').textContent = f.name || '서류 보기';
+    $('#viewOpen').href = '#';
+    $('#viewBody').innerHTML = '<div class="vload">불러오는 중…</div>';
+    openModal('viewModal');
+    try {
+      var d = await call('sign', { items: [{ id: id, path: f.path, name: f.name }], inline: true });
+      var it = (d.items || [])[0];
+      if (!it || !it.url) { throw new Error('파일을 열 수 없습니다.'); }
+      var url = it.url;
+      $('#viewOpen').href = url;
+      var ext = extOf(f);
+      var body = $('#viewBody');
+      if (['jpg', 'png', 'webp', 'gif'].indexOf(ext) >= 0) {
+        body.innerHTML = '';
+        var img = document.createElement('img');
+        img.className = 'vimg';
+        img.alt = f.name || '서류';
+        img.src = url;
+        body.appendChild(img);
+      } else if (ext === 'pdf') {
+        body.innerHTML = '<div class="vpdf" id="vpdf"></div>';
+        renderPdf(url, $('#vpdf'));
+      } else {
+        body.innerHTML = '<div class="vload">미리보기를 지원하지 않는 형식입니다.</div>';
+      }
+    } catch (e) {
+      $('#viewBody').innerHTML = '<div class="vload">' + esc(e.message || '파일을 열지 못했습니다.') + '</div>';
+    }
+  }
+
+  /* PDF 첫 쪽부터 캔버스로 그린다 (PDF.js 로컬 번들) */
+  async function renderPdf(url, box) {
+    if (!box) { return; }
+    try {
+      if (!window.pdfjsLib) { throw new Error('PDF 뷰어를 불러오지 못했습니다.'); }
+      var base = basePath();
+      try {
+        if (window.pdfjsLib.GlobalWorkerOptions && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = base + 'vendor/pdfjs/pdf.worker.min.js';
+        }
+      } catch (e0) { /* 무시 */ }
+      var doc = await window.pdfjsLib.getDocument({
+        url: url,
+        cMapUrl: base + 'vendor/pdfjs/cmaps/',
+        cMapPacked: true,
+        isEvalSupported: false
+      }).promise;
+      box.innerHTML = '';
+      var max = Math.min(doc.numPages || 1, 30);
+      for (var p = 1; p <= max; p++) {
+        var page = await doc.getPage(p);
+        var v1 = page.getViewport({ scale: 1 });
+        var scale = Math.min(3, ((box.clientWidth || 340) * (window.devicePixelRatio || 1)) / v1.width);
+        var vp = page.getViewport({ scale: scale });
+        var cv = document.createElement('canvas');
+        cv.className = 'vcanvas';
+        cv.width = Math.round(vp.width);
+        cv.height = Math.round(vp.height);
+        box.appendChild(cv);
+        await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+        try { page.cleanup(); } catch (e1) { /* 무시 */ }
+      }
+      if (doc.numPages > max) {
+        var more = document.createElement('div');
+        more.className = 'vmore';
+        more.textContent = doc.numPages + '쪽 중 ' + max + '쪽까지 보여 줍니다. 전체는 [새 창]으로 보세요.';
+        box.appendChild(more);
+      }
+    } catch (e) {
+      box.innerHTML = '<div class="vload">PDF를 화면에 그리지 못했습니다.<br>위 [새 창]으로 열어 보세요.</div>';
+    }
+  }
+
+  /* =========================================================
+     서류 추가 · 교체 — 관리자가 직접 업로드 (sign_upload)
+     ========================================================= */
+  function docName(r, type, ext, extra) {
+    var n = String((r && r.name) || '').trim();
+    var b6 = String((r && r.birth6) || String((r && r.rrn) || '').replace(/\D/g, '').slice(0, 6));
+    if (type === 'idcard') { return '신분증(' + n + ').' + ext; }
+    if (type === 'edu') { return '기초이수증(' + n + ').' + ext; }
+    if (type === 'bank') { return '통장사본(' + n + ').' + ext; }
+    if (type === 'photo') { return n + '_' + b6 + '.' + (ext || 'jpg'); }
+    if (type === 'opinion') { return n + ' 소견서.pdf'; }
+    if (type === 'medicine') { return n + ' 약봉투.' + ext; }
+    if (type === 'career') { return n + ' 경력증명서' + ((r && r.job_role) ? '(' + r.job_role + ')' : '') + '.pdf'; }
+    if (type === 'health') {
+      if (window.ExamPDF && window.ExamPDF.fileName) {
+        return window.ExamPDF.fileName(n, extra && extra.date, extra && extra.typeSel);
+      }
+      return String((extra && extra.date) || '').replace(/-/g, '').slice(2) + '_' + n + ' ' + ((extra && extra.typeSel) || '') + '.pdf';
+    }
+    return n + '_' + type + '.' + ext;
+  }
+
+  var UPLOAD_EXT = ['pdf', 'jpg', 'png', 'webp'];
+
+  async function addPending(type, files) {
+    var r = rowById(UP.id);
+    if (!r || !files || !files.length) { return; }
+    var maxMB = Number((window.CFG && CFG.maxFileMB) || 25);
+    for (var i = 0; i < files.length; i++) {
+      var f = files[i];
+      var ext = extOf({ name: f.name, type: f.type });
+      if (f.size > maxMB * 1024 * 1024) { toast(f.name + ' — ' + maxMB + 'MB가 넘습니다.', 3600); continue; }
+      if (type === 'health' && ext !== 'pdf') { toast('건강검진은 PDF만 올릴 수 있습니다.', 3600); continue; }
+      if ((type === 'opinion' || type === 'career') && ext !== 'pdf') { toast(DOC_LABEL[type] + '은(는) PDF만 올릴 수 있습니다.', 3600); continue; }
+      if (type === 'photo' && ext === 'pdf') { toast('증명사진은 사진(JPG·PNG·WEBP)만 올릴 수 있습니다.', 3600); continue; }
+      if (UPLOAD_EXT.indexOf(ext) < 0) { toast('PDF · JPG · PNG · WEBP 만 올릴 수 있습니다.', 3600); continue; }
+      var it = { type: type, file: f, ext: ext, date: '', typeSel: '', d2: false, src: '' };
+      if (type === 'health' && window.ExamPDF && window.ExamPDF.ready) {
+        try {
+          var txt = await window.ExamPDF.extractText(f, 2);
+          var p = window.ExamPDF.parseExam(txt, f.name);
+          it.date = p.date || '';
+          it.typeSel = p.type || '';
+          it.d2 = !!p.d2;
+          it.src = [p.dateSrc, p.typeSrc].filter(Boolean).join('/');
+        } catch (e) { it.src = ''; }
+      }
+      UP.items.push(it);
+    }
+    renderUpList();
+  }
+
+  function renderUpList() {
+    var box = $('#upList');
+    if (!box) { return; }
+    var r = rowById(UP.id);
+    var go = $('#upGo');
+    if (!UP.items.length) {
+      box.innerHTML = '';
+      if (go) { go.style.display = 'none'; go.disabled = false; }
+      return;
+    }
+    box.innerHTML = UP.items.map(function (it, i) {
+      var nm = docName(r, it.type, it.ext, it);
+      var need = it.type === 'health' && (!it.date || !it.typeSel);
+      var extra = '';
+      if (it.type === 'health') {
+        extra = '<div class="upfields">'
+          + '<input type="date" data-upfield="date" data-i="' + i + '" value="' + esc(it.date) + '">'
+          + '<select data-upfield="type" data-i="' + i + '">'
+          + ['', '일반', '배치전', '특수'].map(function (t) {
+            return '<option value="' + t + '"' + (it.typeSel === t ? ' selected' : '') + '>' + (t || '종류 선택') + '</option>';
+          }).join('')
+          + '</select></div>'
+          + (need
+            ? '<small class="uwarn">⚠️ 검진일자·종류를 골라 주세요' + (it.src ? '' : ' (PDF에서 읽지 못했습니다)') + '</small>'
+            : '<small class="uok">' + (it.src ? 'PDF에서 읽음 · ' : '') + esc(it.date + ' ' + it.typeSel) + (it.d2 ? ' · D2' : '') + '</small>');
+      }
+      return '<div class="upitem' + (need ? ' warn' : '') + '">'
+        + '<div class="upmain"><b>' + esc(nm) + '</b>'
+        + '<small>' + esc((DOC_LABEL[it.type] || it.type) + ' · ' + kb(it.file.size)) + '</small>'
+        + extra + '</div>'
+        + '<button type="button" data-updel="' + i + '" title="빼기">✕</button>'
+        + '</div>';
+    }).join('');
+    if (go) { go.style.display = ''; go.disabled = false; go.textContent = '올리기 (' + UP.items.length + ')'; }
+  }
+
+  async function uploadPending() {
+    var r = rowById(UP.id);
+    if (!r || !UP.items.length) { return; }
+    for (var i = 0; i < UP.items.length; i++) {
+      var it0 = UP.items[i];
+      if (it0.type === 'health' && (!it0.date || !it0.typeSel)) {
+        toast('검진일자·종류를 골라 주세요. (' + it0.file.name + ')', 3600);
+        return;
+      }
+    }
+    var go = $('#upGo');
+    if (go) { go.disabled = true; go.textContent = '올리는 중…'; }
+    var added = [];
+    try {
+      for (var j = 0; j < UP.items.length; j++) {
+        var item = UP.items[j];
+        if (go) { go.textContent = '올리는 중… (' + (j + 1) + '/' + UP.items.length + ')'; }
+        var nm = docName(r, item.type, item.ext, item);
+        var sd = await call('sign_upload', { id: r.id, type: item.type, ext: item.ext });
+        var put = await fetch(sd.url, {
+          method: 'PUT',
+          headers: { 'Content-Type': mimeOf(item.ext), 'cache-control': '3600' },
+          body: item.file
+        });
+        if (!put.ok) { throw new Error(nm + ' 업로드 실패 (' + put.status + ')'); }
+        var info = { type: item.type, path: sd.path, name: nm, size: item.file.size, mime: mimeOf(item.ext) };
+        if (item.type === 'health') { info.exam_date = item.date; info.exam_type = item.typeSel; info.d2 = !!item.d2; }
+        added.push(info);
+      }
+      var all = (Array.isArray(r.files_json) ? r.files_json.slice() : []);
+      added.forEach(function (info) {
+        if (info.type !== 'health') {
+          all = all.filter(function (x) { return String((x && x.type) || '') !== info.type; });
+        }
+        all.push(info);
+      });
+      var res = await call('update_files', { id: r.id, files: all });
+      r.files_json = (res && res.files) || all;
+      var h0 = r.files_json.filter(function (x) { return x && x.type === 'health'; })[0] || null;
+      r.health_exam_date = h0 ? (h0.exam_date || '') : '';
+      r.health_exam_type = h0 ? (h0.exam_type || '') : '';
+      UP.items = [];
+      render();
+      openDetail(r.id);
+      toast(added.length + '건 올렸습니다.' + (res && res.dropped ? ' (이전 파일 ' + res.dropped + '개 정리)' : ''));
+    } catch (e) {
+      toast(e.message || '서류를 올리지 못했습니다.', 4000);
+      renderUpList();
     }
   }
 
@@ -653,11 +978,13 @@
   }
 
   function openAdd() {
-    ['m_name', 'm_rrn', 'm_birth', 'm_phone', 'm_hire', 'm_resign', 'm_wage', 'm_referrer', 'm_note'].forEach(function (k) {
+    ['m_name', 'm_rrn', 'm_birth', 'm_phone', 'm_hire', 'm_resign', 'm_wage', 'm_referrer', 'm_note', 'm_job_custom'].forEach(function (k) {
       var el = $('#' + k); if (el) { el.value = ''; }
     });
     $('#m_gender').value = '';
     $('#m_vendor').innerHTML = vendorOptions('');
+    $('#m_job').innerHTML = jobOptions('');
+    jobCustomToggle('#addModal');
     openModal('addModal');
   }
 
@@ -674,6 +1001,7 @@
       hire_date: $('#m_hire').value,
       resign_date: $('#m_resign').value,
       daily_wage: $('#m_wage').value,
+      job_role: jobPick('#addModal'),
       outsource_company: vendor,
       is_outsource: !!vendor,
       referrer: $('#m_referrer').value,
@@ -1030,6 +1358,7 @@
   $('#btnAddVendor').addEventListener('click', addVendor);
   $('#btnAdd').addEventListener('click', openAdd);
   $('#m_save').addEventListener('click', saveAdd);
+  $('#m_job').addEventListener('change', function () { jobCustomToggle('#addModal'); });
   $('#m_phone').addEventListener('input', function () { this.value = fmtPhone(this.value); });
   $('#m_rrn').addEventListener('input', function () {
     var d = this.value.replace(/\D/g, '').slice(0, 13);
@@ -1108,6 +1437,39 @@
     var cx = e.target.closest('[data-fcancel]');
     if (cx) { e.preventDefault(); EDIT.key = ''; openDetail(S.detailId); return; }
 
+    var fv = e.target.closest('[data-fview]');
+    if (fv) { e.preventDefault(); openView(S.detailId, Number(fv.getAttribute('data-fview'))); return; }
+    var uh = e.target.closest('[data-uphealth]');
+    if (uh) {
+      e.preventDefault();
+      var hi = $('#upHealthIn');
+      if (hi) { hi.value = ''; hi.click(); }
+      return;
+    }
+    var uo = e.target.closest('[data-upother]');
+    if (uo) {
+      e.preventDefault();
+      var f0 = $('#upOtherForm');
+      if (f0) { f0.classList.toggle('hide'); }
+      return;
+    }
+    var up = e.target.closest('[data-uppick]');
+    if (up) {
+      e.preventDefault();
+      var oi = $('#upOtherIn');
+      if (oi) { oi.value = ''; oi.click(); }
+      return;
+    }
+    var ud = e.target.closest('[data-updel]');
+    if (ud) {
+      e.preventDefault();
+      var di = Number(ud.getAttribute('data-updel'));
+      UP.items.splice(di, 1);
+      renderUpList();
+      return;
+    }
+    if (e.target.closest('[data-upgo]')) { e.preventDefault(); uploadPending(); return; }
+
     var a = e.target.closest('[data-dl]');
     if (a) {
       e.preventDefault();
@@ -1138,6 +1500,47 @@
       addNote(S.detailId);
     }
   });
+
+  /* 서류 추가 — 파일 선택 · 검진일자/종류 수정 */
+  $('#detailBody').addEventListener('change', function (e) {
+    var t = e.target;
+    if (!t || !t.getAttribute) { return; }
+    if (t.id === 'upHealthIn') {
+      var hf = Array.prototype.slice.call(t.files || []);
+      if (hf.length) { addPending('health', hf); }
+      t.value = '';
+      return;
+    }
+    if (t.id === 'upOtherIn') {
+      var of = Array.prototype.slice.call(t.files || []);
+      var sel = $('#upType');
+      if (of.length) { addPending((sel && sel.value) || 'idcard', of); }
+      t.value = '';
+      return;
+    }
+    var fld = t.getAttribute('data-upfield');
+    if (fld) {
+      var i = Number(t.getAttribute('data-i'));
+      var item = UP.items[i];
+      if (!item) { return; }
+      if (fld === 'date') { item.date = String(t.value || ''); }
+      if (fld === 'type') { item.typeSel = String(t.value || ''); }
+      renderUpList();
+    }
+  });
+
+  /* 👁️ 보기 모달 — 닫을 때 PDF 캔버스 비우기 */
+  (function () {
+    var vm = document.getElementById('viewModal');
+    if (!vm) { return; }
+    var clear = function () {
+      var b = document.getElementById('viewBody');
+      if (b) { b.innerHTML = ''; }
+    };
+    vm.addEventListener('click', function (e) {
+      if (e.target.closest('[data-close]') || e.target.classList.contains('bg')) { clear(); }
+    });
+  })();
 
   /* ---------------- 시작 ---------------- */
   (function boot() {

@@ -140,10 +140,31 @@
   }
   if (nameField) { nameField.addEventListener('input', syncHolder); }
 
-  /* 직종 — 용접공 여부만 */
+  /* 직종 — 용접공 체크가 우선, 아니면 단가로 자동 분류 (2026-11-27 v7)
+     · 24만원 → 용접공
+     · 14만원 ~ 19만원대 → 보통인부
+     · 20만원 이상 → 배관공
+     · 그 외(미기재 등) → 빈칸 (관리자가 직접 고름) */
+  function parseWage(v) {
+    var d = String(v == null ? '' : v).replace(/[^0-9]/g, '');
+    if (!d) { return 0; }
+    var n = Number(d);
+    if (!n) { return 0; }
+    if (n < 1000) { n = n * 10000; }   // 15 → 150000, 24 → 240000
+    return n;
+  }
+  function roleByWage() {
+    var w = parseWage(val('#daily_wage'));
+    if (!w) { return ''; }
+    if (w === 240000) { return '용접공'; }
+    if (w >= 140000 && w < 200000) { return '보통인부'; }
+    if (w >= 200000) { return '배관공'; }
+    return '';
+  }
   function jobRole() {
     var w = $('#is_welder');
-    return (w && w.checked) ? '용접공' : '';
+    if (w && w.checked) { return '용접공'; }
+    return roleByWage();
   }
   function careerHint() {
     // 카드에는 짧은 이름만 보여 준다. (용접공) 변환 이름은 저장·다운로드 때만 쓴다.
