@@ -36,8 +36,17 @@ git add -A && git commit -m "웹앱 수정" && git push
 
 ## APK 다시 빌드하기
 
-`android/` 안의 파일이 바뀌어 push 되면 GitHub Actions 가 자동으로 빌드해 `latest` 릴리스의 `hanyang-pcw.apk` 를 새 파일로 바꿉니다.
-직접 돌리려면 **Actions → APK 빌드 · 배포 → Run workflow**.
+`android/` 안의 파일이 바뀌면 APK 를 새로 만들어 `latest` 릴리스의 `hanyang-pcw.apk` 를 바꿉니다.
+
+**지금은 로컬 빌드로 올립니다** (자동 빌드 워크플로 `.github/workflows/build-apk.yml` 은 저장소에 아직 올라가 있지 않습니다 — GitHub 앱에 `workflows` 권한이 없어 push 가 거절됨).
+
+```bash
+cd android
+JAVA_HOME=<JDK17> ./gradlew --no-daemon assembleRelease
+<Sdk>/build-tools/34.0.0/apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
+cp app/build/outputs/apk/release/app-release.apk ../dist/hanyang-pcw.apk
+gh release upload latest dist/hanyang-pcw.apk --clobber
+```
 
 - 서명 키: `android/keystore/hanyang-pcw.jks` (별칭 `hanyang-pcw`)
   - **이 키를 바꾸면 기존 앱 위에 덮어설치가 안 됩니다.** (지우고 다시 설치해야 함) 키 파일은 그대로 보관하세요.
