@@ -154,7 +154,7 @@
 
   async function login() {
     var name = $('#an').value.trim();
-    var phone = fmtPhone($('#ap').value);
+    var phone = fmtPhone($('#ap').value);   // 하이픈 유무와 무관하게 숫자로 비교된다
     var pass = $('#ac').value;
     var err = $('#loginErr');
     err.classList.remove('on');
