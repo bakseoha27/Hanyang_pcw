@@ -39,6 +39,12 @@
     return d.slice(0, 3) + '-' + d.slice(3, d.length - 4) + '-' + d.slice(d.length - 4);
   }
 
+  function phoneOk(d) {
+    if (!d) { return false; }
+    if (d.indexOf('010') === 0) { return d.length === 11; }   // 010 은 11자리
+    return d.length >= 10;
+  }
+
   function showErr(el, msg) {
     if (!el) { return; }
     if (!msg) { el.textContent = ''; el.classList.add('hide'); return; }
@@ -156,7 +162,7 @@
     showErr($('#otpErr'), '');
 
     if (!name) { showErr($('#otpErr'), '이름을 입력해 주세요.'); nameEl.focus(); return; }
-    if (phone.length < 10) { showErr($('#otpErr'), '전화번호를 정확히 입력해 주세요. (예: 010-1234-5678)'); phoneEl.focus(); return; }
+    if (!phoneOk(phone)) { showErr($('#otpErr'), '전화번호를 정확히 입력해 주세요. (예: 010-1234-5678)'); phoneEl.focus(); return; }
 
     var btn = $('#otpSendBtn');
     S.sending = true;
