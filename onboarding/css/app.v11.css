@@ -660,20 +660,17 @@ input.wsel{width:96px;height:28px;padding:0 5px;border:1.5px solid var(--blue);b
   .dfilter input[type=date]{flex:1;min-width:0;}
 }
 
-/* ---- v10: 상단 탭 6개 (부제 포함) ---- */
+/* ---- v10: 상단 탭 6개 (v11: 부제 문구 제거) ---- */
 .tabs{display:grid !important;grid-template-columns:repeat(6,1fr);gap:7px;padding:11px 13px;max-width:none;}
 .tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   height:52px;line-height:1.15;padding:0 4px;}
 .tab b{font-size:12.5px;}
-.tab small{display:block;font-size:10px;font-weight:700;color:#98A2B3;letter-spacing:-.3px;}
-.tab.on small{color:#5B8DEF;}
 @media (max-width:899px){
   .tabs{grid-template-columns:repeat(3,1fr);gap:6px;}
   .tab{height:50px;font-size:13px;}
 }
 @media (max-width:380px){
   .tab{font-size:12px;height:48px;}
-  .tab small{font-size:9.5px;}
 }
 
 /* ---- v10: 퇴사 탭에서만 보이는 특이사항 열 ---- */
