@@ -58,10 +58,12 @@
 
     <div class="gatefoot">
       <button type="button" class="adminlink" id="adminGateBtn">🔐 관리자로 로그인하기</button>
+      <button type="button" class="guestlink" id="guestGateBtn">게스트 모드</button>
     </div>
   </main>
 
   <main id="formArea" class="hide">
+    <div class="guestbadge hide" id="guestBadge">👀 게스트 미리보기 모드 · 실제로 제출되지 않습니다</div>
     <div class="verifiedbar hide" id="verifiedBar">
       ✅ <b id="verifiedWho"></b> 님 · <span id="verifiedPhone"></span> 인증 완료
       <small>이름과 휴대폰 번호는 문자 인증으로 확인된 값이라 수정할 수 없습니다.</small>
@@ -455,6 +457,23 @@
         <input type="password" id="gAdminPass" autocomplete="current-password" placeholder="관리자 암호">
       </div>
       <button class="btn" id="gAdminLogin">관리자 페이지로 들어가기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 게스트 모드 (암호로 전체 UI 미리보기 · 제출 안 됨) -->
+<div class="modal" id="guestModal">
+  <div class="bg" data-close></div>
+  <div class="sheet">
+    <div class="head"><b>게스트 모드</b><button type="button" data-close>✕</button></div>
+    <div class="body">
+      <p style="margin:0 0 12px;font-size:12.5px;color:#667085;line-height:1.55">암호를 넣으면 <b>문자 인증 없이</b> 서류 작성 화면을 둘러볼 수 있습니다.<br>게스트 모드에서는 <b>실제로 제출되지 않습니다</b>.</p>
+      <p class="otperr hide" id="guestErr"></p>
+      <div class="field">
+        <label for="gGuestPass">암호</label>
+        <input type="password" id="gGuestPass" autocomplete="off" placeholder="게스트 암호">
+      </div>
+      <button class="btn" id="gGuestEnter">게스트로 둘러보기</button>
     </div>
   </div>
 </div>

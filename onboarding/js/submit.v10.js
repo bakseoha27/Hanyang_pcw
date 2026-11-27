@@ -1310,6 +1310,12 @@
 
   async function submit() {
     if (state.busy || state.submitted) { return; }
+    // 게스트 미리보기 모드 — 화면만 보여 주고 실제 제출(DB 저장·파일 업로드)은 하지 않는다
+    if (window.GUEST_MODE) {
+      toast('게스트 미리보기 모드에서는 실제 제출되지 않습니다.', 4200);
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      return;
+    }
     // 휴대폰 문자 인증을 먼저 마쳐야 한다 (이름·번호가 인증 값으로 잠김)
     if (!window.OB_OTP || !window.OB_OTP.isVerified()) {
       toast('휴대폰 본인인증을 먼저 해 주세요.', 3200);

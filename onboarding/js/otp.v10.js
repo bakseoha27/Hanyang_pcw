@@ -225,11 +225,21 @@
   }
 
   /* ---------- 인증 완료 → 폼 열기 ---------- */
-  function openForm(announce) {
+  function openForm(announce, guest) {
     var gate = $('#gateArea'), form = $('#formArea'), bar = $('#submitbar');
     if (gate) { gate.classList.add('hide'); }
     if (form) { form.classList.remove('hide'); }
     if (bar) { bar.classList.remove('hide'); }
+
+    // 게스트 미리보기 — 필드를 잠그지 않고, 제출도 막는다 (submit.v10.js 가 window.GUEST_MODE 를 본다)
+    if (guest) {
+      window.GUEST_MODE = true;
+      var badge = $('#guestBadge');
+      if (badge) { badge.classList.remove('hide'); }
+      document.body.classList.add('guest-mode');
+      if (announce) { window.scrollTo({ top: 0, behavior: 'smooth' }); }
+      return;
+    }
 
     var nameEl = $('#name'), phoneEl = $('#phone');
     if (nameEl) {
@@ -310,6 +320,55 @@
     }
   }
 
+  /* ---------- 게스트 모드 (암호 확인 후 전체 UI 미리보기) ---------- */
+  function openGuest() {
+    showErr($('#guestErr'), '');
+    var inp = $('#gGuestPass');
+    if (inp) { inp.value = ''; }
+    var m = $('#guestModal');
+    if (m) { m.classList.add('open'); document.body.style.overflow = 'hidden'; }
+    if (inp) { setTimeout(function () { inp.focus(); }, 80); }
+  }
+
+  function closeGuest() {
+    var m = $('#guestModal');
+    if (m) { m.classList.remove('open'); }
+    if (!$('.modal.open')) { document.body.style.overflow = ''; }
+  }
+
+  async function guestEnter() {
+    var inp = $('#gGuestPass');
+    var pass = String((inp && inp.value) || '').trim();
+    var btn = $('#gGuestEnter');
+    showErr($('#guestErr'), '');
+    if (!pass) { showErr($('#guestErr'), '암호를 입력해 주세요.'); if (inp) { inp.focus(); } return; }
+    busy(btn, true, '확인하는 중…');
+    try {
+      var res = await fetch(CFG.url + CFG.otpFn, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: CFG.anon,
+          Authorization: 'Bearer ' + CFG.anon
+        },
+        body: JSON.stringify({ action: 'guest', passcode: pass })
+      });
+      var data = null;
+      try { data = await res.json(); } catch (e) { data = null; }
+      if (!res.ok || !data || data.ok !== true) {
+        showErr($('#guestErr'), (data && data.error) || '암호가 맞지 않습니다.');
+        return;
+      }
+      closeGuest();
+      openForm(true, true);
+      toast('게스트 미리보기 모드입니다. 실제로 제출되지는 않습니다.', 3600);
+    } catch (e) {
+      showErr($('#guestErr'), '확인하지 못했습니다. 잠시 뒤 다시 시도해 주세요.');
+    } finally {
+      busy(btn, false);
+    }
+  }
+
   /* ---------- 새로고침 복원 ---------- */
   function restore() {
     var saved = null;
@@ -360,6 +419,21 @@
 
   var adminBtn = $('#adminGateBtn');
   if (adminBtn) { adminBtn.addEventListener('click', openAdmin); }
+  var guestBtn = $('#guestGateBtn');
+  if (guestBtn) { guestBtn.addEventListener('click', openGuest); }
+  ['#guestModal'].forEach(function (sel) {
+    var m = $(sel);
+    if (!m) { return; }
+    m.addEventListener('click', function (e) {
+      if (e.target.closest('[data-close]') || e.target.classList.contains('bg')) { closeGuest(); }
+    });
+  });
+  var guestEnterBtn = $('#gGuestEnter');
+  if (guestEnterBtn) { guestEnterBtn.addEventListener('click', guestEnter); }
+  var guestPass = $('#gGuestPass');
+  if (guestPass) {
+    guestPass.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); guestEnter(); } });
+  }
   ['#adminLoginModal'].forEach(function (sel) {
     var m = $(sel);
     if (!m) { return; }

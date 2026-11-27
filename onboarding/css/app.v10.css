@@ -682,3 +682,12 @@ input.wsel{width:96px;height:28px;padding:0 5px;border:1.5px solid var(--blue);b
 .tbl td.c-note{white-space:normal;line-height:1.35;font-size:11.5px;color:#667085;max-width:230px;}
 .tbl .c-note .nsum{display:inline-block;max-width:215px;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;vertical-align:middle;}
+
+/* ---- v10: 게스트 모드 (초소형 회색 링크 · 상단 배지) ---- */
+.guestlink{margin-top:10px;padding:2px;background:none;border:0;font-size:11px;color:#9CA3AF;
+  font-weight:600;letter-spacing:-.2px;text-decoration:underline;text-underline-offset:2px;cursor:pointer;}
+.guestlink:hover{color:#6B7280;}
+.guestbadge{position:sticky;top:0;z-index:45;margin:0 0 10px;padding:7px 12px;border-radius:0 0 12px 12px;
+  background:#F3F4F6;color:#6B7280;font-size:11.5px;font-weight:800;text-align:center;letter-spacing:-.3px;
+  border:1px solid #E5E7EB;border-top:0;}
+body.guest-mode #submitbar .btn{background:#9CA3AF;box-shadow:none;}

@@ -1100,8 +1100,7 @@
       + '<div class="field"><label>성별</label><select data-meta="gender">' + genOpt + '</select></div>'
       + '<div class="field"><label>한양교육일자</label><input type="date" data-meta="hire_date" value="' + esc(r.hire_date || '') + '"></div>'
       + '<div class="field"><label>홍채등록일자</label><input type="date" data-meta="iris_date" value="' + esc(r.iris_date || '') + '"></div>'
-      + '<div class="field"><label>퇴사일자</label><input type="date" data-meta="resign_date" value="' + esc(r.resign_date || '') + '">'
-      + '<button type="button" class="btn sm gray" data-resign="1" style="width:100%;height:32px;font-size:11.5px;margin-top:4px;border-radius:8px">오늘 퇴사 처리</button></div>'
+      + '<div class="field"><label>퇴사일자</label><input type="date" data-meta="resign_date" value="' + esc(r.resign_date || '') + '"></div>'
       + '<div class="field"><label>단가</label><input type="text" data-meta="daily_wage" value="' + esc(r.daily_wage || '') + '" placeholder="예) 180000 / 미기재" inputmode="numeric"></div>'
       + '<div class="field"><label>직종</label>'
       + '<select data-meta="job_role" data-jobsel>' + jobOptions(jobText(r)) + '</select>'
@@ -2393,17 +2392,6 @@
     if (qb) { e.preventDefault(); toggleQual(S.detailId, qb.getAttribute('data-qual')); return; }
     var sc = e.target.closest('[data-stcancel]');
     if (sc) { e.preventDefault(); applyState(S.detailId, 'cancel'); return; }
-    var rs = e.target.closest('[data-resign]');
-    if (rs) {
-      e.preventDefault();
-      var dEl = $('#detailBody [data-meta="resign_date"]');
-      if (!dEl) { return; }
-      var td = todayISO();
-      if (!confirm('퇴사일자를 오늘(' + td + ')로 저장할까요?\n\n저장하면 목록과 [전체] 탭에서 상태가 퇴사로 표시됩니다.')) { return; }
-      dEl.value = td;
-      saveMeta(S.detailId);
-      return;
-    }
     var na = e.target.closest('[data-noteadd]');
     if (na) { e.preventDefault(); addNote(S.detailId); return; }
     var nd = e.target.closest('[data-ndel]');
