@@ -286,6 +286,7 @@ function buildState(d) {
     materialOrders: [],
     sharedTools: [],
     ppeSigs: [],
+    ppeItems: [],
     docs: { risk: [], spec: [] },
     draft: state.draft,
     ui: state.ui,
