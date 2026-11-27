@@ -488,6 +488,9 @@ public class MainActivity extends Activity {
         root.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
             @Override
             public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
+                /* WindowInsets.Type 은 안드로이드 11(API 30)+ 전용 — 그 아래 기기는
+                   엣지투엣지 강제 대상이 아니므로 예전처럼 그대로 둔다. */
+                if (Build.VERSION.SDK_INT < 30) return insets;
                 Insets bars = insets.getInsets(
                         WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
                 Insets ime = insets.getInsets(WindowInsets.Type.ime());
