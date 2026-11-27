@@ -13,7 +13,8 @@
     rows: [],
     sel: {},
     q: '',
-    busy: false
+    busy: false,
+    detailId: null
   };
   var AUTH_KEY = 'ob_admin_auth_v1';
   var DOC_LABEL = {};
@@ -57,12 +58,18 @@
   function filesOf(row) {
     var arr = Array.isArray(row.files_json) ? row.files_json : [];
     var map = {};
-    arr.forEach(function (f) { if (f && f.type) { map[f.type] = f; } });
+    arr.forEach(function (f) {
+      if (!f || !f.type) { return; }
+      (map[f.type] = map[f.type] || []).push(f);
+    });
     return map;
+  }
+  function firstOf(map, key) {
+    return (map[key] && map[key][0]) || null;
   }
   function missingOf(row) {
     var map = filesOf(row);
-    return DOC_TYPES.filter(function (d) { return d.required && !map[d.key]; }).map(function (d) { return d.label; });
+    return DOC_TYPES.filter(function (d) { return d.required && !firstOf(map, d.key); }).map(function (d) { return d.label; });
   }
   function saveFile(blob, name) {
     var a = document.createElement('a');
@@ -192,7 +199,7 @@
       var map = filesOf(r);
       var miss = missingOf(r);
       var dots = DOC_TYPES.map(function (d) {
-        return '<span class="dot ' + (map[d.key] ? 'ok' : '') + '" title="' + esc(d.label) + '">' + esc(d.label) + '</span>';
+        return '<span class="dot ' + (firstOf(map, d.key) ? 'ok' : '') + '" title="' + esc(d.label) + '">' + esc(d.label) + (map[d.key] && map[d.key].length > 1 ? ' ' + map[d.key].length : '') + '</span>';
       }).join('');
       var tags = '<span class="tag job">' + esc(r.job_role || '직종 미기재') + '</span>';
       if (r.status === 'hired') { tags += '<span class="tag hired">입사확정</span>'; }
@@ -228,11 +235,83 @@
     return S.rows.filter(function (r) { return S.sel[r.id]; });
   }
 
+  /* 상세 — 파일 이름 · 검진일/종류 수정 */
+  var EDIT = { key: '' };
+
+  function examText(row, map) {
+    var arr = map.health || [];
+    if (!arr.length) { return (row.health_exam_date || '') + (row.health_exam_type ? ' ' + row.health_exam_type : ''); }
+    return arr.map(function (f) {
+      var d = f.exam_date || '';
+      var t = f.exam_type || '';
+      return d || t ? (d + ' ' + t ).trim() : '';
+    }).filter(Boolean).join(' / ');
+  }
+
+  function editForm(r, idx, f) {
+    var isH = f.type === 'health';
+    var types = ['', '일반', '배치전', '특수'];
+    var h = '<div class="feditform" data-fidx="' + idx + '">'
+      + '<label>파일 이름</label>'
+      + '<input type="text" data-fname value="' + esc(f.name || '') + '">';
+    if (isH) {
+      h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">'
+        + '<div><label>검진일자</label><input type="date" data-fdate value="' + esc(f.exam_date || '') + '"></div>'
+        + '<div><label>검진 종류</label><select data-ftype>' + types.map(function (t) {
+          return '<option value="' + t + '"' + ((f.exam_type || '') === t ? ' selected' : '') + '>' + (t || '선택') + '</option>';
+        }).join('') + '</select></div>'
+        + '</div>';
+    }
+    h += '<div style="display:flex;gap:6px;margin-top:8px">'
+      + '<button type="button" class="btn sm" data-fsave style="width:auto;padding:0 14px;height:38px">저장</button>'
+      + '<button type="button" class="btn sm gray" data-fcancel style="width:auto;padding:0 14px;height:38px">취소</button>'
+      + '</div></div>';
+    return h;
+  }
+
+  async function saveFileEdit(id, idx) {
+    var r = rowById(id);
+    if (!r) { return; }
+    var form = $('.feditform[data-fidx="' + idx + '"]');
+    if (!form) { return; }
+    var all = (Array.isArray(r.files_json) ? r.files_json : []).slice();
+    var f = all[idx];
+    if (!f) { return; }
+    var nameEl = form.querySelector('[data-fname]');
+    var nm = nameEl ? String(nameEl.value || '').replace(/\s+/g, ' ').trim() : '';
+    if (!nm) { toast('파일 이름을 적어 주세요.'); return; }
+    var next = {
+      type: f.type, path: f.path, name: nm, size: f.size, mime: f.mime
+    };
+    if (f.type === 'health') {
+      var dEl = form.querySelector('[data-fdate]');
+      var tEl = form.querySelector('[data-ftype]');
+      next.exam_date = dEl ? dEl.value : (f.exam_date || '');
+      next.exam_type = tEl ? tEl.value : (f.exam_type || '');
+      if (!next.exam_date || !next.exam_type) { toast('검진일자와 종류를 모두 골라 주세요.'); return; }
+    }
+    all[idx] = next;
+    try {
+      await call('update_files', { id: id, files: all });
+      r.files_json = all;
+      var h0 = all.filter(function (x) { return x.type === 'health'; })[0];
+      r.health_exam_date = (h0 && h0.exam_date) || '';
+      r.health_exam_type = (h0 && h0.exam_type) || '';
+      EDIT.key = '';
+      render();
+      openDetail(id);
+      toast('파일 정보를 수정했습니다.');
+    } catch (e) {
+      toast(e.message || '수정하지 못했습니다.', 3200);
+    }
+  }
+
   /* ---------------- 상세 ---------------- */
   async function openDetail(id) {
     var r = rowById(id);
     if (!r) { return; }
     var map = filesOf(r);
+    var allFiles = Array.isArray(r.files_json) ? r.files_json : [];
     var kv = [
       ['성명', r.name],
       ['주민등록번호', r.rrn],
@@ -250,26 +329,38 @@
       ['조끼 / 안전화', (r.vest_size || '') + ' / ' + (r.shoe_size || '')],
       ['보안경', r.glasses_type],
       ['보유 자격', (Array.isArray(r.certs) ? r.certs.join(', ') : '')],
-      ['건강검진', (r.health_exam_date || '') + ' ' + (r.health_exam_type || '')],
+      ['건강검진', examText(r, map)],
       ['제출일', dstr(r.created_at)],
       ['상태', r.status === 'hired' ? '입사확정' : '제출'],
       ['동의', '개인정보 ' + dstr(r.agreed_privacy_at) + ' · 고유식별 ' + dstr(r.agreed_unique_id_at) + ' · 민감정보 ' + dstr(r.agreed_sensitive_at)]
     ];
     var h = '<dl class="kv">';
     kv.forEach(function (p) {
+      if (p[0] === '숙소' && !p[1]) { return; }
       h += '<dt>' + esc(p[0]) + '</dt><dd>' + (p[1] ? esc(p[1]) : '<span style="color:#98A2B3">—</span>') + '</dd>';
     });
     h += '</dl>';
 
     h += '<div class="files">';
     DOC_TYPES.forEach(function (d) {
-      var f = map[d.key];
-      if (f) {
-        h += '<a href="#" data-dl="' + esc(f.path) + '" data-dlname="' + esc(f.name) + '" data-id="' + esc(r.id) + '">'
-          + '<span class="ic">' + d.icon + '</span><span style="flex:1;min-width:0;word-break:break-all">' + esc(f.name) + '</span><span>⬇</span></a>';
-      } else {
+      var arr = map[d.key] || [];
+      if (!arr.length) {
         h += '<a class="miss" href="javascript:void(0)"><span class="ic">' + d.icon + '</span><span style="flex:1">' + esc(d.label) + ' — 미제출</span></a>';
+        return;
       }
+      arr.forEach(function (f) {
+        var idx = allFiles.indexOf(f);
+        var when = '';
+        if (d.key === 'health' && (f.exam_date || f.exam_type)) {
+          when = '<span class="fwhen"> · ' + esc((f.exam_date || '') + ' ' + (f.exam_type || '')) + '</span>';
+        }
+        h += '<div class="fline">'
+          + '<a href="#" data-dl="' + esc(f.path) + '" data-dlname="' + esc(f.name) + '" data-id="' + esc(r.id) + '">'
+          + '<span class="ic">' + d.icon + '</span><span style="flex:1;min-width:0;word-break:break-all">' + esc(f.name) + when + '</span><span>⬇</span></a>'
+          + '<button type="button" data-fedit="' + idx + '" title="파일 이름 수정">✎</button>'
+          + '</div>';
+        if (EDIT.key === r.id + ':' + idx) { h += editForm(r, idx, f); }
+      });
     });
     h += '</div>';
 
@@ -279,6 +370,7 @@
       + '</div>';
 
     $('#detailTitle').textContent = r.name + ' 님 제출 정보';
+    S.detailId = id;
     $('#detailBody').innerHTML = h;
     openModal('detailModal');
   }
@@ -378,7 +470,7 @@
       certs: Array.isArray(r.certs) ? r.certs.join(', ') : '',
       d_idcard: yn('idcard'), d_edu: yn('edu'), d_bank: yn('bank'), d_photo: yn('photo'),
       d_health: yn('health'), d_opinion: yn('opinion'), d_career: yn('career'),
-      exam: (r.health_exam_date || '') + (r.health_exam_type ? ' ' + r.health_exam_type : ''),
+      exam: examText(r, map),
       created: dstr(r.created_at),
       status: r.status === 'hired' ? '입사확정' : '제출',
       ag1: dstr(r.agreed_privacy_at),
@@ -455,8 +547,10 @@
       nameCount[base] = (nameCount[base] || 0) + 1;
       var folder = nameCount[base] === 1 ? base : base + '(' + nameCount[base] + ')';
       DOC_TYPES.forEach(function (d) {
-        var f = map[d.key];
-        if (f && f.path) { items.push({ id: r.id, path: f.path, name: f.name, person: folder }); }
+        var arr = map[d.key] || [];
+        arr.forEach(function (f) {
+          if (f && f.path) { items.push({ id: r.id, path: f.path, name: f.name, person: folder }); }
+        });
       });
     });
     if (!items.length) { toast('내려받을 서류가 없습니다.'); return; }
@@ -574,6 +668,24 @@
   });
 
   $('#detailBody').addEventListener('click', function (e) {
+    var ed = e.target.closest('[data-fedit]');
+    if (ed) {
+      e.preventDefault();
+      var key = S.detailId + ':' + ed.getAttribute('data-fedit');
+      EDIT.key = (EDIT.key === key) ? '' : key;
+      openDetail(S.detailId);
+      return;
+    }
+    var sv = e.target.closest('[data-fsave]');
+    if (sv) {
+      e.preventDefault();
+      var form = sv.closest('.feditform');
+      if (form) { saveFileEdit(S.detailId, form.getAttribute('data-fidx')); }
+      return;
+    }
+    var cx = e.target.closest('[data-fcancel]');
+    if (cx) { e.preventDefault(); EDIT.key = ''; openDetail(S.detailId); return; }
+
     var a = e.target.closest('[data-dl]');
     if (a) {
       e.preventDefault();

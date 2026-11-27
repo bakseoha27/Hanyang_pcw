@@ -9,11 +9,13 @@
 
   var state = {
     files: {},        // key -> { file, blob, ext, mime, name }
+    health: [],       // 건강검진 PDF 목록 (여러 개)
+    hseq: 0,
     certs: [],
     busy: false,
     submitted: false,
     id: null,
-    uploaded: {}      // key -> true (재시도 시 재업로드 방지)
+    uploaded: {}      // 저장 키 -> true (재시도 시 재업로드 방지)
   };
 
   /* ---------------- 공통 ---------------- */
@@ -64,6 +66,12 @@
     return String(s || '').replace(/[\\/:*?"<>|\r\n\t]/g, '').replace(/\s+/g, ' ').trim();
   }
 
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
   function uuid() {
     if (window.crypto && crypto.randomUUID) { return crypto.randomUUID(); }
     var b = new Uint8Array(16);
@@ -89,14 +97,21 @@
     el.addEventListener('change', updateProgress);
   });
 
-  /* 직종 기타 */
-  $$('input[name=job_role]').forEach(function (r) {
-    r.addEventListener('change', function () {
-      var etc = $('#jobEtcWrap');
-      if (r.checked && r.value === '기타') { etc.classList.remove('hide'); $('#job_role_etc').focus(); }
-      else if (r.checked) { etc.classList.add('hide'); }
-    });
-  });
+  /* 직종 — 용접공 여부만 */
+  function jobRole() {
+    var w = $('#is_welder');
+    return (w && w.checked) ? '용접공' : '';
+  }
+  function careerHint() {
+    var el = $('#careerName');
+    if (!el) { return; }
+    var j = jobRole();
+    el.textContent = '성명 경력증명서' + (j ? '(' + j + ')' : '') + '.pdf';
+  }
+  var welderBox = $('#is_welder');
+  if (welderBox) {
+    welderBox.addEventListener('change', function () { careerHint(); updateProgress(); });
+  }
 
   /* 자격 직접 추가 */
   $('#certAdd').addEventListener('click', function () {
@@ -126,8 +141,8 @@
       title: '[필수] 개인정보 수집·이용 동의',
       html: ''
         + '<h4>1. 수집하는 개인정보 항목</h4>'
-        + '<p>- 성명, 주민등록번호, 주소, 휴대폰 기종 및 번호, 본인 명의 휴대폰 여부, 숙소 사용 여부<br>'
-        + '- 은행명, 계좌번호, 직종, 단가(일당), 총 경력, 반도체 경력, 이메일, 혈액형<br>'
+        + '<p>- 성명, 주민등록번호, 주소, 휴대폰 기종 및 번호, 본인 명의 휴대폰 여부<br>'
+        + '- 은행명, 계좌번호, 용접공 여부, 단가(일당), 총 경력, 반도체 경력, 이메일, 혈액형<br>'
         + '- 조끼 사이즈, 안전화 사이즈, 보안경 종류, 보유 자격<br>'
         + '- 제출 서류: 신분증 사본, 기초안전보건교육 이수증, 통장사본, 증명사진, 건강검진 결과지, 소견서(해당자), 경력증명서</p>'
         + '<h4>2. 개인정보의 수집·이용 목적</h4>'
@@ -313,15 +328,10 @@
         return;
       }
 
-      if (key === 'health' || key === 'opinion' || key === 'career') {
+      if (key === 'opinion' || key === 'career') {
         if (!isPdf(file)) {
-          var label = key === 'career' ? '경력증명서' : (key === 'opinion' ? '소견서' : '건강검진 결과지');
-          if (key === 'health' && ALLOWED_IMG.test(file.type)) {
-            alert('건강검진은 사진이 아니라 PDF 파일만 올릴 수 있어요.\n\n카카오톡에서 검진 결과 PDF를 찾는 방법을 안내해 드릴게요.');
-            openModal('guideModal');
-          } else {
-            alert(label + '는 PDF 파일만 올릴 수 있어요.\n사진·캡처 파일은 접수되지 않습니다.');
-          }
+          var label = key === 'career' ? '경력증명서' : '소견서';
+          alert(label + '는 PDF 파일만 올릴 수 있어요.\n사진·캡처 파일은 접수되지 않습니다.');
           return;
         }
         if (!checkSize(file)) { return; }
@@ -353,15 +363,163 @@
     });
   });
 
+  /* ---------------- 건강검진 PDF (여러 개 · 자동 인식) ---------------- */
+  var healthInput = $('#healthInput');
+  var healthList = $('#healthList');
+  var HEALTH_TYPES = ['일반', '배치전', '특수'];
+
+  function findByUid(uid) {
+    for (var i = 0; i < state.health.length; i++) { if (state.health[i].uid === uid) { return state.health[i]; } }
+    return null;
+  }
+
+  function healthOptions(cur) {
+    var out = '<option value=""' + (cur ? '' : ' selected') + '>선택</option>';
+    HEALTH_TYPES.forEach(function (t) {
+      out += '<option value="' + t + '"' + (cur === t ? ' selected' : '') + '>' + t + '</option>';
+    });
+    return out;
+  }
+
+  function renderHealth() {
+    if (!healthList) { return; }
+    var nm = safeName(val('#name')) || '성명';
+
+    if (!state.health.length) {
+      healthList.innerHTML = '<div class="hfile busy" style="text-align:center;color:#98A2B3;font-size:12.5px;padding:16px 12px">아직 올린 검진 파일이 없습니다.</div>';
+      return;
+    }
+
+    healthList.innerHTML = state.health.map(function (h) {
+      var ok = !!(h.date && h.type);
+      var cls = 'hfile' + (h.state === 'reading' ? ' busy' : (ok ? '' : ' warn'));
+      var stat;
+      if (h.state === 'reading') {
+        stat = '⏳ PDF에서 검진일자·종류를 읽는 중…';
+      } else if (ok) {
+        stat = '✅ ' + (h.auto ? '자동 인식' : '직접 입력') + ' · 검진일 ' + esc(h.date) + ' · ' + esc(h.type);
+      } else if (h.state === 'error') {
+        stat = '⚠️ PDF를 읽지 못했어요. 검진일자와 종류를 골라 주세요.';
+      } else {
+        stat = '⚠️ PDF 글자가 없어 자동 인식을 못 했어요(스캔본 등). 검진일자와 종류를 골라 주세요.';
+      }
+      var showEdit = h.state !== 'reading' && (!ok || h.edit);
+
+      var html = ''
+        + '<div class="' + cls + '" data-huid="' + esc(h.uid) + '">'
+        + '<div class="hrow">'
+        + '<div class="thumb">🏥</div>'
+        + '<div class="meta"><b>' + esc(ExamPDF.fileName(nm, h.date, h.type)) + '</b>'
+        + '<small>원본 ' + esc(h.file.name) + ' · ' + (h.blob.size / 1048576).toFixed(1) + 'MB</small></div>'
+        + '<button type="button" class="hdel" data-hdel="' + esc(h.uid) + '" aria-label="삭제">✕</button>'
+        + '</div>'
+        + '<div class="hstat">' + stat + '</div>';
+
+      if (showEdit) {
+        html += '<div class="hedit"><div class="grid2">'
+          + '<div class="field"><label>검진일자</label><input type="date" data-hdate="' + esc(h.uid) + '" value="' + esc(h.date) + '"></div>'
+          + '<div class="field"><label>검진 종류</label><select data-htype="' + esc(h.uid) + '">' + healthOptions(h.type) + '</select></div>'
+          + '</div></div>';
+      }
+      if (h.state !== 'reading' && ok && !h.edit) {
+        html += '<span class="hfix" data-hfix="' + esc(h.uid) + '">직접 수정</span>';
+      }
+      return html + '</div>';
+    }).join('');
+  }
+
+  async function readHealth(h) {
+    try {
+      var text = await ExamPDF.extractText(h.file, 2);
+      var r = ExamPDF.parseExam(text, h.file.name);
+      h.date = r.date || '';
+      h.type = r.type || '';
+      h.auto = !!(r.date || r.type);
+      h.state = (r.chars > 0) ? 'done' : 'notext';
+    } catch (e) {
+      h.state = 'error';
+    }
+    renderHealth();
+    updateProgress();
+  }
+
+  async function addHealthFiles(files) {
+    var arr = Array.prototype.slice.call(files || []);
+    if (!arr.length) { return; }
+    var accepted = [];
+    for (var i = 0; i < arr.length; i++) {
+      var f = arr[i];
+      if (state.health.length + accepted.length >= 10) {
+        toast('검진 파일은 10개까지 올릴 수 있어요.');
+        break;
+      }
+      if (!isPdf(f)) {
+        if (ALLOWED_IMG.test(f.type)) {
+          alert('건강검진은 사진이 아니라 PDF 파일만 올릴 수 있어요.\n\n카카오톡에서 검진 결과 PDF를 찾는 방법을 안내해 드릴게요.');
+          openModal('guideModal');
+        } else {
+          alert('건강검진 결과지는 PDF 파일만 올릴 수 있어요.');
+        }
+        continue;
+      }
+      if (!checkSize(f)) { continue; }
+      accepted.push(f);
+    }
+    if (!accepted.length) { return; }
+
+    var made = accepted.map(function (f) {
+      state.hseq += 1;
+      return { uid: 'h' + state.hseq, file: f, blob: f, ext: 'pdf', mime: 'application/pdf', date: '', type: '', state: 'reading', edit: false, auto: false };
+    });
+    state.health = state.health.concat(made);
+    renderHealth();
+    updateProgress();
+
+    for (var k = 0; k < made.length; k++) { await readHealth(made[k]); }
+  }
+
+  if (healthInput) {
+    $('#healthAdd').addEventListener('click', function () { healthInput.click(); });
+    healthInput.addEventListener('change', function () {
+      var files = Array.prototype.slice.call(healthInput.files || []);
+      healthInput.value = '';
+      addHealthFiles(files);
+    });
+  }
+  if (healthList) {
+    healthList.addEventListener('click', function (e) {
+      var del = e.target.closest('[data-hdel]');
+      if (del) {
+        var uid = del.getAttribute('data-hdel');
+        state.health = state.health.filter(function (h) { return h.uid !== uid; });
+        renderHealth();
+        updateProgress();
+        return;
+      }
+      var fix = e.target.closest('[data-hfix]');
+      if (fix) {
+        var h = findByUid(fix.getAttribute('data-hfix'));
+        if (h) { h.edit = true; renderHealth(); }
+      }
+    });
+    healthList.addEventListener('change', function (e) {
+      var d = e.target.closest('[data-hdate]');
+      if (d) {
+        var h1 = findByUid(d.getAttribute('data-hdate'));
+        if (h1) { h1.date = d.value || ''; h1.auto = false; h1.edit = true; renderHealth(); updateProgress(); }
+        return;
+      }
+      var t = e.target.closest('[data-htype]');
+      if (t) {
+        var h2 = findByUid(t.getAttribute('data-htype'));
+        if (h2) { h2.type = t.value || ''; h2.auto = false; h2.edit = true; renderHealth(); updateProgress(); }
+      }
+    });
+  }
+
   /* ---------------- 진행률 ---------------- */
   function val(sel) { var el = $(sel); return el ? String(el.value || '').trim() : ''; }
   function radio(name) { var el = $('input[name=' + name + ']:checked'); return el ? el.value : ''; }
-
-  function jobRole() {
-    var j = radio('job_role');
-    if (j === '기타') { return safeName($('#job_role_etc').value) || '기타'; }
-    return j;
-  }
 
   function certs() {
     var arr = $$('#certChips input:checked').map(function (i) {
@@ -372,15 +530,20 @@
     return arr.filter(Boolean);
   }
 
+  function healthReady() {
+    return state.health.length > 0 && state.health.every(function (h) { return h.date && h.type; });
+  }
+
   function requiredState() {
     return [
       !!val('#name'), digitsOnly(val('#rrn')).length === 13, !!val('#address'),
       !!radio('phone_os'), digitsOnly(val('#phone')).length >= 10, !!radio('phone_self_owned'),
-      !!val('#bank'), !!digitsOnly(val('#account_number')), !!jobRole(), !!val('#daily_wage'),
-      !!val('#total_career'), !!val('#blood_type'), !!radio('vest_size'), !!val('#shoe_size'),
+      !!val('#bank'), !!digitsOnly(val('#account_number')), !!val('#daily_wage'),
+      !!val('#total_career'), !!val('#semi_career'), !!val('#email'),
+      !!val('#blood_type'), !!radio('vest_size'), !!val('#shoe_size'),
       !!radio('glasses_type'),
       !!state.files.idcard, !!state.files.edu, !!state.files.bank, !!state.files.photo,
-      !!state.files.health, !!val('#health_date'), !!val('#health_type'), !!state.files.career,
+      healthReady(), !!state.files.career,
       agrees.every(function (a) { return a.checked; })
     ];
   }
@@ -411,7 +574,7 @@
       phone_os: radio('phone_os'),
       phone: fmtPhone(val('#phone')),
       phone_self_owned: radio('phone_self_owned'),
-      housing: radio('housing') || null,
+      housing: null,
       bank: val('#bank'),
       account_number: val('#account_number'),
       job_role: jobRole(),
@@ -424,8 +587,8 @@
       shoe_size: digitsOnly(val('#shoe_size')),
       glasses_type: radio('glasses_type'),
       certs: certs(),
-      health_exam_date: val('#health_date'),
-      health_exam_type: val('#health_type'),
+      health_exam_date: (state.health[0] && state.health[0].date) || '',
+      health_exam_type: (state.health[0] && state.health[0].type) || '',
       files_json: [],
       agreed_privacy_at: now,
       agreed_unique_id_at: now,
@@ -442,13 +605,8 @@
       case 'edu': return '기초이수증(' + n + ').' + (state.files.edu.ext);
       case 'bank': return '통장사본(' + n + ').' + (state.files.bank.ext);
       case 'photo': return n + '_' + b6 + '.jpg';
-      case 'health': {
-        var d = String(row.health_exam_date || '').replace(/-/g, '');
-        var yy = d.length === 8 ? d.slice(2) : d;
-        return yy + '_' + n + ' ' + (row.health_exam_type || '일반') + '.pdf';
-      }
       case 'opinion': return n + ' 소견서.pdf';
-      case 'career': return n + ' 경력증명서(' + (row.job_role || '') + ').pdf';
+      case 'career': return n + ' 경력증명서' + (row.job_role ? '(' + row.job_role + ')' : '') + '.pdf';
       default: return n + '_' + key;
     }
   }
@@ -463,10 +621,11 @@
     else if (!radio('phone_self_owned')) { problems.push(['#seg-owned', '본인 명의 휴대폰 여부를 골라 주세요.']); }
     else if (!val('#bank')) { problems.push(['#bank', '은행을 적어 주세요.']); }
     else if (!digitsOnly(val('#account_number'))) { problems.push(['#account_number', '계좌번호를 적어 주세요.']); }
-    else if (!jobRole()) { problems.push(['#seg-job', '직종을 골라 주세요.']); }
-    else if (jobRole() === '기타' && !safeName($('#job_role_etc').value)) { problems.push(['#job_role_etc', '직종을 직접 적어 주세요.']); }
     else if (!val('#daily_wage')) { problems.push(['#daily_wage', '단가를 적어 주세요.']); }
     else if (!val('#total_career')) { problems.push(['#total_career', '총 경력을 적어 주세요.']); }
+    else if (!val('#semi_career')) { problems.push(['#semi_career', '반도체 경력을 적어 주세요. 없으면 “없음”이라고 적어 주세요.']); }
+    else if (!val('#email')) { problems.push(['#email', '이메일을 적어 주세요.']); }
+    else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(val('#email'))) { problems.push(['#email', '이메일 주소를 정확히 적어 주세요.']); }
     else if (!val('#blood_type')) { problems.push(['#blood_type', '혈액형을 골라 주세요.']); }
     else if (!radio('vest_size')) { problems.push(['#seg-vest', '조끼 사이즈를 골라 주세요.']); }
     else if (!val('#shoe_size')) { problems.push(['#shoe_size', '안전화 사이즈를 적어 주세요.']); }
@@ -475,42 +634,66 @@
     else if (!state.files.edu) { problems.push(['[data-file=edu]', '기초안전보건교육 이수증을 올려 주세요.']); }
     else if (!state.files.bank) { problems.push(['[data-file=bank]', '통장사본을 올려 주세요.']); }
     else if (!state.files.photo) { problems.push(['[data-file=photo]', '증명사진을 올려 주세요.']); }
-    else if (!state.files.health) { problems.push(['[data-file=health]', '건강검진 결과지 PDF를 올려 주세요.']); }
-    else if (!val('#health_date')) { problems.push(['#health_date', '검진 받은 날짜를 골라 주세요.']); }
-    else if (!val('#health_type')) { problems.push(['#health_type', '검진 종류를 골라 주세요.']); }
+    else if (!state.health.length) { problems.push(['#healthAdd', '건강검진 결과지 PDF를 올려 주세요.']); }
+    else if (state.health.some(function (h) { return h.state === 'reading'; })) { problems.push(['#healthList', '검진 PDF를 읽는 중입니다. 잠시 뒤 다시 눌러 주세요.']); }
+    else if (state.health.some(function (h) { return !h.date || !h.type; })) { problems.push(['#healthList', '검진일자·종류를 읽지 못한 파일이 있어요. 날짜와 종류를 골라 주세요.']); }
     else if (!state.files.career) { problems.push(['[data-file=career]', '경력증명서 PDF를 올려 주세요.']); }
     else if (!agrees.every(function (a) { return a.checked; })) { problems.push(['#agreeAll', '개인정보 동의 3가지를 모두 체크해 주세요.']); }
     return problems;
   }
 
-  async function uploadOne(row, key) {
-    var f = state.files[key];
-    if (!f) { return null; }
-    var fname = displayName(key, row);
-    var path = state.id + '/' + key + '.' + f.ext;
-    if (state.uploaded[key]) { return { type: key, path: path, name: fname, size: f.blob.size, mime: f.mime }; }
+  function uploadItems(row) {
+    var items = [];
+    DOC_TYPES.forEach(function (d) {
+      if (d.key === 'health') {
+        state.health.forEach(function (h) {
+          items.push({
+            type: 'health', pathKey: h.uid,
+            blob: h.blob, ext: 'pdf', mime: 'application/pdf',
+            name: ExamPDF.fileName(row.name, h.date, h.type),
+            exam_date: h.date, exam_type: h.type
+          });
+        });
+        return;
+      }
+      var f = state.files[d.key];
+      if (!f) { return; }
+      items.push({
+        type: d.key, pathKey: d.key,
+        blob: f.blob, ext: f.ext, mime: f.mime,
+        name: displayName(d.key, row)
+      });
+    });
+    return items;
+  }
+
+  async function uploadOne(row, it) {
+    var path = state.id + '/' + it.pathKey + '.' + it.ext;
+    var info = { type: it.type, path: path, name: it.name, size: it.blob.size, mime: it.mime };
+    if (it.type === 'health') { info.exam_date = it.exam_date; info.exam_type = it.exam_type; }
+    if (state.uploaded[it.pathKey]) { return info; }
 
     var res = await fetch(CFG.url + '/storage/v1/object/' + CFG.bucket + '/' + encodeURIComponent(path).replace(/%2F/g, '/'), {
       method: 'POST',
       headers: {
         apikey: CFG.anon,
         Authorization: 'Bearer ' + CFG.anon,
-        'Content-Type': f.mime,
+        'Content-Type': it.mime,
         'cache-control': '3600',
         'x-upsert': 'false'
       },
-      body: f.blob
+      body: it.blob
     });
     if (!res.ok) {
       var txt = '';
       try { txt = await res.text(); } catch (e) { txt = ''; }
       // 이미 올라간 파일(재시도)은 성공으로 본다
       if (!(res.status === 409 || /Duplicate|already exists/i.test(txt))) {
-        throw new Error(fname + ' 업로드 실패 (' + res.status + ')');
+        throw new Error(it.name + ' 업로드 실패 (' + res.status + ')');
       }
     }
-    state.uploaded[key] = true;
-    return { type: key, path: path, name: fname, size: f.blob.size, mime: f.mime };
+    state.uploaded[it.pathKey] = true;
+    return info;
   }
 
   async function submit() {
@@ -533,11 +716,11 @@
       if (!state.id) { state.id = uuid(); }
       var row = buildRow();
 
-      var keys = DOC_TYPES.map(function (d) { return d.key; }).filter(function (k) { return !!state.files[k]; });
+      var items = uploadItems(row);
       var files = [];
-      for (var i = 0; i < keys.length; i++) {
-        btn.textContent = '서류 올리는 중… (' + (i + 1) + '/' + keys.length + ')';
-        var info = await uploadOne(row, keys[i]);
+      for (var i = 0; i < items.length; i++) {
+        btn.textContent = '서류 올리는 중… (' + (i + 1) + '/' + items.length + ')';
+        var info = await uploadOne(row, items[i]);
         if (info) { files.push(info); }
       }
 
@@ -577,13 +760,17 @@
   }
 
   function showDone(row, files) {
-    $('#doneName').textContent = row.name + ' 님 · ' + (row.job_role || '');
+    $('#doneName').textContent = row.name + ' 님' + (row.job_role ? ' · ' + row.job_role : '');
     var byType = {};
-    files.forEach(function (f) { byType[f.type] = f.name; });
+    files.forEach(function (f) { (byType[f.type] = byType[f.type] || []).push(f.name); });
     var h = '';
     DOC_TYPES.forEach(function (d) {
-      var n = byType[d.key];
-      h += '<div>' + (n ? '✅ ' + n : '⬜ ' + d.label + ' — 없음') + '</div>';
+      var names = byType[d.key] || [];
+      if (names.length) {
+        names.forEach(function (n) { h += '<div>✅ ' + esc(n) + '</div>'; });
+      } else {
+        h += '<div>⬜ ' + esc(d.label) + ' — 없음</div>';
+      }
     });
     h += '<div style="margin-top:8px;color:#667085">접수 시각: ' + new Date().toLocaleString('ko-KR') + '</div>';
     $('#doneList').innerHTML = h;
@@ -599,6 +786,11 @@
     closeModal('doneModal');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
+
+  /* 이름을 적으면 검진 파일 이름도 같이 바뀜 */
+  var nameInput = $('#name');
+  if (nameInput) { nameInput.addEventListener('input', renderHealth); }
+  careerHint();
 
   updateProgress();
   renderGuide();
