@@ -2972,7 +2972,8 @@ function liftToolsView() {
     var ok = t.status !== '불량';
     return '<div class="tool-row' + (ok ? '' : ' bad') + '" data-id="' + t.id + '" data-name="' + esc(t.name) + '">' +
       '<div class="tr-main"><div class="tr-name">' + esc(t.name) + '</div>' +
-      '<div class="tr-sub">' + esc(t.category) + ' · ' + esc(t.company || '한양이엔지(PCW)') +
+      '<div class="tr-sub">' + esc(t.category) +
+      '<span class="tr-co"> · ' + esc(t.company || '한양이엔지(PCW)') + '</span>' +
       (t.checkDate ? ' · 점검 ' + shortDate(t.checkDate) : '') + '</div></div>' +
       '<button class="tool-status' + (ok ? ' ok' : ' bad') + '" data-act="toolStatus" data-id="' + t.id + '" aria-pressed="' + (!ok) + '">' +
       (ok ? '정상' : '불량') + '</button>' +

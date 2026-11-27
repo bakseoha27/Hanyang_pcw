@@ -2688,6 +2688,7 @@ var ACTIONS = {
     var id = el.getAttribute('data-id');
     var t = toolById(id);
     if (!t) { return; }
+    if (el.parentNode && el.parentNode.classList) { el.parentNode.classList.add('editing'); }
     el.outerHTML = '<span class="tq-edit" id="tqbox_' + id + '">' +
       '<input class="tq-in" id="tq_' + id + '" type="number" inputmode="numeric" min="0" step="1" value="' + (t.quantity || 0) + '" aria-label="갯수">' +
       '<button class="tq-ok" data-act="toolQtySave" data-id="' + id + '">확인</button></span>';
