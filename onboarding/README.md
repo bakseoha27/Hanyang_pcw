@@ -65,9 +65,9 @@ insert into public.onboarding_admins (name, phone) values ('이름', '010-0000-0
 
 - 신규자 페이지(`index.html`) 첫 화면 맨 아래 **`🔐 관리자로 로그인하기` 바로 아래**에
   아주 작은 연한 회색 글씨(`font-size:11px; color:#9CA3AF`)로 **`게스트 모드`** 가 있습니다.
-- 누르면 암호 입력창이 뜨고, 암호 **`seoha`** 를 넣으면 **문자(OTP) 인증 없이** 서류 작성 화면 전체
+- 누르면 암호 입력창이 뜨고, Supabase Secret `GUEST_PASSCODE` 로 설정된 암호를 넣으면 **문자(OTP) 인증 없이** 서류 작성 화면 전체
   (사진 편집기 · 검진 PDF 자동 판독 · D2 토글 등)를 둘러볼 수 있습니다.
-  암호는 Edge Function `onboarding-otp` 의 `action: 'guest'` 가 확인합니다(Secret `GUEST_PASSCODE`, 없으면 `seoha`).
+  암호는 Edge Function `onboarding-otp` 의 `action: 'guest'` 가 Supabase Secret `GUEST_PASSCODE` 로만 확인합니다.
 - 게스트 모드에서는 상단에 **`👀 게스트 미리보기 모드`** 배지가 붙고,
   **`서류 제출하기` 를 눌러도 DB 저장·파일 업로드 없이** `게스트 미리보기 모드에서는 실제 제출되지 않습니다` 안내만 뜹니다.
   (설령 우회해도 DB 트리거가 OTP 토큰을 요구하므로 실제 제출은 거부됩니다.)
