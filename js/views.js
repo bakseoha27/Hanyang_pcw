@@ -2975,8 +2975,6 @@ function liftToolsView() {
       '<div class="tr-sub">' + esc(t.category) +
       '<span class="tr-co"> · ' + esc(t.company || '한양이엔지(PCW)') + '</span>' +
       (t.checkDate ? ' · 점검 ' + shortDate(t.checkDate) : '') + '</div></div>' +
-      '<button class="tool-status' + (ok ? ' ok' : ' bad') + '" data-act="toolStatus" data-id="' + t.id + '" aria-pressed="' + (!ok) + '">' +
-      (ok ? '정상' : '불량') + '</button>' +
       '<div class="tool-qty-ctl">' +
       '<button class="tq-btn" data-act="toolDec" data-id="' + t.id + '" aria-label="하나 줄이기">－</button>' +
       '<button class="tq-num" data-act="toolQtyEdit" data-id="' + t.id + '" aria-label="갯수 수정">' + (t.quantity || 0) + '개</button>' +
@@ -2996,7 +2994,7 @@ function liftToolsView() {
     '<button class="tool-export" data-act="toolExport">📊 엑셀 내보내기 <span>원본 양식 3장</span></button>' +
     '<div class="hint">엑셀은 <b>공도구 · 자율점검 · 소화기</b> 3장으로 나오고, 갯수만큼 <b>품명-1 ~ 품명-N</b> 으로 펼쳐집니다.</div>' +
     '</div>' +
-    '<div class="foot-note">공구장님 화면 · 갯수는 − / ＋ 또는 숫자를 눌러 수정 · 상태는 정상/불량</div>';
+    '<div class="foot-note">공구장님 화면 · 갯수는 − / ＋ 또는 숫자를 눌러 수정</div>';
 }
 
 /* 관리자 전체 현황에 붙는 양중 요약 (4탭 UX 는 그대로) */
